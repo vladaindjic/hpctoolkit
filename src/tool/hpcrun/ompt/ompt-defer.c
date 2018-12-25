@@ -386,6 +386,19 @@ help_notification_alloc(ompt_region_data_t *region_data)
   return notification;
 }
 
+cct_node_t*
+add_unresolved_node(ompt_region_data_t *region_data, ompt_notification_t *notification)
+{
+  if (!ompt_eager_context) {
+    cct_node_t *parent_cct =
+            (top_index == 0)
+            ? hpcrun_get_thread_epoch()->csdata.thread_root
+            : region_stack[top_index - 1].notification->unresolved_cct;
+    notification->unresolved_cct = hpcrun_cct_insert_addr(parent_cct,
+                                                          &(ADDR2(UNRESOLVED, region_data->region_id)));
+  }
+}
+
 void
 add_region_and_ancestors_to_stack(ompt_region_data_t *region_data, bool team_master)
 {
@@ -437,12 +450,24 @@ add_region_and_ancestors_to_stack(ompt_region_data_t *region_data, bool team_mas
   while (ancestor_level > 0) {
     notification = help_notification_alloc(ancestors[ancestor_level]);
     push_region_stack(notification, 0, 0);
+    // insert unresolved_cct now
+
+    add_unresolved_node(region_data, notification);
+
+    // should be enough to memoize current cct
+    cct_not_master_region = notification->unresolved_cct;
+
     ancestor_level--;
   }
 
   // push current region at the stack
   notification = help_notification_alloc(region_data);
   push_region_stack(notification, 0, team_master);
+  add_unresolved_node(region_data, notification);
+  // check if this is alse a region where thread is not a master
+  if (!team_master) {
+    cct_not_master_region = notification->unresolved_cct;
+  }
 
   // register all descendants of found ancestor, if found
 }
@@ -451,7 +476,7 @@ add_region_and_ancestors_to_stack(ompt_region_data_t *region_data, bool team_mas
 
 
 
-
+#if 0
 void add_to_list(ompt_region_data_t* region_data){
   ompt_trl_el_t* new_region = hpcrun_ompt_trl_el_alloc();
   new_region->region_data = region_data;
@@ -483,27 +508,6 @@ void remove_from_list(ompt_region_data_t* region_data){
   hpcrun_ompt_trl_el_free(current);
 }
 
-cct_node_t*
-add_pseudo_cct (ompt_region_data_t* region_data) {
-  // should add cct inside the tree
-  cct_node_t* new;
-  if(top_index == 0) {
-    // this is the first parallel region add pseudo cct
-    // which corresponds to the region as a child of thread root
-    new = hpcrun_cct_insert_addr((hpcrun_get_thread_epoch()->csdata).thread_root,
-                                 &(ADDR2(UNRESOLVED, region_data->region_id)));
-//    printf("This is my parent: %p, this is unresolved root: %p\n",
-//           hpcrun_cct_parent(new), (hpcrun_get_thread_epoch()->csdata).thread_root);
-  } else {
-    // add cct as a child of a previous pseudo cct
-    new = hpcrun_cct_insert_addr(region_stack[top_index - 1].notification->unresolved_cct,
-                                 &(ADDR2(UNRESOLVED, region_data->region_id)));
-  }
-
-  return new;
-}
-
-
 
 // vi3 temp check
 int alredy_in_list(ompt_region_data_t *region_data) {
@@ -528,7 +532,7 @@ int print_list() {
 
     return 0;
 }
-
+#endif
 
 
 void
@@ -546,6 +550,7 @@ register_to_region(ompt_notification_t* notification){
 //  printf("THREAD: %p, REGION_ID: %lx\n", &threads_queue, region_data->region_id);
 }
 
+#if 0
 ompt_notification_t*
 add_notification_to_stack(ompt_region_data_t* region_data) {
     ompt_notification_t* notification = hpcrun_ompt_notification_alloc();
@@ -565,6 +570,8 @@ register_if_not_master(ompt_notification_t *notification)
     cct_not_master_region = notification->unresolved_cct;
   }
 }
+#endif
+
 
 int
 get_took_sample_parent_index()
@@ -600,22 +607,23 @@ register_to_all_regions(){
     if (!current_el->team_master) {
       // register for region's call path if not the master
       register_to_region(current_el->notification);
+
       // add unresolved cct at some place underneath thread root
       // find parent of new_cct
-      parent_cct = (i == 0) ? hpcrun_get_thread_epoch()->csdata.thread_root
-              : region_stack[i-1].notification->unresolved_cct;
-
-      if (current_el->notification->region_data->region_id == 0) {
-        printf("*************You have made big mistake\n");
-      }
-      // insert cct as child of the parent_cct
-      new_cct =
-              hpcrun_cct_insert_addr(parent_cct,
-                                     &(ADDR2(UNRESOLVED, current_el->notification->region_data->region_id)));
-      // remebmer cct
-      current_el->notification->unresolved_cct = new_cct;
-
-      cct_not_master_region = current_el->notification->unresolved_cct;
+//      parent_cct = (i == 0) ? hpcrun_get_thread_epoch()->csdata.thread_root
+//              : region_stack[i-1].notification->unresolved_cct;
+//
+//      if (current_el->notification->region_data->region_id == 0) {
+//        printf("*************You have made big mistake\n");
+//      }
+//      // insert cct as child of the parent_cct
+//      new_cct =
+//              hpcrun_cct_insert_addr(parent_cct,
+//                                     &(ADDR2(UNRESOLVED, current_el->notification->region_data->region_id)));
+//      // remebmer cct
+//      current_el->notification->unresolved_cct = new_cct;
+//
+//      cct_not_master_region = current_el->notification->unresolved_cct;
 
     }
   }
@@ -635,46 +643,38 @@ hpcrun_cct_insert_path_return_leaf_tmp(cct_node_t *root, cct_node_t *path)
     return hpcrun_cct_insert_addr(root, hpcrun_cct_addr(path));
 }
 
-// return one if successful
+// returns 1 if succeed
 int
-try_resolve_one_region_context()
+resolve_one_region(ompt_notification_t *notification, ompt_region_data_t *region_data)
 {
-  ompt_notification_t *old_head = NULL;
-  old_head = (ompt_notification_t*) wfq_dequeue_private(&threads_queue, OMPT_BASE_T_STAR_STAR(private_threads_queue));
-  if(!old_head)
-    return 0;
-  // region to resolve
-  ompt_region_data_t *region_data = old_head->region_data;
+    cct_node_t *unresolved_cct = notification->unresolved_cct;
+    cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
 
-  // ================================== resolving part
-  cct_node_t *unresolved_cct = old_head->unresolved_cct;
-  cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
+    if (parent_unresolved_cct == NULL) {
+        printf("*******************PARENT UNRESOLVED CCT IS MISSING!\n");
+        //unresolved_cnt--;
+        return 0;
+    }
 
-  if (parent_unresolved_cct == NULL) {
-      printf("*******************PARENT UNRESOLVED CCT IS MISSING!\n");
-      //unresolved_cnt--;
-      return 0;
-  }
+    if(region_data->call_path == NULL) {
+        //printf("*******************This is very bad!\n");
+        return 0;
+    }
 
-  if(region_data->call_path == NULL) {
-    printf("*******************This is very bad!\n");
-    return 0;
-  }
+    // prefix should be put between unresolved_cct and parent_unresolved_cct
+    cct_node_t *prefix = NULL;
+    cct_node_t *region_call_path = region_data->call_path;
 
-  // prefix should be put between unresolved_cct and parent_unresolved_cct
-  cct_node_t *prefix = NULL;
-  cct_node_t *region_call_path = region_data->call_path;
-
-  // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
+    // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
 //  if (region_data->region_id == 0x1000000000001) {
-  // when had this condtion, once infinity happen
-  if (parent_unresolved_cct == hpcrun_get_thread_epoch()->csdata.thread_root) {
-    // from initial region, we should remove the first one
-    prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
-  } else {
-    // for resolving inner region, we should consider all cct nodes from prefix
-    prefix = hpcrun_cct_insert_path_return_leaf_tmp(parent_unresolved_cct, region_call_path);
-  }
+    // when had this condtion, once infinity happen
+    if (parent_unresolved_cct == hpcrun_get_thread_epoch()->csdata.thread_root) {
+        // from initial region, we should remove the first one
+        prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
+    } else {
+        // for resolving inner region, we should consider all cct nodes from prefix
+        prefix = hpcrun_cct_insert_path_return_leaf_tmp(parent_unresolved_cct, region_call_path);
+    }
 
 
 
@@ -687,18 +687,38 @@ try_resolve_one_region_context()
 //         hpcrun_cct_addr(prefix)->ip_norm.lm_ip
 //         );
 
-  if (prefix == NULL) {
-    printf("**************SOMETHING IS BAD WHILE RESOLVING... REION_ID: %lx, REGION_CALLPATH: %p, MASTER: %d,"
-           " UNRESOLVED_CCT_IP: %lx, UNRESOLVED_PARENT_CCT: %p, THREAD: %p\n",
-           region_data->region_id, region_call_path, TD_GET(master), hpcrun_cct_addr(unresolved_cct)->ip_norm.lm_ip,
-           parent_unresolved_cct, &threads_queue
-    );
-  }
+    if (prefix == NULL) {
+        printf("**************SOMETHING IS BAD WHILE RESOLVING... REION_ID: %lx, REGION_CALLPATH: %p, MASTER: %d,"
+               " UNRESOLVED_CCT_IP: %lx, UNRESOLVED_PARENT_CCT: %p, THREAD: %p\n",
+               region_data->region_id, region_call_path, TD_GET(master), hpcrun_cct_addr(unresolved_cct)->ip_norm.lm_ip,
+               parent_unresolved_cct, &threads_queue
+        );
+    }
 
-  // prefix node should change the unresolved_cct
-  hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
-  // delete unresolved_cct from parent
-  hpcrun_cct_delete_self(unresolved_cct);
+    // prefix node should change the unresolved_cct
+    hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
+    // delete unresolved_cct from parent
+    hpcrun_cct_delete_self(unresolved_cct);
+
+    return 1;
+}
+
+// return one if successful
+int
+try_resolve_one_region_context()
+{
+  ompt_notification_t *old_head = NULL;
+  old_head = (ompt_notification_t*) wfq_dequeue_private(&threads_queue, OMPT_BASE_T_STAR_STAR(private_threads_queue));
+  if(!old_head)
+    return 0;
+  // region to resolve
+  ompt_region_data_t *region_data = old_head->region_data;
+
+  // ================================== resolving part
+  int success =  resolve_one_region(old_head, region_data);
+  if (success == 0) {
+    return 0;
+  }
   // ==================================
 
 
@@ -844,6 +864,7 @@ copy_prefix(cct_node_t* top, cct_node_t* bottom)
 
 }
 
+#if 0
 // Check whether we found the outermost region in which current thread is the master
 // returns -1 when there is no regions
 // returns 0 if the region is not the outermost region of which current thread is master
@@ -903,6 +924,7 @@ print_prefix_info(char *message, cct_node_t *prefix, ompt_region_data_t *region_
 //    printf("%s REGION_IND: %lx STACK_INDEX: %d MASTER: %d TOP CCT: %p BOTOOM CCT: %p PEF_LENGTH: %d FRAME_NUMBER: %d CCT_NUMBER: %d\n",
 //           message, region_data->region_id, stack_index, TD_GET(master), tmp_top, tmp_bottom, len_prefix, len_bt, len_cct);
 }
+#endif
 
 // check if the thread cannot resolved region because of reasons mentioned below
 int
@@ -976,7 +998,8 @@ provide_callpath_for_regions_if_needed(backtrace_info_t *bt, cct_node_t *cct) {
 
     it = first_frame_above(it, bt_outer, UINT64_T(current_frame->exit_runtime_frame), &index);
     if (it == NULL) {
-
+        // FIXME: happened in task.c
+        //printf("979\n");
         return;
     }
     // this happened
@@ -993,7 +1016,7 @@ provide_callpath_for_regions_if_needed(backtrace_info_t *bt, cct_node_t *cct) {
     it = first_frame_above(it, bt_outer, UINT64_T(current_frame->exit_runtime_frame), &index);
     if (it == NULL) {
         // this happened once for the thread da it is not TD_GET(master)
-
+        printf("996\n");
         return;
     }
     // this happened
@@ -1004,6 +1027,8 @@ provide_callpath_for_regions_if_needed(backtrace_info_t *bt, cct_node_t *cct) {
     // this happened
     //printf("Sample has been taken inside runtime frame\n");
 
+    // FIXME vi3: this happen in fibonnaci (nestedtasks.c)
+    //printf("1006\n");
     return;
   } else if (UINT64_T(current_frame->reenter_runtime_frame) == 0
              && UINT64_T(current_frame->exit_runtime_frame) == 0) {
@@ -1012,7 +1037,8 @@ provide_callpath_for_regions_if_needed(backtrace_info_t *bt, cct_node_t *cct) {
     //printf("Both reenter and exit are zero\n");
 
     // this happened a couple of time for not TD_GET(master) threads
-
+    // FIXME: happened in task.c
+    //printf("1015\n");
     return;
   } else if (UINT64_T(current_frame->exit_runtime_frame) == 0
              && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->reenter_runtime_frame)) {
@@ -1126,7 +1152,8 @@ provide_callpath_for_regions_if_needed(backtrace_info_t *bt, cct_node_t *cct) {
 
     prefix = copy_prefix(top_prefix, bottom_prefix);
     if (!prefix) {
-      printf("What to do now?\n");
+      // FIXME vi3: why this happens in example task-in-nested-region
+      //printf("What to do now?\n");
       return;
     }
     // vi3: debug
@@ -1168,6 +1195,7 @@ provide_callpath_for_end_of_the_region(backtrace_info_t *bt, cct_node_t *cct) {
 
     int index = 0;
     ompt_frame_t *current_frame = hpcrun_ompt_get_task_frame(0);
+    ompt_frame_t *parent_frame = hpcrun_ompt_get_task_data(1);
     if (!current_frame) {
       return;
     }
@@ -1183,41 +1211,11 @@ provide_callpath_for_end_of_the_region(backtrace_info_t *bt, cct_node_t *cct) {
 
     if (UINT64_T(current_frame->reenter_runtime_frame) == 0
         && UINT64_T(current_frame->exit_runtime_frame) != 0) {
-        // thread take a sample inside user code of the parallel region
-        // this region is the the innermost
-
-        // this has happened
-        //printf("First time in user code of the parallel region\n");
-
-//        it = first_frame_above(it, bt_outer, UINT64_T(current_frame->exit_runtime_frame), &index);
-//        if (it == NULL) {
-//
-//            return;
-//        }
-        // this happened
-        //printf("One above exit\n");
-
-
         printf("MASTER: %d, FIRST\n", TD_GET(master));
     } else if (UINT64_T(current_frame->reenter_runtime_frame) <= UINT64_T(bt_inner->cursor.sp)
                && UINT64_T(bt_inner->cursor.sp) <= UINT64_T(current_frame->exit_runtime_frame)) { // FIXME should put =
         // thread take a simple in the region which is not the innermost
         // all innermost regions have been finished
-
-        // this happened
-        //printf("Second time in user code of the parallel region\n");
-
-//        it = first_frame_above(it, bt_outer, UINT64_T(current_frame->exit_runtime_frame), &index);
-//        if (it == NULL) {
-//            // this happened once for the thread da it is not TD_GET(master)
-//
-//            return;
-//        }
-        // this happened
-        //printf("One above exit...\n");
-
-
-
 
         bottom_prefix = get_cct_from_prefix(cct, index);
         it = first_frame_below(it, bt_outer, UINT64_T(current_frame->exit_runtime_frame), &index);
@@ -1249,27 +1247,28 @@ provide_callpath_for_end_of_the_region(backtrace_info_t *bt, cct_node_t *cct) {
     } else if (UINT64_T(current_frame->reenter_runtime_frame) == 0
                && UINT64_T(current_frame->exit_runtime_frame) == 0) {
         // FIXME: check what this means
-        // this happened
         //printf("Both reenter and exit are zero\n");
 
         // this happened a couple of time for not TD_GET(master) threads
 
-        printf("MASTER: %d, FOURTH\n", TD_GET(master));
+//        printf("MASTER: %d, FOURTH, REGION_ID: %lx\n", TD_GET(master), region_stack[top_index].notification->region_data->region_id);
+
+
+        // FIXME vi3: why this happens in task-in-nested-region
+        // FIXME vi3: this makes big problems, cause we need hacks to get the call path of the innermost region
+
+//        printf("bt_inner: %lu, bt_outer: %lu, exit: %lu, enter: %lu\n", UINT64_T(bt_inner->cursor.sp),
+//               UINT64_T(bt_outer->cursor.sp),
+//               UINT64_T(parent_frame->exit_runtime_frame), UINT64_T(parent_frame->reenter_runtime_frame));
 
 
 //        return;
     } else if (UINT64_T(current_frame->exit_runtime_frame) == 0
                && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->reenter_runtime_frame)) {
-        //ompt_frame_t* parent = hpcrun_ompt_get_task_frame(1);
-        //printf("I did not cover. BT_INNNER: %lu\tEXIT: %lu\tREENTER: %lu\tREGIONS: %d\tMASTER: %d\tPARENT FRAME: %p\n",
-        //       UINT64_T(bt_inner->cursor.sp), UINT64_T(current_frame->exit_runtime_frame),
-        //       UINT64_T(current_frame->reenter_runtime_frame), top_index+1, TD_GET(master), parent);
 
         // FIXME: the master thread is probably inside implicit task
         // this happened
         //printf("Master thread is inside implicit task\n");
-
-
 
         // FIXME vi3: this happened in the first region when master not took sample
 
@@ -1288,10 +1287,6 @@ provide_callpath_for_end_of_the_region(backtrace_info_t *bt, cct_node_t *cct) {
         return;
 
     } else {
-//        printf("Something that has not been cover\n");
-
-//        return;
-
         printf("MASTER: %d, SIXTH\n", TD_GET(master));
 
     }

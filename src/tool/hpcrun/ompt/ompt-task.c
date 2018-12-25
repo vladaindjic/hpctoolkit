@@ -102,6 +102,7 @@ ompt_task_begin_internal(
     // vi3 new version
     hpcrun_metricVal_t zero_metric_incr_metricVal;
     zero_metric_incr_metricVal.i = 0;
+    // FIXME vi3: lose the last cct on the call path, see task.c example
     cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal, 1, 1, NULL).sample_node;
   }
   else{
@@ -109,10 +110,7 @@ ompt_task_begin_internal(
 //    thread_data_t *td = hpcrun_get_thread_data();
 
 
-    ompt_data_t *parallel_info = NULL;
-    int team_size = 0;
-    hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);
-    ompt_region_data_t* region_data = (ompt_region_data_t*)parallel_info->ptr;
+    ompt_region_data_t* region_data = hpcrun_ompt_get_current_region_data();
     cct_node_t* prefix = region_data->call_path;
 
 #if 0
@@ -142,7 +140,13 @@ ompt_task_begin_internal(
 
   task_data->ptr = cct_node;
 
+  // matk that we have task, which call path is not available
+  if (task_data->ptr == NULL) {
+    task_data->ptr = cct_node_invalid;
+  }
+
   td->overhead --;
+
 
 }
 

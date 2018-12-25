@@ -40,6 +40,7 @@
 #include <hpcrun/cct/cct.h>
 #include <hpcrun/sample_event.h>
 #include <printf.h>
+#include <unresolved.h>
 
 
 /******************************************************************************
@@ -132,6 +133,7 @@ ompt_parallel_begin_internal(
   }
 
   if(ompt_eager_context){
+     // FIXME vi3: should this point to the parent of the region, see task.c
      region_data->call_path =
      ompt_parallel_begin_context(region_id, ++levels_to_skip,
                                  invoker == ompt_invoker_program);
@@ -149,10 +151,27 @@ ompt_parallel_end_internal(
     ompt_invoker_t invoker
 )
 {
+
+  // vi3: We insert unresolved cct for each region, which means that even master
+  // needs to resolve region call path. Master can do it immediately after providing region callpath
+
+  // FIXME vi3: check if we have to delete unresolved cct
+  // for the region is sample are not taken by the master thread
+  // and all workers
+
+
+  // vi3: Note - Implicit tasks end happens before here
+  // That means that the current region has been remove from the stack
+  // top_index points to its parent
+  // that's why we used top_index+1 to get the region that's ending
+
   // printf("Passed to internal. \n");
   hpcrun_safe_enter();
 
   ompt_region_data_t* region_data = (ompt_region_data_t*)parallel_data->ptr;
+
+  // check if we took sample in this region
+  region_stack_el_t *top_el = &region_stack[top_index+1];
 
   if(!ompt_eager_context){
     // check if there is any thread registered that should be notified that region call path is available
@@ -176,7 +195,59 @@ ompt_parallel_end_internal(
 
       // notify next thread
       wfq_enqueue(OMPT_BASE_T_STAR(to_notify), to_notify->threads_queue);
+
+      // FIXME vi3: check if this is thread safe
+      if (top_el->took_sample) {
+        resolve_one_region(top_el->notification, region_data);
+      }
     }else{
+      // FIXME vi3: check if this is thread safe
+      if (top_el->took_sample) {
+
+        cct_node_t *tmp_cct = ompt_region_context_end_region_not_eager(region_data->region_id, ompt_context_end,
+                                                   ++levels_to_skip, invoker == ompt_invoker_program);
+
+        // FIXME vi3: this should be resolved better, but because of ompt-defer.c:1258
+        // I made this hack. I don't have mechanism to get the right call path segment
+        // of the current region. That's why we found the full call path, and clip the
+        // segment of interest
+        // I am not sure that this works in every case.
+        if (!region_data->call_path) {
+          cct_node_t *bottom_prefix = tmp_cct;
+          cct_node_t *top_prefix = NULL;
+          if (top_index == -1) {
+            top_prefix = top_cct(tmp_cct);
+          } else {
+            cct_node_t *current = tmp_cct;
+            cct_node_t *parent = hpcrun_cct_parent(current);
+            cct_addr_t *parent_addr;
+            top_el = &region_stack[top_index];
+            cct_addr_t *top_addr = hpcrun_cct_addr(top_el->notification->unresolved_cct);
+
+            while (current && parent) {
+              parent_addr = hpcrun_cct_addr(parent);
+              if (parent_addr->ip_norm.lm_id == top_addr->ip_norm.lm_id && parent_addr->ip_norm.lm_ip == top_addr->ip_norm.lm_ip) {
+                break;
+              }
+              current = parent;
+              parent = hpcrun_cct_parent(parent);
+            }
+            top_prefix = current;
+          }
+
+          region_data->call_path = copy_prefix(top_prefix, bottom_prefix);
+
+          printf("RID: %lx, LM_ID: %d, LM_IP: %lx\n", region_data->region_id,
+                 hpcrun_cct_addr(region_data->call_path)->ip_norm.lm_id,
+                 hpcrun_cct_addr(region_data->call_path)->ip_norm.lm_ip);
+
+        }
+        top_el = &region_stack[top_index+1];
+
+        resolve_one_region(top_el->notification, region_data);
+      }
+
+
       // if none, you can reuse region
       // this thread is region creator, so it could add to private region's list
       // FIXME vi3: check if you are right
@@ -186,23 +257,21 @@ ompt_parallel_end_internal(
     }
   }
 
-  // FIXME: vi3: what is this?
+  // FIXME: vi3 can we remove this
   // FIXME: not using team_master but use another routine to
   // resolve team_master's tbd. Only with tasking, a team_master
   // need to resolve itself
-  if (ompt_task_full_context) {
-    TD_GET(team_master) = 1;
-    thread_data_t* td = hpcrun_get_thread_data();
-    resolve_cntxt_fini(td);
-    TD_GET(team_master) = 0;
-  }
-
-
-//  // FIXME: vi3 check if this is fine, this should make more sense in implicit task end
-//  ompt_notification_t* top = top_region_stack();
-//  if(top->region_data == region_data){
-//    top_index--;
+//  if (ompt_task_full_context) {
+//    TD_GET(team_master) = 1;
+//    thread_data_t* td = hpcrun_get_thread_data();
+//    resolve_cntxt_fini(td);
+//    TD_GET(team_master) = 0;
 //  }
+
+
+//  printf("PARALLEL END: %d\n", TD_GET(master));
+
+
   // FIXME: vi3 do we really need to keep this line
   hpcrun_get_thread_data()->region_id = 0;
   hpcrun_safe_exit();
@@ -319,19 +388,19 @@ ompt_implicit_task_internal_begin(
 
   task_data->ptr = prefix;
 
-  if (!ompt_eager_context) {
-    // FIXME vi3: check if this is fine
-    // add current region
-    add_region_and_ancestors_to_stack(region_data, thread_num==0);
-    //printf("______%p->%p=%p\n", hpcrun_ompt_get_parent_region_data(), hpcrun_ompt_get_current_region_data(), region_data);
+  // FIXME vi3: check if this is fine
+  add_region_and_ancestors_to_stack(region_data, thread_num==0);
 
-    // FIXME vi3: move this to add_region_and_ancestors_to_stack
-    // Memoization process vi3:
-    if(thread_num != 0){
-      not_master_region = region_data;
-    }
+  // FIXME vi3: move this to add_region_and_ancestors_to_stack
+  // Memoization process vi3:
+  if(thread_num != 0){
+    not_master_region = region_data;
   }
 
+  // mark that we have task data, but call path is not available
+  if (task_data->ptr == NULL) {
+    task_data->ptr = cct_node_invalid;
+  }
 
 }
 
@@ -346,15 +415,8 @@ ompt_implicit_task_internal_end(
   unsigned int thread_num
 )
 {
-
-  if (!ompt_eager_context) {
-    // the only thing we could do (certainly) here is to pop element from the stack
-    // pop element from the stack
-    pop_region_stack();
-  }
-
-  //printf("---------%p->%p\n", hpcrun_ompt_get_parent_region_data(), hpcrun_ompt_get_current_region_data());
-
+  pop_region_stack();
+//  printf("IMPLICIT TASK END: master: %d, thread: %p\n", TD_GET(master), &threads_queue);
 }
 
 

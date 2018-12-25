@@ -633,6 +633,10 @@ typedef struct ompt_base_s{
 
 #define ompt_base_nil (ompt_base_t*)0
 #define ompt_base_invalid (ompt_base_t*)~0
+
+// vi3: mark that task exists, but not its call path
+#define cct_node_invalid (cct_node_t*)~0
+
 // ompt_wfq_s
 typedef struct ompt_wfq_s{
   _Atomic(ompt_base_t*)head;

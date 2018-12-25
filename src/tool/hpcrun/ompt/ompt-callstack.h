@@ -27,7 +27,8 @@ cct_node_t *region_root(cct_node_t *_node);
 
 void ompt_record_thread_type(ompt_thread_type_t type);
 
-void
+// FIXME vi3: check if we could do everything without this function
+cct_node_t*
 ompt_region_context_end_region_not_eager(uint64_t region_id,
 										 ompt_context_type_t ctype,
 										 int levels_to_skip,

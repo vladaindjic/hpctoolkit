@@ -214,7 +214,7 @@ ompt_elide_runtime_frame_internal(
   int replay
 )
 {
-
+  int remove_if_on_implicit_barrier = 0;
 
   //return;
   frame_t **bt_outer = &bt->last;
@@ -258,6 +258,17 @@ ompt_elide_runtime_frame_internal(
   switch(check_state()) {
     case omp_state_wait_barrier:
     case omp_state_wait_barrier_implicit:
+      // FIXME vi3: remove this and see what happens in nested.c example
+      // example (always stop unwindig when you are in task,
+      // event if you don't have path of the task):
+      // a
+      //    r0
+      //        r1
+      // If we are in implicit barrier on region 2,
+      // our call path starts with a.fn0, and we stick it under unresolved_cct
+      // which corresponds to r0, that's why we clip the a.fno from call path
+      remove_if_on_implicit_barrier = (!ompt_eager_context) ? 1 : 0;
+      break;
     case omp_state_wait_barrier_explicit:
       break; // FIXME: skip barrier collapsing until the kinks are worked out.
 //    if(!TD_GET(master)){
@@ -398,7 +409,7 @@ ompt_elide_runtime_frame_internal(
 
     if (exit0_flag && omp_task_context) {
       TD_GET(omp_task_context) = omp_task_context;
-      *bt_outer = exit0 - 1;
+      *bt_outer = exit0 - 1 - remove_if_on_implicit_barrier;
       break;
     }
 
@@ -629,7 +640,7 @@ ompt_region_context(uint64_t region_id,
 
 
 // ===========================
-void
+cct_node_t*
 ompt_region_context_end_region_not_eager(uint64_t region_id,
                     ompt_context_type_t ctype,
                     int levels_to_skip,
@@ -647,37 +658,37 @@ ompt_region_context_end_region_not_eager(uint64_t region_id,
   hpcrun_metricVal_t blame_metricVal;
   blame_metricVal.i = 0;
   node = hpcrun_sample_callpath(&uc, 0, blame_metricVal, 0, 33, NULL).sample_node;
-
+//  printf("LM_ID: %d, LM_IP: %lx\n", hpcrun_cct_addr(node)->ip_norm.lm_id, hpcrun_cct_addr(node)->ip_norm.lm_ip);
   TMSG(DEFER_CTXT, "unwind the callstack for region 0x%lx", region_id);
 
-//  if (node && adjust_callsite) {
-//    // extract the load module and offset of the leaf CCT node at the
-//    // end of a call path representing a parallel region
-//    cct_addr_t *n = hpcrun_cct_addr(node);
-//    cct_node_t *n_parent = hpcrun_cct_parent(node);
-//    uint16_t lm_id = n->ip_norm.lm_id;
-//    uintptr_t lm_ip = n->ip_norm.lm_ip;
-//    uintptr_t master_outlined_fn_return_addr;
-//
-//    // adjust the address to point to return address of the call to
-//    // the outlined function in the master
-//    if (ctype == ompt_context_begin) {
-//      void *ip = hpcrun_denormalize_ip(&(n->ip_norm));
-//      uint64_t offset = offset_to_pc_after_next_call(ip);
-//      master_outlined_fn_return_addr = lm_ip + offset;
-//    } else {
-//      uint64_t offset = length_of_call_instruction();
-//      master_outlined_fn_return_addr = lm_ip - offset;
-//    }
-//    // ensure that there is a leaf CCT node with the proper return address
-//    // to use as the context. when using the GNU API for OpenMP, it will
-//    // be a sibling to one returned by sample_callpath.
-//    cct_node_t *sibling = hpcrun_cct_insert_addr
-//            (n_parent, &(ADDR2(lm_id, master_outlined_fn_return_addr)));
-//    node = sibling;
-//  }
+  if (node && adjust_callsite) {
+    // extract the load module and offset of the leaf CCT node at the
+    // end of a call path representing a parallel region
+    cct_addr_t *n = hpcrun_cct_addr(node);
+    cct_node_t *n_parent = hpcrun_cct_parent(node);
+    uint16_t lm_id = n->ip_norm.lm_id;
+    uintptr_t lm_ip = n->ip_norm.lm_ip;
+    uintptr_t master_outlined_fn_return_addr;
 
-//  return node;
+    // adjust the address to point to return address of the call to
+    // the outlined function in the master
+    if (ctype == ompt_context_begin) {
+      void *ip = hpcrun_denormalize_ip(&(n->ip_norm));
+      uint64_t offset = offset_to_pc_after_next_call(ip);
+      master_outlined_fn_return_addr = lm_ip + offset;
+    } else {
+      uint64_t offset = length_of_call_instruction();
+      master_outlined_fn_return_addr = lm_ip - offset;
+    }
+    // ensure that there is a leaf CCT node with the proper return address
+    // to use as the context. when using the GNU API for OpenMP, it will
+    // be a sibling to one returned by sample_callpath.
+    cct_node_t *sibling = hpcrun_cct_insert_addr
+            (n_parent, &(ADDR2(lm_id, master_outlined_fn_return_addr)));
+    node = sibling;
+  }
+
+  return node;
 }
 
 // ===========================
@@ -731,50 +742,91 @@ ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt,
                            cct_node_t *cct_cursor)
 {
 
+  // vi3: assume that always stop unwinding when find the task
   cct_node_t *omp_task_context = TD_GET(omp_task_context);
 
-  // FIXME: should memoize the resulting task context in a thread-local variable
-  //        I think we can just return omp_task_context here. it is already
-  //        relative to one root or another.
-  if (omp_task_context) {
-    cct_node_t *root;
+  if (ompt_eager_context) {
+    if (omp_task_context) {
+      cct_node_t *root;
 #if 1
-    root = region_root(omp_task_context);
+      root = region_root(omp_task_context);
 #else
-    if((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {
-      root = hpcrun_get_thread_epoch()->csdata.unresolved_root;
-    } else {
-      root = hpcrun_get_thread_epoch()->csdata.tree_root;
-    }
+        if((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {
+          root = hpcrun_get_thread_epoch()->csdata.unresolved_root;
+        } else {
+          root = hpcrun_get_thread_epoch()->csdata.tree_root;
+        }
 #endif
-    // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
-    if(ompt_eager_context || TD_GET(master))
       return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
-  }
-
-  // FIXME: vi3 consider this when tracing, for now everything works fine
-
-  // if I am not the master thread, full context may not be immediately available.
-  // if that is the case, then it will later become available in a deferred fashion.
-  if (!TD_GET(master)) { // sub-master thread in nested regions
-
-//    uint64_t region_id = TD_GET(region_id);
-//    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
-//    ompt_region_data_t* region_data = (ompt_region_data_t*)current_parallel_data->ptr;
-    // FIXME: check whether bottom frame elided will be right for IBM runtime
-    //        without help of get_idle_frame
-
-    if(not_master_region && bt->bottom_frame_elided){
-      // it should be enough just to set cursor to unresolved node
-      // which corresponds to not_master_region
-
-      // everything is ok with cursos
-      cct_cursor = cct_not_master_region;
-
     }
+    return cct_cursor;
+  } else {
+    // FIXME vi3: I we take a sample inside task, but not inside the region
+    // thenwe should probably register thread to all existing regions here
+    if (omp_task_context){
+      region_stack_el_t *top = top_region_stack();
+      cct_cursor = top->notification->unresolved_cct;
+#if 0
+      if (top_index >= 1)
+        printf("CURRENT_REGION: %lx, REGISTER: %d, PARENT_REGION: %lx, REGISTER: %d\n",
+                region_stack[top_index].notification->region_data->region_id, region_stack[top_index].took_sample,
+                region_stack[top_index-1].notification->region_data->region_id, region_stack[top_index-1].took_sample
+        );
+#endif
+    }
+    return cct_cursor;
   }
+
 
   return cct_cursor;
+
+
+  // vi3: OLD implementation
+
+//  cct_node_t *omp_task_context = TD_GET(omp_task_context);
+//
+//  // FIXME: should memoize the resulting task context in a thread-local variable
+//  //        I think we can just return omp_task_context here. it is already
+//  //        relative to one root or another.
+//  if (omp_task_context && omp_task_context != cct_node_invalid) {
+//    cct_node_t *root;
+//#if 1
+//    root = region_root(omp_task_context);
+//#else
+//    if((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {
+//      root = hpcrun_get_thread_epoch()->csdata.unresolved_root;
+//    } else {
+//      root = hpcrun_get_thread_epoch()->csdata.tree_root;
+//    }
+//#endif
+//    // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
+//    if(ompt_eager_context || TD_GET(master))
+//      return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
+//  }
+//
+//  // FIXME: vi3 consider this when tracing, for now everything works fine
+//
+//  // if I am not the master thread, full context may not be immediately available.
+//  // if that is the case, then it will later become available in a deferred fashion.
+//  if (!TD_GET(master)) { // sub-master thread in nested regions
+//
+////    uint64_t region_id = TD_GET(region_id);
+////    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
+////    ompt_region_data_t* region_data = (ompt_region_data_t*)current_parallel_data->ptr;
+//    // FIXME: check whether bottom frame elided will be right for IBM runtime
+//    //        without help of get_idle_frame
+//
+//    if(not_master_region && bt->bottom_frame_elided){
+//      // it should be enough just to set cursor to unresolved node
+//      // which corresponds to not_master_region
+//
+//      // everything is ok with cursos
+//      cct_cursor = cct_not_master_region;
+//
+//    }
+//  }
+//
+//  return cct_cursor;
 }
 
 void
