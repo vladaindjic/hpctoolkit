@@ -82,6 +82,8 @@
 #include <lib/prof-lean/hpcrun-fmt.h>
 #include <lib/prof-lean/hpcrun-fmt.h>
 #include <hpcrun/hpcrun_return_codes.h>
+#include <unresolved.h>
+#include <thread_data.h>
 
 #include "cct.h"
 #include "cct_addr.h"
@@ -407,6 +409,20 @@ hpcrun_cct_insert_addr(cct_node_t* node, cct_addr_t* frm)
 {
   if ( ! node)
     return NULL;
+
+//  if(node->addr.ip_norm.lm_id == 65436 && frm->ip_norm.lm_id == 4){
+//    printf("NODE_ID: %d NODE_IP: %lx FRM_ID: %d FRM_IP: %lx\n",
+//           node->addr.ip_norm.lm_id, node->addr.ip_norm.lm_ip,
+//           frm->ip_norm.lm_id, frm->ip_norm.lm_ip
+//    );
+//  }
+
+//  if(frm->ip_norm.lm_id == 5 && !TD_GET(master)){
+//    printf("NODE_ID: %d NODE_IP: %lx FRM_ID: %d FRM_IP: %lx\n",
+//           node->addr.ip_norm.lm_id, node->addr.ip_norm.lm_ip,
+//           frm->ip_norm.lm_id, frm->ip_norm.lm_ip
+//    );
+//  }
 
   cct_node_t* found    = splay(node->children, frm);
     //

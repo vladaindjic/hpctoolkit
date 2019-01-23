@@ -111,7 +111,7 @@ __thread int unresolved_cnt = 0;
 __thread ompt_region_data_t *ending_region = NULL;
 __thread ompt_frame_t *top_ancestor_frame = NULL;
 
-
+__thread int how_is_eliding_finished = 0;
 
 
 region_stack_el_t*

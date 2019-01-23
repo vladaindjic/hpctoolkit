@@ -422,7 +422,7 @@ help_hpcrun_backtrace2cct(cct_bundle_t* bundle, ucontext_t* context,
     hpcrun_cct_record_backtrace_w_metric(bundle, bt.partial_unwind, &bt, 
 					 tramp_found,
 					 metricId, metricIncr, data);
-
+#if 0
   if (!ompt_eager_context) {
     // FIXME vi3: a big hack
     if (isSync == 33) {
@@ -431,6 +431,7 @@ help_hpcrun_backtrace2cct(cct_bundle_t* bundle, ucontext_t* context,
       provide_callpath_for_regions_if_needed(&bt, n);
     }
   }
+#endif
 
   // *trace_pc = bt.trace_pc;  // JMC
 

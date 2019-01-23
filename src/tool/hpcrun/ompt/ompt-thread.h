@@ -112,4 +112,6 @@ extern __thread ompt_frame_t *top_ancestor_frame;
 
 // number of unresolved regions
 extern __thread int unresolved_cnt;
+
+extern __thread int how_is_eliding_finished;
 #endif

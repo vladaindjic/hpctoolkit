@@ -215,6 +215,7 @@ ompt_elide_runtime_frame_internal(
 )
 {
 
+  how_is_eliding_finished = 0;
 
   //return;
   frame_t **bt_outer = &bt->last;
@@ -271,6 +272,7 @@ ompt_elide_runtime_frame_internal(
       // FIXME vi3: I think we should delete task context when thread is idle-ing
       TD_GET(omp_task_context) = 0;
       collapse_callstack(bt, &ompt_placeholders.ompt_idle);
+      how_is_eliding_finished = -1;
       goto return_label;
 //    }
     default:
@@ -529,6 +531,665 @@ ompt_elide_runtime_frame(
 }
 
 
+#define COLLAPSE_BARRIER_WAIT 0
+
+static void
+ompt_elide_runtime_frame_inside_region(
+        backtrace_info_t *bt,
+        uint64_t region_id,
+        int isSync
+)
+{
+
+    how_is_eliding_finished = 0;
+
+    //return;
+    frame_t **bt_outer = &bt->last;
+    frame_t **bt_inner = &bt->begin;
+
+    frame_t *bt_outer_at_entry = *bt_outer;
+
+    //printf("Eliding\n");
+    // eliding only if the thread is an OpenMP initial or worker thread
+
+    switch(ompt_thread_type_get()) {
+        case ompt_thread_initial:
+            break;
+        case ompt_thread_worker:
+            break;
+//    if (hpcrun_ompt_get_parallel_info_id(0) != ompt_parallel_id_none)
+//      break;
+//
+//    if(!TD_GET(master)){
+//      thread_data_t *td = hpcrun_get_thread_data();
+//      td->core_profile_trace_data.epoch->csdata.top = main_top_root;
+//      td->core_profile_trace_data.epoch->csdata.thread_root = main_top_root;
+//      bt->fence = FENCE_MAIN;
+//
+//
+//      hpcrun_cct_insert_node(main_top_root, td->core_profile_trace_data.epoch->csdata.top);
+//      printf("\n\n\nThis is parent of top_root   : %p\n", td->core_profile_trace_data.epoch->csdata.top->parent);
+//      printf("This is parent of thread_root: %p\n", td->core_profile_trace_data.epoch->csdata.thread_root->parent);
+//
+//
+//    }
+//    collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait);
+//    goto return_label;
+        case ompt_thread_other:
+        case ompt_thread_unknown:
+        default:
+            goto return_label;
+    }
+
+    // collapse callstack if a thread is idle or waiting in a barrier
+    switch(check_state()) {
+        case omp_state_wait_barrier:
+        case omp_state_wait_barrier_implicit:
+        case omp_state_wait_barrier_explicit:
+#if COLLAPSE_BARRIER_WAIT == 1
+            TD_GET(omp_task_context) = 0;
+            collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait);
+            how_is_eliding_finished = -2;
+            goto return_label;
+#else
+            how_is_eliding_finished = -2;
+            break; // FIXME: skip barrier collapsing until the kinks are worked out.
+#endif
+
+//    if(!TD_GET(master)){
+//
+//      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait);
+//      goto return_label;
+//    }
+
+        case omp_state_idle:
+//    if (!TD_GET(master)) {
+            // FIXME vi3: I think we should delete task context when thread is idle-ing
+            TD_GET(omp_task_context) = 0;
+            collapse_callstack(bt, &ompt_placeholders.ompt_idle);
+            how_is_eliding_finished = -1;
+            goto return_label;
+//    }
+        default:
+            break;
+    }
+
+    int i = 0;
+    frame_t *it = NULL;
+
+    ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(i);
+
+
+
+    TD_GET(omp_task_context) = 0;
+
+    elide_debug_dump("ORIGINAL", *bt_inner, *bt_outer, region_id);
+    elide_frame_dump();
+
+    //---------------------------------------------------------------
+    // handle all of the corner cases that can occur at the top of
+    // the stack first
+    //---------------------------------------------------------------
+
+    if (!frame0) {
+        // corner case: the innermost task (if any) has no frame info.
+        // no action necessary. just return.
+        goto clip_base_frames;
+    }
+
+//    if (frame0->reenter_runtime_frame == 0 && frame0->exit_runtime_frame == 0) {
+//      if (top_index >= 0) {
+//        frame0 = region_stack[top_index].parent_frame;
+//      }
+//    }
+
+
+    while ((frame0->reenter_runtime_frame == 0) &&
+           (frame0->exit_runtime_frame == 0)) {
+        // FIXME vi3: force unwinding
+        //how_is_eliding_finished = (how_is_eliding_finished == 0) ? 33 : how_is_eliding_finished;
+        if (how_is_eliding_finished == -2 ) {
+            how_is_eliding_finished = 33;
+        }
+
+
+        // corner case: the top frame has been set up,
+        // but not filled in. ignore this frame.
+        frame0 = hpcrun_ompt_get_task_frame(++i);
+
+        if (!frame0) {
+            // corner case: the innermost task (if any) has no frame info.
+            goto clip_base_frames;
+        }
+    }
+
+    if (frame0->exit_runtime_frame &&
+        (((uint64_t) frame0->exit_runtime_frame) <
+         //  ((uint64_t) (*bt_inner)->cursor.bp))) {
+         ((uint64_t) (*bt_inner)->cursor.sp))) {
+        // corner case: the top frame has been set up, exit frame has been filled in;
+        // however, exit_runtime_frame points beyond the top of stack. the final call
+        // to user code hasn't been made yet. ignore this frame.
+        frame0 = hpcrun_ompt_get_task_frame(++i);
+    }
+
+    if (!frame0) {
+        // corner case: the innermost task (if any) has no frame info.
+        goto clip_base_frames;
+    }
+
+    if (frame0->reenter_runtime_frame) {
+        // the sample was received inside the runtime;
+        // elide frames from top of stack down to runtime entry
+        int found = 0;
+        for (it = *bt_inner; it <= *bt_outer; it++) {
+            // FIXME: different from ompt branch which used >
+            if ((uint64_t)(it->cursor.sp) >= (uint64_t)frame0->reenter_runtime_frame) {
+//      if ((uint64_t)(it->cursor.bp) >= (uint64_t)frame0->reenter_runtime_frame) {
+                if (isSync) {
+                    // for synchronous samples, elide runtime frames at top of stack
+                    *bt_inner = it;
+                }
+                found = 1;
+                break;
+            }
+        }
+
+        if (found == 0) {
+            // reenter_runtime_frame not found on stack. all frames are runtime frames
+            goto clip_base_frames;
+        }
+        // frames at top of stack elided. continue with the rest
+    }
+
+
+    // FIXME vi3: trouble with master thread when defering
+    // general case: elide frames between frame1->enter and frame0->exit
+    while (true) {
+        frame_t *exit0 = NULL, *reenter1 = NULL;
+        ompt_frame_t *frame1;
+
+        frame0 = hpcrun_ompt_get_task_frame(i);
+
+        if (!frame0) break;
+
+        ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
+        cct_node_t *omp_task_context = NULL;
+        if(task_data)
+            omp_task_context = task_data->ptr;
+
+        void *low_sp = (*bt_inner)->cursor.sp;
+        void *high_sp = (*bt_outer)->cursor.sp;
+
+//    void *low_sp = (*bt_inner)->cursor.bp;
+//    void *high_sp = (*bt_outer)->cursor.bp;
+
+
+        // if a frame marker is inside the call stack, set its flag to true
+        bool exit0_flag =
+                interval_contains(low_sp, high_sp, frame0->exit_runtime_frame);
+
+        /* start from the top of the stack (innermost frame).
+           find the matching frame in the callstack for each of the markers in the
+           stack. look for them in the order in which they should occur.
+
+           optimization note: this always starts at the top of the stack. this can
+           lead to quadratic cost. could pick up below where you left off cutting in
+           previous iterations.
+        */
+        it = *bt_inner;
+        if(exit0_flag) {
+            for (; it <= *bt_outer; it++) {
+                if((uint64_t)(it->cursor.sp) > (uint64_t)(frame0->exit_runtime_frame)) {
+//        if((uint64_t)(it->cursor.bp) > (uint64_t)(frame0->exit_runtime_frame)) {
+                    exit0 = it - 1;
+                    break;
+                }
+            }
+        }
+
+        if (exit0_flag && task_data && (how_is_eliding_finished == 0 || how_is_eliding_finished == -2)) {
+            //TD_GET(omp_task_context) = omp_task_context;
+            *bt_outer = exit0 - 1;
+            how_is_eliding_finished = 1;
+            break;
+        }
+
+        frame1 = hpcrun_ompt_get_task_frame(++i);
+        if (!frame1) break;
+
+        bool reenter1_flag =
+                interval_contains(low_sp, high_sp, frame1->reenter_runtime_frame);
+
+#if 0
+        ompt_frame_t *help_frame = region_stack[top_index-i+1].parent_frame;
+        if (!ompt_eager_context && !reenter1_flag && help_frame) {
+            frame1 = help_frame;
+            reenter1_flag = interval_contains(low_sp, high_sp, frame1->reenter_runtime_frame);
+            // printf("THIS ONLY HAPPENS IN MASTER: %d\n", TD_GET(master));
+        }
+#endif
+
+        if(reenter1_flag) {
+            for (; it <= *bt_outer; it++) {
+                if((uint64_t)(it->cursor.sp) > (uint64_t)(frame1->reenter_runtime_frame)) {
+                    // if((uint64_t)(it->cursor.bp) > (uint64_t)(frame0->exit_runtime_frame)) {
+                    reenter1 = it - 1;
+                    break;
+                }
+            }
+        }
+
+
+
+        // FIXME vi3: This makes trouble with master thread when defering
+        if (exit0 && reenter1) {
+
+
+
+            // FIXME: IBM and INTEL need to agree
+            // laksono 2014.07.08: hack removing one more frame to avoid redundancy with the parent
+            // It seems the last frame of the master is the same as the first frame of the workers thread
+            // By eliminating the topmost frame we should avoid the appearance of the same frame twice
+            //  in the callpath
+
+            // FIXME vi3: find better way to solve this  "This makes trouble with master thread when defering"
+//      if(TD_GET(master)){
+//        return;
+//      }
+//      if(omp_get_thread_num() == 0)
+//        return;
+
+            //------------------------------------
+            // The prefvous version DON'T DELETE
+            memmove(*bt_inner+(reenter1-exit0+1), *bt_inner,
+                    (exit0 - *bt_inner)*sizeof(frame_t));
+
+            *bt_inner = *bt_inner + (reenter1 - exit0 + 1);
+
+            exit0 = reenter1 = NULL;
+            // --------------------------------
+
+        } else if (exit0 && !reenter1) {
+            // corner case: reenter1 is in the team master's stack, not mine. eliminate all
+            // frames below the exit frame.
+            *bt_outer = exit0 - 1;
+            break;
+        }
+    }
+
+    if (*bt_outer != bt_outer_at_entry) {
+        bt->bottom_frame_elided = true;
+        bt->partial_unwind = false;
+    }
+
+    bt->trace_pc = (*bt_inner)->cursor.pc_unnorm;
+
+    elide_debug_dump("ELIDED", *bt_inner, *bt_outer, region_id);
+    goto return_label;
+
+    clip_base_frames:
+    {
+        int master = TD_GET(master);
+        if (!master) {
+            how_is_eliding_finished = -1;
+            set_frame(*bt_outer, &ompt_placeholders.ompt_idle);
+            *bt_inner = *bt_outer;
+            bt->bottom_frame_elided = false;
+            bt->partial_unwind = false;
+            bt->trace_pc = (*bt_inner)->cursor.pc_unnorm;
+            goto return_label;
+        }
+
+        /* runtime frames with nothing else; it is harmless to reveal them all */
+        uint64_t idle_frame = (uint64_t) hpcrun_ompt_get_idle_frame();
+
+        if (idle_frame) {
+            /* clip below the idle frame */
+            for (it = *bt_inner; it <= *bt_outer; it++) {
+                if ((uint64_t)(it->cursor.sp) >= idle_frame) {
+                    // if ((uint64_t)(it->cursor.bp) >= idle_frame) {
+                    *bt_outer = it - 2;
+                    bt->bottom_frame_elided = true;
+                    bt->partial_unwind = true;
+                    break;
+                }
+            }
+        } else {
+            /* no idle frame. show the whole stack. */
+        }
+
+        elide_debug_dump("ELIDED INNERMOST FRAMES", *bt_inner, *bt_outer, region_id);
+        goto return_label;
+    }
+
+
+    return_label:
+    {
+        return;
+    };
+
+
+}
+
+
+static void
+ompt_elide_runtime_frame_end_region(
+        backtrace_info_t *bt,
+        uint64_t region_id,
+        int isSync
+)
+{
+
+    how_is_eliding_finished = 0;
+
+    //return;
+    frame_t **bt_outer = &bt->last;
+    frame_t **bt_inner = &bt->begin;
+
+    frame_t *bt_outer_at_entry = *bt_outer;
+
+    //printf("Eliding\n");
+    // eliding only if the thread is an OpenMP initial or worker thread
+
+    switch(ompt_thread_type_get()) {
+        case ompt_thread_initial:
+            break;
+        case ompt_thread_worker:
+            break;
+//    if (hpcrun_ompt_get_parallel_info_id(0) != ompt_parallel_id_none)
+//      break;
+//
+//    if(!TD_GET(master)){
+//      thread_data_t *td = hpcrun_get_thread_data();
+//      td->core_profile_trace_data.epoch->csdata.top = main_top_root;
+//      td->core_profile_trace_data.epoch->csdata.thread_root = main_top_root;
+//      bt->fence = FENCE_MAIN;
+//
+//
+//      hpcrun_cct_insert_node(main_top_root, td->core_profile_trace_data.epoch->csdata.top);
+//      printf("\n\n\nThis is parent of top_root   : %p\n", td->core_profile_trace_data.epoch->csdata.top->parent);
+//      printf("This is parent of thread_root: %p\n", td->core_profile_trace_data.epoch->csdata.thread_root->parent);
+//
+//
+//    }
+//    collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait);
+//    goto return_label;
+        case ompt_thread_other:
+        case ompt_thread_unknown:
+        default:
+            goto return_label;
+    }
+
+    // collapse callstack if a thread is idle or waiting in a barrier
+    switch(check_state()) {
+        case omp_state_wait_barrier:
+        case omp_state_wait_barrier_implicit:
+        case omp_state_wait_barrier_explicit:
+            break; // FIXME: skip barrier collapsing until the kinks are worked out.
+//    if(!TD_GET(master)){
+//
+//      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait);
+//      goto return_label;
+//    }
+
+        case omp_state_idle:
+//    if (!TD_GET(master)) {
+            // FIXME vi3: I think we should delete task context when thread is idle-ing
+            TD_GET(omp_task_context) = 0;
+            collapse_callstack(bt, &ompt_placeholders.ompt_idle);
+            how_is_eliding_finished = -1;
+            goto return_label;
+//    }
+        default:
+            break;
+    }
+
+    int i = 0;
+    frame_t *it = NULL;
+
+    ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(i);
+
+    TD_GET(omp_task_context) = 0;
+
+    elide_debug_dump("ORIGINAL", *bt_inner, *bt_outer, region_id);
+    elide_frame_dump();
+
+    //---------------------------------------------------------------
+    // handle all of the corner cases that can occur at the top of
+    // the stack first
+    //---------------------------------------------------------------
+
+    if (!frame0) {
+        // corner case: the innermost task (if any) has no frame info.
+        // no action necessary. just return.
+        goto clip_base_frames;
+    }
+
+
+
+    while ((frame0->reenter_runtime_frame == 0) &&
+           (frame0->exit_runtime_frame == 0)) {
+        // corner case: the top frame has been set up,
+        // but not filled in. ignore this frame.
+        frame0 = hpcrun_ompt_get_task_frame(++i);
+
+        if (!frame0) {
+            // corner case: the innermost task (if any) has no frame info.
+            goto clip_base_frames;
+        }
+    }
+
+    if (frame0->exit_runtime_frame &&
+        (((uint64_t) frame0->exit_runtime_frame) <
+         //  ((uint64_t) (*bt_inner)->cursor.bp))) {
+         ((uint64_t) (*bt_inner)->cursor.sp))) {
+        // corner case: the top frame has been set up, exit frame has been filled in;
+        // however, exit_runtime_frame points beyond the top of stack. the final call
+        // to user code hasn't been made yet. ignore this frame.
+        frame0 = hpcrun_ompt_get_task_frame(++i);
+    }
+
+    if (!frame0) {
+        // corner case: the innermost task (if any) has no frame info.
+        goto clip_base_frames;
+    }
+
+    if (frame0->reenter_runtime_frame) {
+        // the sample was received inside the runtime;
+        // elide frames from top of stack down to runtime entry
+        int found = 0;
+        for (it = *bt_inner; it <= *bt_outer; it++) {
+            // FIXME: different from ompt branch which used >
+            if ((uint64_t)(it->cursor.sp) >= (uint64_t)frame0->reenter_runtime_frame) {
+//      if ((uint64_t)(it->cursor.bp) >= (uint64_t)frame0->reenter_runtime_frame) {
+                if (isSync) {
+                    // for synchronous samples, elide runtime frames at top of stack
+                    *bt_inner = it;
+                }
+                found = 1;
+                break;
+            }
+        }
+
+        if (found == 0) {
+            // reenter_runtime_frame not found on stack. all frames are runtime frames
+            goto clip_base_frames;
+        }
+        // frames at top of stack elided. continue with the rest
+    }
+
+    // FIXME vi3: trouble with master thread when defering
+    // general case: elide frames between frame1->enter and frame0->exit
+    while (true) {
+        frame_t *exit0 = NULL, *reenter1 = NULL;
+        ompt_frame_t *frame1;
+
+        frame0 = hpcrun_ompt_get_task_frame(i);
+
+        if (!frame0) break;
+
+        ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
+        cct_node_t *omp_task_context = NULL;
+        if(task_data)
+            omp_task_context = task_data->ptr;
+
+        void *low_sp = (*bt_inner)->cursor.sp;
+        void *high_sp = (*bt_outer)->cursor.sp;
+
+//    void *low_sp = (*bt_inner)->cursor.bp;
+//    void *high_sp = (*bt_outer)->cursor.bp;
+
+
+        // if a frame marker is inside the call stack, set its flag to true
+        bool exit0_flag =
+                interval_contains(low_sp, high_sp, frame0->exit_runtime_frame);
+
+        /* start from the top of the stack (innermost frame).
+           find the matching frame in the callstack for each of the markers in the
+           stack. look for them in the order in which they should occur.
+
+           optimization note: this always starts at the top of the stack. this can
+           lead to quadratic cost. could pick up below where you left off cutting in
+           previous iterations.
+        */
+        it = *bt_inner;
+        if(exit0_flag) {
+            for (; it <= *bt_outer; it++) {
+                if((uint64_t)(it->cursor.sp) > (uint64_t)(frame0->exit_runtime_frame)) {
+//        if((uint64_t)(it->cursor.bp) > (uint64_t)(frame0->exit_runtime_frame)) {
+                    exit0 = it - 1;
+                    break;
+                }
+            }
+        }
+
+        if (exit0_flag && omp_task_context) {
+            TD_GET(omp_task_context) = omp_task_context;
+            *bt_outer = exit0 - 1;
+            break;
+        }
+
+        frame1 = hpcrun_ompt_get_task_frame(++i);
+        if (!frame1) break;
+
+        bool reenter1_flag =
+                interval_contains(low_sp, high_sp, frame1->reenter_runtime_frame);
+
+#if 0
+        ompt_frame_t *help_frame = region_stack[top_index-i+1].parent_frame;
+        if (!ompt_eager_context && !reenter1_flag && help_frame) {
+            frame1 = help_frame;
+            reenter1_flag = interval_contains(low_sp, high_sp, frame1->reenter_runtime_frame);
+            // printf("THIS ONLY HAPPENS IN MASTER: %d\n", TD_GET(master));
+        }
+#endif
+
+        if(reenter1_flag) {
+            for (; it <= *bt_outer; it++) {
+                if((uint64_t)(it->cursor.sp) > (uint64_t)(frame1->reenter_runtime_frame)) {
+                    // if((uint64_t)(it->cursor.bp) > (uint64_t)(frame0->exit_runtime_frame)) {
+                    reenter1 = it - 1;
+                    break;
+                }
+            }
+        }
+
+
+
+        // FIXME vi3: This makes trouble with master thread when defering
+        if (exit0 && reenter1) {
+
+
+
+            // FIXME: IBM and INTEL need to agree
+            // laksono 2014.07.08: hack removing one more frame to avoid redundancy with the parent
+            // It seems the last frame of the master is the same as the first frame of the workers thread
+            // By eliminating the topmost frame we should avoid the appearance of the same frame twice
+            //  in the callpath
+
+            // FIXME vi3: find better way to solve this  "This makes trouble with master thread when defering"
+//      if(TD_GET(master)){
+//        return;
+//      }
+//      if(omp_get_thread_num() == 0)
+//        return;
+
+            //------------------------------------
+            // The prefvous version DON'T DELETE
+            memmove(*bt_inner+(reenter1-exit0+1), *bt_inner,
+                    (exit0 - *bt_inner)*sizeof(frame_t));
+
+            *bt_inner = *bt_inner + (reenter1 - exit0 + 1);
+
+//            exit0 = reenter1 = NULL;
+//            // --------------------------------
+
+            // FIXME vi3: offset 1 is added here, this may not be right in all cases
+            //*bt_inner = exit0 - 1;
+            *bt_outer = reenter1;
+            break;
+        } else if (exit0 && !reenter1) {
+            // corner case: reenter1 is in the team master's stack, not mine. eliminate all
+            // frames below the exit frame.
+            *bt_outer = exit0 - 1;
+            break;
+        }
+    }
+
+    if (*bt_outer != bt_outer_at_entry) {
+        bt->bottom_frame_elided = true;
+        bt->partial_unwind = false;
+    }
+
+    bt->trace_pc = (*bt_inner)->cursor.pc_unnorm;
+
+    elide_debug_dump("ELIDED", *bt_inner, *bt_outer, region_id);
+    goto return_label;
+
+    clip_base_frames:
+    {
+        int master = TD_GET(master);
+        if (!master) {
+            set_frame(*bt_outer, &ompt_placeholders.ompt_idle);
+            *bt_inner = *bt_outer;
+            bt->bottom_frame_elided = false;
+            bt->partial_unwind = false;
+            bt->trace_pc = (*bt_inner)->cursor.pc_unnorm;
+            goto return_label;
+        }
+
+        /* runtime frames with nothing else; it is harmless to reveal them all */
+        uint64_t idle_frame = (uint64_t) hpcrun_ompt_get_idle_frame();
+
+        if (idle_frame) {
+            /* clip below the idle frame */
+            for (it = *bt_inner; it <= *bt_outer; it++) {
+                if ((uint64_t)(it->cursor.sp) >= idle_frame) {
+                    // if ((uint64_t)(it->cursor.bp) >= idle_frame) {
+                    *bt_outer = it - 2;
+                    bt->bottom_frame_elided = true;
+                    bt->partial_unwind = true;
+                    break;
+                }
+            }
+        } else {
+            /* no idle frame. show the whole stack. */
+        }
+
+        elide_debug_dump("ELIDED INNERMOST FRAMES", *bt_inner, *bt_outer, region_id);
+        goto return_label;
+    }
+
+
+    return_label:
+    {
+        return;
+    };
+
+
+}
+
 static cct_node_t *
 memoized_context_get(thread_data_t* td, uint64_t region_id)
 {
@@ -729,7 +1390,14 @@ ompt_backtrace_finalize(
   }
   uint64_t region_id = TD_GET(region_id);
 
-  ompt_elide_runtime_frame(bt, region_id, isSync);
+  //ompt_elide_runtime_frame(bt, region_id, isSync);
+  //ompt_elide_runtime_frame_inside_region(bt, region_id, isSync);
+
+  if (ending_region) {
+    ompt_elide_runtime_frame_end_region(bt, region_id, isSync);
+  } else {
+    ompt_elide_runtime_frame_inside_region(bt, region_id, isSync);
+  }
 }
 
 
@@ -739,10 +1407,23 @@ ompt_backtrace_finalize(
 //******************************************************************************
 
 cct_node_t *
+top_or_cct_cursor(cct_node_t *cct_cursor)
+{
+  if (top_index >= 0) {
+    return region_stack[top_index].notification->unresolved_cct;
+  }
+  return cct_cursor;
+}
+
+
+
+#define STICK_BARRIER_WITH_INNERMOST_REGION 0
+
+cct_node_t *
 ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt, 
                            cct_node_t *cct_cursor)
 {
-
+#if 0
   cct_node_t *omp_task_context = TD_GET(omp_task_context);
 
   // FIXME: should memoize the resulting task context in a thread-local variable
@@ -787,6 +1468,29 @@ ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt,
   }
 
   return cct_cursor;
+#endif
+
+  if(ending_region) {
+    return cct_cursor;
+  }
+
+#if STICK_BARRIER_WITH_INNERMOST_REGION == 1
+  if (how_is_eliding_finished == 1  || how_is_eliding_finished == -2) {
+#else
+  if (how_is_eliding_finished == 1) {
+#endif
+    return top_or_cct_cursor(cct_cursor);
+
+#if STICK_BARRIER_WITH_INNERMOST_REGION == 1
+  } else if (how_is_eliding_finished == -1) {
+#else
+  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -2) {
+#endif
+      return cct_cursor;
+  } else {
+     return TD_GET(master) ? cct_cursor : cct_not_master_region;
+  }
+
 }
 
 void
@@ -804,8 +1508,8 @@ ompt_callstack_init(void)
   cct_cursor_finalize_register(ompt_cct_cursor_finalize);
 
   // initialize closure for initializer
-  ompt_callstack_init_closure.fn = 
-    (closure_fn_t) ompt_callstack_init_deferred; 
+  ompt_callstack_init_closure.fn =
+    (closure_fn_t) ompt_callstack_init_deferred;
   ompt_callstack_init_closure.arg = 0;
 
   // register closure

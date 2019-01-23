@@ -156,6 +156,44 @@ ompt_parallel_begin_internal(
 
 }
 
+cct_node_t*
+copy_prefix(cct_node_t* top, cct_node_t* bottom)
+{
+    // FIXME: vi3 do we need to copy? find the best way to copy callpath
+    // previous implementation
+    // return bottom;
+
+    // direct manipulation with cct nodes, which is probably not good way to solve this
+
+    if(!bottom || !top){
+        return NULL;
+    }
+
+    cct_node_t *prefix_bottom = hpcrun_cct_copy_just_addr(bottom);
+    // it is possible that just one node is call path between regions
+    if(top == bottom) {
+        return prefix_bottom;
+    }
+
+    cct_node_t *it = hpcrun_cct_parent(bottom);
+    cct_node_t *child = NULL;
+    cct_node_t *parent = prefix_bottom;
+
+    while (it) {
+        child = parent;
+        parent = hpcrun_cct_copy_just_addr(it);
+        hpcrun_cct_set_parent(child, parent);
+        hpcrun_cct_set_children(parent, child);
+        // find the top
+        if(it == top) {
+            return prefix_bottom;
+        }
+        it = hpcrun_cct_parent(it);
+    }
+
+    return NULL;
+
+}
 
 static void
 ompt_parallel_end_internal(
@@ -169,26 +207,48 @@ ompt_parallel_end_internal(
 
   ompt_region_data_t* region_data = (ompt_region_data_t*)parallel_data->ptr;
 
+
   if(!ompt_eager_context){
     // check if there is any thread registered that should be notified that region call path is available
     ompt_notification_t* to_notify = (ompt_notification_t*) wfq_dequeue_public(&region_data->queue);
-    if(to_notify){
-      if(region_data->call_path == NULL){
 
-        // FIXME vi3: this is one big hack
-        ending_region = region_data;
-        // need to provide call path, because master did not take a sample inside region
-        ompt_region_context_end_region_not_eager(region_data->region_id, ompt_context_end,
-                                     ++levels_to_skip, invoker == ompt_invoker_program);
-        // I think that is enough to call previous function, which call hpcrun_sample_callpath
-        // FIXME: consider this
-        //printf("This is the region data: %p\n", region_data->call_path);
-        ending_region = NULL;
+
+
+    printf("TOP_INDEX: %d\n", top_index);
+    region_stack_el_t *stack_el = &region_stack[top_index+1];
+    if (stack_el->took_sample || to_notify) {
+      ending_region = region_data;
+      cct_node_t *prefix = ompt_region_context(region_data->region_id, ompt_context_end,
+                                               ++levels_to_skip, invoker == ompt_invoker_program);
+      cct_node_t *current = prefix;
+      if (top_index + 1 > 0) {
+          cct_node_t *parent = NULL;
+          while (current) {
+              parent = hpcrun_cct_parent(current);
+              if (hpcrun_cct_parent(parent) == NULL) {
+                  prefix = copy_prefix(current, prefix);
+                  break;
+              }
+              current = parent;
+          }
       }
 
-      //region_data->call_path = ompt_region_context(region_data->region_id, ompt_context_end,
-      //                             ++levels_to_skip, invoker == ompt_invoker_program);
 
+      current = prefix;
+      while (current) {
+//        printf("-------MASTER: %d, REGION_ID: %lx, CCT_ID: %d, CCT_LP: %lx\n",
+//               TD_GET(master), region_data->region_id,
+//               hpcrun_cct_addr(current)->ip_norm.lm_id, hpcrun_cct_addr(current)->ip_norm.lm_ip);
+        current = hpcrun_cct_parent(current);
+      }
+
+
+      ending_region = NULL;
+      region_data->call_path = prefix;
+      tmp_end_region_resolve(stack_el->notification);
+    }
+
+    if(to_notify){
       // notify next thread
       wfq_enqueue(OMPT_BASE_T_STAR(to_notify), to_notify->threads_queue);
     }else{
@@ -291,7 +351,7 @@ ompt_parallel_end(
   const void *codeptr_ra
 )
 {
-//  printf("Parallel end...\n");
+  printf("Parallel end... MASTER: %d\n", TD_GET(master));
 
   uint64_t parallel_id = parallel_data->value;
   //printf("Parallel end... region id = %lx\n", parallel_id);
@@ -346,7 +406,7 @@ ompt_implicit_task_internal_begin(
       not_master_region = region_data;
     }
 
-#if 1
+#if 0
     region_stack[top_index].parent_frame = hpcrun_ompt_get_task_frame(1);
 #endif
   }
@@ -367,7 +427,7 @@ ompt_implicit_task_internal_end(
 {
 
   if (!ompt_eager_context) {
-    printf("IMPLICIT END REGION_ID: %lx\n", region_stack[top_index].notification->region_data->region_id);
+    printf("IMPLICIT END REGION_ID: %lx, MASTER: %d\n", region_stack[top_index].notification->region_data->region_id, TD_GET(master));
     // the only thing we could do (certainly) here is to pop element from the stack
     // pop element from the stack
     pop_region_stack();
