@@ -222,26 +222,17 @@ ompt_parallel_end_internal(
                                                ++levels_to_skip, invoker == ompt_invoker_program);
       cct_node_t *current = prefix;
       if (top_index + 1 > 0) {
-          cct_node_t *parent = NULL;
-          while (current) {
-              parent = hpcrun_cct_parent(current);
-              if (hpcrun_cct_parent(parent) == NULL) {
-                  prefix = copy_prefix(current, prefix);
-                  break;
-              }
-              current = parent;
+        // FIXME vi3: find a better way to remove program_root cct from the beginning of the cct
+        cct_node_t *parent = NULL;
+        while (current) {
+          parent = hpcrun_cct_parent(current);
+          if (hpcrun_cct_parent(parent) == NULL) {
+            prefix = copy_prefix(current, prefix);
+              break;
+            }
+            current = parent;
           }
       }
-
-
-      current = prefix;
-      while (current) {
-//        printf("-------MASTER: %d, REGION_ID: %lx, CCT_ID: %d, CCT_LP: %lx\n",
-//               TD_GET(master), region_data->region_id,
-//               hpcrun_cct_addr(current)->ip_norm.lm_id, hpcrun_cct_addr(current)->ip_norm.lm_ip);
-        current = hpcrun_cct_parent(current);
-      }
-
 
       ending_region = NULL;
       region_data->call_path = prefix;

@@ -1476,14 +1476,18 @@ ompt_backtrace_finalize(
   }
   uint64_t region_id = TD_GET(region_id);
 
-  //ompt_elide_runtime_frame(bt, region_id, isSync);
-  //ompt_elide_runtime_frame_inside_region(bt, region_id, isSync);
-
-  if (ending_region) {
-    ompt_elide_runtime_frame_end_region(bt, region_id, isSync);
+  if (ompt_eager_context) {
+    ompt_elide_runtime_frame(bt, region_id, isSync);
   } else {
-    ompt_elide_runtime_frame_inside_region(bt, region_id, isSync);
+    if (ending_region) {
+      ompt_elide_runtime_frame_end_region(bt, region_id, isSync);
+    } else {
+      ompt_elide_runtime_frame_inside_region(bt, region_id, isSync);
+    }
   }
+
+
+
 }
 
 
@@ -1531,16 +1535,17 @@ cct_node_t *
 ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt, 
                            cct_node_t *cct_cursor)
 {
-#if 0
-  cct_node_t *omp_task_context = TD_GET(omp_task_context);
 
-  // FIXME: should memoize the resulting task context in a thread-local variable
-  //        I think we can just return omp_task_context here. it is already
-  //        relative to one root or another.
-  if (omp_task_context) {
-    cct_node_t *root;
+  if (ompt_eager_context) {
+    cct_node_t *omp_task_context = TD_GET(omp_task_context);
+
+    // FIXME: should memoize the resulting task context in a thread-local variable
+    //        I think we can just return omp_task_context here. it is already
+    //        relative to one root or another.
+    if (omp_task_context) {
+      cct_node_t *root;
 #if 1
-    root = region_root(omp_task_context);
+      root = region_root(omp_task_context);
 #else
     if((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {
       root = hpcrun_get_thread_epoch()->csdata.unresolved_root;
@@ -1548,55 +1553,59 @@ ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt,
       root = hpcrun_get_thread_epoch()->csdata.tree_root;
     }
 #endif
-    // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
-    if(ompt_eager_context || TD_GET(master))
-      return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
-  }
-
-  // FIXME: vi3 consider this when tracing, for now everything works fine
-
-  // if I am not the master thread, full context may not be immediately available.
-  // if that is the case, then it will later become available in a deferred fashion.
-  if (!TD_GET(master)) { // sub-master thread in nested regions
-
-//    uint64_t region_id = TD_GET(region_id);
-//    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
-//    ompt_region_data_t* region_data = (ompt_region_data_t*)current_parallel_data->ptr;
-    // FIXME: check whether bottom frame elided will be right for IBM runtime
-    //        without help of get_idle_frame
-
-    if(not_master_region && bt->bottom_frame_elided){
-      // it should be enough just to set cursor to unresolved node
-      // which corresponds to not_master_region
-
-      // everything is ok with cursos
-      cct_cursor = cct_not_master_region;
-
+      // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
+      if(ompt_eager_context || TD_GET(master))
+        return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
     }
-  }
 
-  return cct_cursor;
+#if 0
+    // FIXME: vi3 consider this when tracing, for now everything works fine
+
+    // if I am not the master thread, full context may not be immediately available.
+    // if that is the case, then it will later become available in a deferred fashion.
+    if (!TD_GET(master)) { // sub-master thread in nested regions
+
+    //    uint64_t region_id = TD_GET(region_id);
+    //    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
+    //    ompt_region_data_t* region_data = (ompt_region_data_t*)current_parallel_data->ptr;
+      // FIXME: check whether bottom frame elided will be right for IBM runtime
+      //        without help of get_idle_frame
+
+      if(not_master_region && bt->bottom_frame_elided){
+        // it should be enough just to set cursor to unresolved node
+        // which corresponds to not_master_region
+
+        // everything is ok with cursos
+        cct_cursor = cct_not_master_region;
+
+      }
+    }
 #endif
 
-  if(ending_region) {
     return cct_cursor;
-  }
+
+  } else {
+
+    if(ending_region) {
+      return cct_cursor;
+    }
 
 #if STICK_BARRIER_WITH_INNERMOST_REGION == 1
-  if (how_is_eliding_finished == 1  || how_is_eliding_finished == -2) {
+    if (how_is_eliding_finished == 1  || how_is_eliding_finished == -2) {
 #else
-  if (how_is_eliding_finished == 1) {
+    if (how_is_eliding_finished == 1) {
 #endif
-    return top_or_cct_cursor(cct_cursor);
+      return top_or_cct_cursor(cct_cursor);
 
 #if STICK_BARRIER_WITH_INNERMOST_REGION == 1
-  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3) {
+    } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3) {
 #else
-  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3 || how_is_eliding_finished == -2) {
+    } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3 || how_is_eliding_finished == -2) {
 #endif
       return cct_cursor;
-  } else {
-     return TD_GET(master) ? cct_cursor : cct_not_master_region;
+    } else {
+      return TD_GET(master) ? cct_cursor : cct_not_master_region;
+    }
   }
 
 }
