@@ -530,6 +530,80 @@ ompt_elide_runtime_frame(
   ompt_elide_runtime_frame_internal(bt, region_id, isSync, 0);
 }
 
+// For case when
+// COLLAPSE_BARRIER_WAIT=0
+// STICK_BARRIER_WITH_INNERMOST_REGION=0
+
+// ompt_elide_runtime_frame_inside_region is closely related with ompt_cct_cursor_finalize
+// ompt_elide_runtime_frame_inside_region elides runtime frames, and clips bt at some point
+// ompt_cct_cursor_finalize put cct build upon bt at some place in thread tree
+// (root of this tree is thread root)
+//
+// Explain how the elider works on the next example. Assume that we are inside parallel region
+// Thread took a sample and bt looks like this:
+// main
+// a
+// b
+// c
+// region1
+// runtime_frame1
+// runtime_frame2
+// ...
+// runtime_frameN
+// task
+// user_frame1
+// user_frame2
+// ...
+// user_frameN
+//
+//
+// There are couple of possibilities when we take a sample
+//
+// 1. Sample is taken inside user code (variable how_is_eliding_finished is set to 1) -
+// Clip all stack frames that are above implicit/explicit task frame (frame0->exit)
+// The results of elider will be bt that contains these frames
+//
+// task
+// user_frame1
+// user_frame2
+// ...
+// user_frameN
+//
+// When we create cct, we should stick it under current region (job of ompt_cct_cursor_finalize).
+// If there is not any parallel region, then only master thread can run
+// and cct will be stick under thread root (job of ompt_cct_cursor_finalize).
+//
+//
+// 2. Sample is taken while thread is in idle state (how_is_eliding_finished is set to -1)
+// Elider will collapse stack frames of bt to ompt_placeholders.ompt_idle.
+// After ccts are created, they will be stick under the thread_root (job of ompt_cct_cursor_finalize)
+//
+//
+// 3. Sample is taken while thread is on the barrier (how_is_eliding_finished is set to -2)
+//
+// a) In the first case, stack will be collapse ompt_placeholders.ompt_idle (how_is_eliding_finished is reset to -1)
+// by elider and cct will be stick under the thread_root by ompt_cct_cursor_finalize
+//
+// b) In the second case, elider will elide all runtime frames from bt and won't clip anything.
+// The reason while we don't clip anything is that we don't know where is exit runtime frame
+// of task that has been finished (frame0->exit is 0 && frame0->reenter is 0).
+// We could clip above the parent task, but then bt will contain frames that belongs to parent task.
+// It is safer not to do clipping (reset how_is_eliding_finished to 2)
+// and then ccts that are built upon bt stick either under the cct_cursor if thread
+// is initial master (TD_GET(master) == 1) or under the cct_not_master
+// if thread is created as a worker in top most region (TD_GET(master) == 0)
+// (job of ompt_cct_cursor_finalize)
+//
+// 4. Thread took a sample in __kmp_launch_worker (how_is_eliding_finished = -3)
+// ompt_thread_type_get() is equal to ompt_thread_unknown
+// just return from elider
+// ccts should be set under the root (FIXME vi3: is this what expected)
+//
+// 5. Thread took a sample in __kmp_acquire_ticket_lock (how_is_eliding_finished = -4)
+// ompt_thread_type_get() is equal to omp_state_overhead
+// Elide runtime frames, but do not clip anything
+// After that, ccts should be put either under the cct_cursor (TD_GET(master) == 1)
+// or under the cct_not_master (TD_GET(master) == 0)
 
 #define COLLAPSE_BARRIER_WAIT 0
 
@@ -578,6 +652,7 @@ ompt_elide_runtime_frame_inside_region(
         case ompt_thread_other:
         case ompt_thread_unknown:
         default:
+            how_is_eliding_finished = -3;
             goto return_label;
     }
 
@@ -610,6 +685,11 @@ ompt_elide_runtime_frame_inside_region(
             how_is_eliding_finished = -1;
             goto return_label;
 //    }
+        case omp_state_overhead:
+            how_is_eliding_finished = -4;
+            //printf("***************************************This happened\n");
+            break;
+
         default:
             break;
     }
@@ -649,7 +729,7 @@ ompt_elide_runtime_frame_inside_region(
         // FIXME vi3: force unwinding
         //how_is_eliding_finished = (how_is_eliding_finished == 0) ? 33 : how_is_eliding_finished;
         if (how_is_eliding_finished == -2 ) {
-            how_is_eliding_finished = 33;
+            how_is_eliding_finished = 2;
         }
 
 
@@ -715,7 +795,7 @@ ompt_elide_runtime_frame_inside_region(
 
         ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
         cct_node_t *omp_task_context = NULL;
-        if(task_data)
+        if (task_data)
             omp_task_context = task_data->ptr;
 
         void *low_sp = (*bt_inner)->cursor.sp;
@@ -738,9 +818,9 @@ ompt_elide_runtime_frame_inside_region(
            previous iterations.
         */
         it = *bt_inner;
-        if(exit0_flag) {
+        if (exit0_flag) {
             for (; it <= *bt_outer; it++) {
-                if((uint64_t)(it->cursor.sp) > (uint64_t)(frame0->exit_runtime_frame)) {
+                if ((uint64_t) (it->cursor.sp) > (uint64_t) (frame0->exit_runtime_frame)) {
 //        if((uint64_t)(it->cursor.bp) > (uint64_t)(frame0->exit_runtime_frame)) {
                     exit0 = it - 1;
                     break;
@@ -756,7 +836,13 @@ ompt_elide_runtime_frame_inside_region(
         }
 
         frame1 = hpcrun_ompt_get_task_frame(++i);
-        if (!frame1) break;
+        if (!frame1) {
+            // FIXME vi3: if cct which represents thread root
+            // should be shown separately
+            // Otherwise, it will be connected with innermost region.
+            how_is_eliding_finished = -3;
+            break;
+        }
 
         bool reenter1_flag =
                 interval_contains(low_sp, high_sp, frame1->reenter_runtime_frame);
@@ -1419,6 +1505,28 @@ top_or_cct_cursor(cct_node_t *cct_cursor)
 
 #define STICK_BARRIER_WITH_INNERMOST_REGION 0
 
+// Short remainder of what how_is_eliding_finished value means:
+// -4 - ompt_thread_type_get() is equal to omp_state_overhead
+//      runtime frames are elided, put ccts either under
+//      thread_root (if TD_GET(master) == 1) or under the
+//      cct_not_master (if TD_GET(master) == 0)
+// -3 - ompt_thread_type_get() == ompt_thread_unknown, elider is stopped, ccts under the thread root
+// -2 - thread took a sample at barrier, but bt is collapsed to ompt_idle,
+//      so ccts will be put under the thread_root (which is cct_cursor)
+// -1 - thread took a sample while idling, bt is collapsed to ompt_idle
+//      so ccts will be put under the thread root
+//  0 - took a sample in initial task, put ccts under thread root
+//      FIXME vi3: I am not sure if this ever happened
+//      it is possible that I missed some case is two switch at the beginning of the elider
+//  1 - frames above current task are clipped from bt.
+//      bt only contains user code frames of current task.
+//      ccts should be stick with current parallel region.
+//      if there is no parallel region, stick ccts under thread_root
+//  2 - thread took a sample on barrier, runtime frames are elided
+//      but no frames are clipped (keep fully unwinded stack)
+//      ccts are connected to thread_root (if TD_GET(master) == 1)
+//      or to cct_not_master (if TD_GET(master) == 0)
+
 cct_node_t *
 ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt, 
                            cct_node_t *cct_cursor)
@@ -1482,9 +1590,9 @@ ompt_cct_cursor_finalize(cct_bundle_t *cct, backtrace_info_t *bt,
     return top_or_cct_cursor(cct_cursor);
 
 #if STICK_BARRIER_WITH_INNERMOST_REGION == 1
-  } else if (how_is_eliding_finished == -1) {
+  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3) {
 #else
-  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -2) {
+  } else if (how_is_eliding_finished == -1 || how_is_eliding_finished == -3 || how_is_eliding_finished == -2) {
 #endif
       return cct_cursor;
   } else {

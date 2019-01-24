@@ -214,7 +214,7 @@ ompt_parallel_end_internal(
 
 
 
-    printf("TOP_INDEX: %d\n", top_index);
+    //printf("TOP_INDEX: %d\n", top_index);
     region_stack_el_t *stack_el = &region_stack[top_index+1];
     if (stack_el->took_sample || to_notify) {
       ending_region = region_data;
@@ -351,7 +351,7 @@ ompt_parallel_end(
   const void *codeptr_ra
 )
 {
-  printf("Parallel end... MASTER: %d\n", TD_GET(master));
+  //printf("Parallel end... MASTER: %d\n", TD_GET(master));
 
   uint64_t parallel_id = parallel_data->value;
   //printf("Parallel end... region id = %lx\n", parallel_id);
@@ -427,7 +427,7 @@ ompt_implicit_task_internal_end(
 {
 
   if (!ompt_eager_context) {
-    printf("IMPLICIT END REGION_ID: %lx, MASTER: %d\n", region_stack[top_index].notification->region_data->region_id, TD_GET(master));
+    //printf("IMPLICIT END REGION_ID: %lx, MASTER: %d\n", region_stack[top_index].notification->region_data->region_id, TD_GET(master));
     // the only thing we could do (certainly) here is to pop element from the stack
     // pop element from the stack
     pop_region_stack();
