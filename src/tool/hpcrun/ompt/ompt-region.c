@@ -227,7 +227,9 @@ ompt_parallel_end_internal(
         while (current) {
           parent = hpcrun_cct_parent(current);
           if (hpcrun_cct_parent(parent) == NULL) {
-            prefix = copy_prefix(current, prefix);
+              prefix = copy_prefix(current, prefix);
+              // disjoint current from the parent (FIXME vi3: can we disjoint without copying)
+              hpcrun_cct_delete_self(current);
               break;
             }
             current = parent;
