@@ -228,7 +228,7 @@ ompt_parallel_end_internal(
           parent = hpcrun_cct_parent(current);
           if (hpcrun_cct_parent(parent) == NULL) {
               prefix = copy_prefix(current, prefix);
-              // disjoint current from the parent (FIXME vi3: can we disjoint without copying)
+              // disjoint current from the parent (FIXME vi3: can we disjoint without copying. If not, free all path)
               hpcrun_cct_delete_self(current);
               break;
             }
@@ -397,6 +397,7 @@ ompt_implicit_task_internal_begin(
     // Memoization process vi3:
     if(thread_num != 0){
       not_master_region = region_data;
+      cct_not_master_region = region_stack[top_index].notification->unresolved_cct;
     }
 
 #if 0

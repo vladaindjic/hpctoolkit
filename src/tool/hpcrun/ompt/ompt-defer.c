@@ -540,7 +540,6 @@ register_to_all_regions(){
       // remebmer cct
       current_el->notification->unresolved_cct = new_cct;
 #endif
-      cct_not_master_region = current_el->notification->unresolved_cct;
 
     }
   }
