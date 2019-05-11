@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2018, Rice University
+// Copyright ((c)) 2002-2019, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -358,4 +358,10 @@ libunw_unw_step(hpcrun_unw_cursor_t* cursor)
 #endif
 
   return result;
+}
+
+void
+libunw_uw_recipe_tostr(void *uwr, char str[])
+{
+  snprintf(str, MAX_RECIPE_STR, "*");
 }

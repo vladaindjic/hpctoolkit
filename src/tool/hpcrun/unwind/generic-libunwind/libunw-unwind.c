@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2018, Rice University
+// Copyright ((c)) 2002-2019, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -189,4 +189,10 @@ btuwi_status_t
 build_intervals(char  *ins, unsigned int len, unwinder_t uw)
 {
   return libunw_build_intervals(ins, len);
+}
+
+void
+uw_recipe_tostr(void *uwr, char str[], unwinder_t uw)
+{
+  return libunw_uw_recipe_tostr(uwr, str);
 }
