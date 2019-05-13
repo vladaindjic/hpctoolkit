@@ -241,8 +241,14 @@ ompt_parallel_end_internal
       // calling hpcrun_sample_callpath (by calling ompt_region_context and
       // ompt_region_context_end_region_not_eager) twice is obviously overhead
       ending_region = region_data;
-      cct_node_t *prefix = ompt_region_context(region_data->region_id, ompt_scope_end,
+//      cct_node_t *prefix = ompt_region_context(region_data->region_id, ompt_scope_end,
+//                                               flags & ompt_parallel_invoker_program);
+
+      ompt_region_context_end_region_not_eager(region_data->region_id, ompt_scope_end,
                                                flags & ompt_parallel_invoker_program);
+      cct_node_t *prefix = region_data->call_path;
+
+
       // if combined this if branch with branch of next if
       // we will remove this line
       tmp_end_region_resolve(notification, prefix);
