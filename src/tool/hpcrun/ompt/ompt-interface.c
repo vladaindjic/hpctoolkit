@@ -982,6 +982,8 @@ hpcrun_ompt_notification_free
  ompt_notification_t *notification
 )
 {
+  // reset unresolved_cct when freeing notification
+  notification->unresolved_cct = NULL;
   freelist_add_first(OMPT_BASE_T_STAR(notification), OMPT_BASE_T_STAR_STAR(notification_freelist_head));
 }
 

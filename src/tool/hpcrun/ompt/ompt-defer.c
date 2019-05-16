@@ -449,6 +449,8 @@ help_notification_alloc
   notification->region_data = region_data;
   notification->region_id = region_data->region_id;
   notification->threads_queue = &threads_queue;
+  // reset unresolved_cct for the new notification
+  notification->unresolved_cct = NULL;
 
   return notification;
 }
@@ -653,7 +655,7 @@ register_to_all_regions
               : region_stack[i-1].notification->unresolved_cct;
 
       if (current_el->notification->region_data->region_id == 0) {
-	deferred_resolution_breakpoint();
+	    deferred_resolution_breakpoint();
       }
       // insert cct as child of the parent_cct
       new_cct =
@@ -738,6 +740,8 @@ try_resolve_one_region_context
       hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
       // delete unresolved_cct from parent
       hpcrun_cct_delete_self(unresolved_cct);
+    } else {
+      printf("*********************** try_resolve_one_region_context else branch\n");
     }
     // ==================================
   }
@@ -1418,9 +1422,12 @@ tmp_end_region_resolve
   // if the prefix and unresolved_cct are already equal,
   // no action is necessary
   if (prefix != unresolved_cct) {
+    printf("*********************** tmp_end_region_resolve if branch\n");
     // prefix node should change the unresolved_cct
     hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
     // delete unresolved_cct from parent
     hpcrun_cct_delete_self(unresolved_cct);
+  } else {
+    printf("*********************** tmp_end_region_resolve else branch\n");
   }
 }

@@ -237,6 +237,10 @@ ompt_parallel_end_internal
     region_stack_el_t *stack_el = &region_stack[top_index + 1];
     ompt_notification_t *notification = stack_el->notification;
     if (notification->unresolved_cct) {
+      // CASE: thread took sample in an explicit task
+      printf("NOT_UCP: %p, REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
+             notification->unresolved_cct, region_data->region_id, region_data->call_path, &threads_queue);
+
       // FIXME vi3: consider to combine this if with next
       // calling hpcrun_sample_callpath (by calling ompt_region_context and
       // ompt_region_context_end_region_not_eager) twice is obviously overhead
@@ -244,10 +248,17 @@ ompt_parallel_end_internal
 //      cct_node_t *prefix = ompt_region_context(region_data->region_id, ompt_scope_end,
 //                                               flags & ompt_parallel_invoker_program);
 
-      ompt_region_context_end_region_not_eager(region_data->region_id, ompt_scope_end,
-                                               flags & ompt_parallel_invoker_program);
-      cct_node_t *prefix = region_data->call_path;
+      if (!region_data->call_path) {
+        printf("We are providing the call path for the region: REG_ID: %lx, TH_Q: %p\n",
+               region_data->region_id, &threads_queue);
+        // Thread did not took a sample outside the explicit task, so it did not have
+        // an oportunity to provide region's call path.
+        // The call path will be provided now.
+        ompt_region_context_end_region_not_eager(region_data->region_id, ompt_scope_end,
+                                                 flags & ompt_parallel_invoker_program);
+      }
 
+      cct_node_t *prefix = region_data->call_path;
 
       // if combined this if branch with branch of next if
       // we will remove this line
@@ -512,6 +523,8 @@ hpcrun_ompt_region_free
  ompt_region_data_t *region_data
 )
 {
+  // reset call_path when freeing the region
+  region_data->call_path = NULL;
   region_data->region_id = 0xdeadbead;
   wfq_enqueue(OMPT_BASE_T_STAR(region_data), region_data->thread_freelist);
 }
