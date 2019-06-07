@@ -793,15 +793,15 @@ ompt_cct_cursor_finalize
     region_stack_el_t *stack_el = &region_stack[top_index];
     ompt_notification_t *notification = stack_el->notification;
 
-    if (notification->region_data->call_path != NULL && stack_el->team_master) {
-      printf("Team master took sample outside the explicit task before: REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
-             notification->region_data->region_id, notification->region_data->call_path, &threads_queue);
-    }
+    //if (notification->region_data->call_path != NULL && stack_el->team_master) {
+    //  printf("Team master took sample outside the explicit task before: REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
+    //         notification->region_data->region_id, notification->region_data->call_path, &threads_queue);
+    //}
 
     // if no unresolved cct placeholder for the region, create it
     if (!notification->unresolved_cct) {
       // this part of code should be executed only by team master
-      printf("I should be a master: %d\n", stack_el->team_master);
+      //printf("I should be a master: %d\n", stack_el->team_master);
       cct_node_t *new_cct =
               hpcrun_cct_insert_addr(cct->thread_root, &ADDR2(UNRESOLVED, notification->region_data->region_id));
       notification->unresolved_cct = new_cct;

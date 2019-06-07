@@ -238,8 +238,8 @@ ompt_parallel_end_internal
     ompt_notification_t *notification = stack_el->notification;
     if (notification->unresolved_cct) {
       // CASE: thread took sample in an explicit task
-      printf("NOT_UCP: %p, REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
-             notification->unresolved_cct, region_data->region_id, region_data->call_path, &threads_queue);
+      //printf("NOT_UCP: %p, REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
+      //       notification->unresolved_cct, region_data->region_id, region_data->call_path, &threads_queue);
 
       // FIXME vi3: consider to combine this if with next
       // calling hpcrun_sample_callpath (by calling ompt_region_context and
@@ -249,8 +249,8 @@ ompt_parallel_end_internal
 //                                               flags & ompt_parallel_invoker_program);
 
       if (!region_data->call_path) {
-        printf("We are providing the call path for the region: REG_ID: %lx, TH_Q: %p\n",
-               region_data->region_id, &threads_queue);
+        //printf("We are providing the call path for the region: REG_ID: %lx, TH_Q: %p\n",
+        //       region_data->region_id, &threads_queue);
         // Thread did not took a sample outside the explicit task, so it did not have
         // an oportunity to provide region's call path.
         // The call path will be provided now.

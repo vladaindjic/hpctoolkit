@@ -741,7 +741,8 @@ try_resolve_one_region_context
       // delete unresolved_cct from parent
       hpcrun_cct_delete_self(unresolved_cct);
     } else {
-      printf("*********************** try_resolve_one_region_context else branch\n");
+      //printf("*********************** try_resolve_one_region_context else branch\n");
+      deferred_resolution_breakpoint();
     }
     // ==================================
   }
@@ -1422,12 +1423,13 @@ tmp_end_region_resolve
   // if the prefix and unresolved_cct are already equal,
   // no action is necessary
   if (prefix != unresolved_cct) {
-    printf("*********************** tmp_end_region_resolve if branch\n");
+    //printf("*********************** tmp_end_region_resolve if branch\n");
     // prefix node should change the unresolved_cct
     hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
     // delete unresolved_cct from parent
     hpcrun_cct_delete_self(unresolved_cct);
   } else {
-    printf("*********************** tmp_end_region_resolve else branch\n");
+    //printf("*********************** tmp_end_region_resolve else branch\n");
+    deferred_resolution_breakpoint();
   }
 }
