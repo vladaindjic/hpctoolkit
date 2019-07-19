@@ -64,6 +64,10 @@
 
 #include <pthread.h>
 
+#ifndef HPCRUN_STATIC_LINK
+#include <dlfcn.h>
+#endif
+
 /******************************************************************************
  * libmonitor
  *****************************************************************************/
@@ -76,6 +80,7 @@
 
 #include "nvidia.h"
 #include "cuda-state-placeholders.h"
+#include "cuda-api.h"
 #include "cupti-api.h"
 #include "../simple_oo.h"
 #include "../sample_source_obj.h"
@@ -90,6 +95,7 @@
 #include <hpcrun/module-ignore-map.h>
 #include <hpcrun/device-finalizers.h>
 #include <hpcrun/safe-sampling.h>
+#include <hpcrun/control-knob.h>
 #include <utilities/tokenize.h>
 #include <messages/messages.h>
 #include <lush/lush-backtrace.h>
@@ -108,26 +114,38 @@
 #define PRINT(...)
 #endif
 
-#define FORALL_ME(macro)	  \
-  macro("MEM:UNKNOWN_BYTES",       0) \
-  macro("MEM:PAGEABLE_BYTES",      1) \
-  macro("MEM:PINNED_BYTES",        2) \
-  macro("MEM:DEVICE_BYTES",        3) \
-  macro("MEM:ARRAY_BYTES",         4) \
-  macro("MEM:MANAGED_BYTES",       5) \
-  macro("MEM:DEVICE_STATIC_BYTES", 6)
+#define FORALL_ME(macro) \
+  macro("MEM_ALLOC:UNKNOWN_BYTES",       0) \
+  macro("MEM_ALLOC:PAGEABLE_BYTES",      1) \
+  macro("MEM_ALLOC:PINNED_BYTES",        2) \
+  macro("MEM_ALLOC:DEVICE_BYTES",        3) \
+  macro("MEM_ALLOC:ARRAY_BYTES",         4) \
+  macro("MEM_ALLOC:MANAGED_BYTES",       5) \
+  macro("MEM_ALLOC:DEVICE_STATIC_BYTES", 6)
 
 #define FORALL_ME_TIME(macro) \
-  macro("MEM:TIME (us)",           7)
+  macro("MEM_ALLOC:TIME (us)",           7)
 
-#define FORALL_KE(macro)	  \
+#define FORALL_ME_SET(macro) \
+  macro("MEM_SET:UNKNOWN_BYTES",       0) \
+  macro("MEM_SET:PAGEABLE_BYTES",      1) \
+  macro("MEM_SET:PINNED_BYTES",        2) \
+  macro("MEM_SET:DEVICE_BYTES",        3) \
+  macro("MEM_SET:ARRAY_BYTES",         4) \
+  macro("MEM_SET:MANAGED_BYTES",       5) \
+  macro("MEM_SET:DEVICE_STATIC_BYTES", 6)
+
+#define FORALL_ME_SET_TIME(macro) \
+  macro("MEM_SET:TIME (us)",           7)
+
+#define FORALL_KE(macro) \
   macro("KERNEL:STATIC_MEM_BYTES",  0)       \
   macro("KERNEL:DYNAMIC_MEM_BYTES", 1)       \
   macro("KERNEL:LOCAL_MEM_BYTES",   2)       \
   macro("KERNEL:ACTIVE_WARPS_PER_SM", 3)     \
   macro("KERNEL:MAX_ACTIVE_WARPS_PER_SM", 4) \
-  macro("KERNEL:BLOCK_THREADS", 5)           \
-  macro("KERNEL:BLOCK_REGISTERS", 6)         \
+  macro("KERNEL:THREAD_REGISTERS", 5)       \
+  macro("KERNEL:BLOCK_THREADS", 6)           \
   macro("KERNEL:BLOCK_SHARED_MEMORY", 7)     \
   macro("KERNEL:COUNT ", 8)                  \
 
@@ -137,7 +155,7 @@
 #define FORALL_KE_OCCUPANCY(macro) \
   macro("KERNEL:OCCUPANCY", 10)
 
-#define FORALL_EM(macro)	\
+#define FORALL_EM(macro) \
   macro("XDMOV:INVALID",       0)	\
   macro("XDMOV:HTOD_BYTES",    1)	\
   macro("XDMOV:DTOH_BYTES",    2)	\
@@ -150,15 +168,18 @@
   macro("XDMOV:HTOH_BYTES",    9)	\
   macro("XDMOV:PTOP_BYTES",   10) 
 
-#define FORALL_EM_TIME(macro)   \
+#define FORALL_EM_TIME(macro) \
   macro("XDMOV:TIME (us)",    11)  
 
 #define FORALL_SYNC(macro) \
   macro("SYNC:UNKNOWN (us)",     0) \
   macro("SYNC:EVENT (us)",       1) \
-  macro("SYNC:STREAM (us)",      2) \
-  macro("SYNC:STREAM_WAIT (us)", 3) \
+  macro("SYNC:STREAM_WAIT (us)", 2) \
+  macro("SYNC:STREAM (us)",      3) \
   macro("SYNC:CONTEXT (us)",     4)
+
+#define FORALL_SYNC_TIME(macro) \
+  macro("SYNC:TIME (us)",     5)
 
 #define FORALL_GL(macro) \
   macro("GMEM:LOAD_CACHED_BYTES",             0) \
@@ -183,17 +204,17 @@
   macro("BRANCH:WARP_DIVERGED", 0) \
   macro("BRANCH:WARP_EXECUTED", 1)
 
-#define FORALL_INFO(macro)	\
-  macro("KERNEL:DROPPED_SAMPLES", 0)  \
+#define FORALL_INFO(macro) \
+  macro("KERNEL:DROPPED_SAMPLES",  0) \
   macro("KERNEL:PERIOD_IN_CYCLES", 1) \
-  macro("KERNEL:TOTAL_SAMPLES", 2)    \
-  macro("KERNEL:SM_FULL_SAMPLES", 3)
+  macro("KERNEL:TOTAL_SAMPLES",    2) \
+  macro("KERNEL:SM_FULL_SAMPLES",  3)
 
 #define FORALL_INFO_EFFICIENCY(macro) \
   macro("KERNEL:SM_EFFICIENCY", 4)
 
 #if CUPTI_API_VERSION >= 10
-#define FORALL_IM(macro)	\
+#define FORALL_IM(macro) \
   macro("IDMOV:INVALID",       0)	\
   macro("IDMOV:HTOD_BYTES",    1)	\
   macro("IDMOV:DTOH_BYTES",    2)	\
@@ -204,60 +225,60 @@
   macro("IDMOV:RMAP",          7)	\
   macro("IDMOV:DTOD_BYTES",    8)
 
-#define FORALL_IM_TIME(macro)  \
+#define FORALL_IM_TIME(macro) \
   macro("IDMOV:TIME (us)",     9)  
 #else
-#define FORALL_IM(macro)	\
+#define FORALL_IM(macro) \
   macro("IDMOV:INVALID",       0)	\
   macro("IDMOV:HTOD_BYTES",    1)	\
   macro("IDMOV:DTOH_BYTES",    2)	\
   macro("IDMOV:CPU_PF",        3)	\
   macro("IDMOV:GPU_PF",        4)
 
-#define FORALL_IM_TIME(macro)   \
+#define FORALL_IM_TIME(macro) \
   macro("IDMOV:TIME (us)",     5)
 #endif
 
 #if CUPTI_API_VERSION >= 10
 #define FORALL_STL(macro)	\
-  macro("STALL:INVALID",      0)	\
-  macro("STALL:NONE",         1)	\
-  macro("STALL:IFETCH",       2)	\
-  macro("STALL:EXC_DEP",      3)	\
-  macro("STALL:MEM_DEP",      4)	\
-  macro("STALL:TEX",          5)	\
-  macro("STALL:SYNC",         6)	\
-  macro("STALL:CMEM_DEP",     7)	\
-  macro("STALL:PIPE_BSY",     8)	\
-  macro("STALL:MEM_THR",      9)	\
-  macro("STALL:NOSEL",       10)	\
-  macro("STALL:OTHR",        11)	\
+  macro("STALL:INVALID",      0) \
+  macro("STALL:NONE",         1) \
+  macro("STALL:IFETCH",       2) \
+  macro("STALL:EXC_DEP",      3) \
+  macro("STALL:MEM_DEP",      4) \
+  macro("STALL:TEX",          5) \
+  macro("STALL:SYNC",         6) \
+  macro("STALL:CMEM_DEP",     7) \
+  macro("STALL:PIPE_BSY",     8) \
+  macro("STALL:MEM_THR",      9) \
+  macro("STALL:NOSEL",       10) \
+  macro("STALL:OTHR",        11) \
   macro("STALL:SLEEP",       12)
 
-#define FORALL_GPU_INST(macro)  \
-  macro("GPU INST",        13)  
+#define FORALL_GPU_INST(macro) \
+  macro("GPU INST",          13)  
 
-#define FORALL_GPU_INST_LAT(macro)  \
-  macro("GPU STALL",    14)  
+#define FORALL_GPU_INST_LAT(macro) \
+  macro("GPU STALL",         14)  
 #else
 #define FORALL_STL(macro)	\
-  macro("STALL:INVALID",      0)	\
-  macro("STALL:NONE",         1)	\
-  macro("STALL:IFETCH",       2)	\
-  macro("STALL:EXC_DEP",      3)	\
-  macro("STALL:MEM_DEP",      4)	\
-  macro("STALL:TEX",          5)	\
-  macro("STALL:SYNC",         6)	\
-  macro("STALL:CMEM_DEP",     7)	\
-  macro("STALL:PIPE_BSY",     8)	\
-  macro("STALL:MEM_THR",      9)	\
-  macro("STALL:NOSEL",       10)	\
+  macro("STALL:INVALID",      0) \
+  macro("STALL:NONE",         1) \
+  macro("STALL:IFETCH",       2) \
+  macro("STALL:EXC_DEP",      3) \
+  macro("STALL:MEM_DEP",      4) \
+  macro("STALL:TEX",          5) \
+  macro("STALL:SYNC",         6) \
+  macro("STALL:CMEM_DEP",     7) \
+  macro("STALL:PIPE_BSY",     8) \
+  macro("STALL:MEM_THR",      9) \
+  macro("STALL:NOSEL",       10) \
   macro("STALL:OTHR",        11)
 
-#define FORALL_GPU_INST(macro)  \
+#define FORALL_GPU_INST(macro) \
   macro("GPU INST",       12)  
 
-#define FORALL_GPU_INST_LAT(macro)  \
+#define FORALL_GPU_INST_LAT(macro) \
   macro("GPU STALL",   13)  
 #endif
 
@@ -289,6 +310,7 @@ static kind_info_t* ke_kind; // kernel execution
 static kind_info_t* em_kind; // explicit memory copies
 static kind_info_t* im_kind; // implicit memory events
 static kind_info_t* me_kind; // memory allocation and deletion
+static kind_info_t* me_set_kind; // memory set
 static kind_info_t* gl_kind; // global memory accesses
 static kind_info_t* sh_kind; // shared memory accesses
 static kind_info_t* bh_kind; // branches
@@ -308,6 +330,9 @@ static int im_time_metric_id;
 static int me_metric_id[NUM_CLAUSES(FORALL_ME)+1];
 static int me_time_metric_id;
 
+static int me_set_metric_id[NUM_CLAUSES(FORALL_ME_SET)+1];
+static int me_set_time_metric_id;
+
 static int gl_metric_id[NUM_CLAUSES(FORALL_GL)];
 
 static int sh_metric_id[NUM_CLAUSES(FORALL_SH)];
@@ -322,8 +347,8 @@ static int ke_dynamic_shared_metric_id;
 static int ke_local_metric_id;
 static int ke_active_warps_per_sm_metric_id;
 static int ke_max_active_warps_per_sm_metric_id;
+static int ke_thread_registers_id;
 static int ke_block_threads_id;
-static int ke_block_registers_id;
 static int ke_block_shared_memory_id;
 static int ke_count_metric_id;
 static int ke_time_metric_id;
@@ -336,7 +361,8 @@ static int info_total_samples_id;
 static int info_sm_full_samples_id;
 static int info_sm_efficiency_id;
 
-static int sync_metric_id[NUM_CLAUSES(FORALL_SYNC)];
+static int sync_metric_id[NUM_CLAUSES(FORALL_SYNC)+1];
+static int sync_time_metric_id;
 
 static const long pc_sampling_frequency_default = 10;
 // -1: disabled, 5-31: 2^frequency
@@ -346,6 +372,8 @@ static int cupti_enabled_activities = 0;
 static char nvidia_name[128];
 
 static const unsigned int MAX_CHAR_FORMULA = 32;
+static const size_t DEFAULT_DEVICE_BUFFER_SIZE = 1024 * 1024 * 8;
+static const size_t DEFAULT_DEVICE_SEMAPHORE_SIZE = 65536;
 
 //******************************************************************************
 // constants
@@ -362,7 +390,9 @@ CUpti_ActivityKind
 data_motion_explicit_activities[] = { 
   CUPTI_ACTIVITY_KIND_MEMCPY2,
   CUPTI_ACTIVITY_KIND_MEMCPY, 
-  //CUPTI_ACTIVITY_KIND_MEMORY,
+  CUPTI_ACTIVITY_KIND_MEMSET, 
+// FIXME(keren): memory activity does not have a correlation id
+// CUPTI_ACTIVITY_KIND_MEMORY,
   CUPTI_ACTIVITY_KIND_INVALID
 };
 
@@ -386,9 +416,10 @@ CUpti_ActivityKind
 kernel_execution_activities[] = {
   CUPTI_ACTIVITY_KIND_CONTEXT,
   CUPTI_ACTIVITY_KIND_FUNCTION,
-//  CUPTI_ACTIVITY_KIND_GLOBAL_ACCESS,
-//  CUPTI_ACTIVITY_KIND_SHARED_ACCESS,
-//  CUPTI_ACTIVITY_KIND_BRANCH,
+// FIXME(keren): cupti does not allow the following activities to be profiled with pc sampling
+// CUPTI_ACTIVITY_KIND_GLOBAL_ACCESS,
+// CUPTI_ACTIVITY_KIND_SHARED_ACCESS,
+// CUPTI_ACTIVITY_KIND_BRANCH,
   CUPTI_ACTIVITY_KIND_INVALID
 };                                   
 
@@ -438,16 +469,23 @@ cupti_activity_attribute(cupti_activity_t *activity, cct_node_t *cct_node)
     case CUPTI_ACTIVITY_KIND_PC_SAMPLING:
     {
       PRINT("CUPTI_ACTIVITY_KIND_PC_SAMPLING\n");
+      int frequency_factor = 1;
+      if (frequency_factor != -1) {
+        frequency_factor = (1 << pc_sampling_frequency);
+      }
       if (activity->data.pc_sampling.stallReason != 0x7fffffff) {
         int index = stall_metric_id[activity->data.pc_sampling.stallReason];
         metric_data_list_t *metrics = hpcrun_reify_metric_set(cct_node, index);
-        hpcrun_metric_std_inc(index, metrics, (cct_metric_data_t){.i = activity->data.pc_sampling.latencySamples});
+        hpcrun_metric_std_inc(index, metrics, (cct_metric_data_t){.i =
+          activity->data.pc_sampling.latencySamples * frequency_factor});
 
         metrics = hpcrun_reify_metric_set(cct_node, gpu_inst_metric_id);
-        hpcrun_metric_std_inc(gpu_inst_metric_id, metrics, (cct_metric_data_t){.i = activity->data.pc_sampling.samples});
+        hpcrun_metric_std_inc(gpu_inst_metric_id, metrics, (cct_metric_data_t){.i =
+          activity->data.pc_sampling.samples * frequency_factor});
 
         metrics = hpcrun_reify_metric_set(cct_node, gpu_inst_lat_metric_id);
-        hpcrun_metric_std_inc(gpu_inst_lat_metric_id, metrics, (cct_metric_data_t){.i = activity->data.pc_sampling.latencySamples});
+        hpcrun_metric_std_inc(gpu_inst_lat_metric_id, metrics, (cct_metric_data_t){.i =
+          activity->data.pc_sampling.latencySamples * frequency_factor});
       }
       break;
     }
@@ -458,6 +496,7 @@ cupti_activity_attribute(cupti_activity_t *activity, cct_node_t *cct_node)
       hpcrun_metric_std_inc(info_dropped_samples_id, metrics,
         (cct_metric_data_t){.i = activity->data.pc_sampling_record_info.droppedSamples});
 
+      // It is fine to use set here because sampling cycle is changed during execution
       metrics = hpcrun_reify_metric_set(cct_node, info_period_in_cycles_id);
       hpcrun_metric_std_set(info_period_in_cycles_id, metrics,
         (cct_metric_data_t){.i = activity->data.pc_sampling_record_info.samplingPeriodInCycles});
@@ -485,6 +524,20 @@ cupti_activity_attribute(cupti_activity_t *activity, cct_node_t *cct_node)
       }
       break;
     }
+    case CUPTI_ACTIVITY_KIND_MEMSET:
+    {
+      PRINT("CUPTI_ACTIVITY_KIND_MEMSET\n");
+      if (activity->data.memset.memKind != 0x7fffffff) {
+        int index = me_set_metric_id[activity->data.memset.memKind];
+        metric_data_list_t *metrics = hpcrun_reify_metric_set(cct_node, index);
+        hpcrun_metric_std_inc(index, metrics, (cct_metric_data_t){.i = activity->data.memset.bytes});
+
+        metrics = hpcrun_reify_metric_set(cct_node, me_set_time_metric_id);
+        hpcrun_metric_std_inc(me_set_time_metric_id, metrics, (cct_metric_data_t){.r =
+          (activity->data.memset.end - activity->data.memset.start) / 1000.0});
+      }
+      break;
+    }
     case CUPTI_ACTIVITY_KIND_KERNEL:
     {
       PRINT("CUPTI_ACTIVITY_KIND_KERNEL\n");
@@ -505,16 +558,16 @@ cupti_activity_attribute(cupti_activity_t *activity, cct_node_t *cct_node)
       hpcrun_metric_std_inc(ke_max_active_warps_per_sm_metric_id, metrics,
         (cct_metric_data_t){.i = activity->data.kernel.maxActiveWarpsPerSM});
 
+      metrics = hpcrun_reify_metric_set(cct_node, ke_thread_registers_id);
+      hpcrun_metric_std_inc(ke_thread_registers_id, metrics,
+        (cct_metric_data_t){.i = activity->data.kernel.threadRegisters});
+
       metrics = hpcrun_reify_metric_set(cct_node, ke_block_threads_id);
-      hpcrun_metric_std_set(ke_block_threads_id, metrics,
+      hpcrun_metric_std_inc(ke_block_threads_id, metrics,
         (cct_metric_data_t){.i = activity->data.kernel.blockThreads});
 
-      metrics = hpcrun_reify_metric_set(cct_node, ke_block_registers_id);
-      hpcrun_metric_std_set(ke_block_registers_id, metrics,
-        (cct_metric_data_t){.i = activity->data.kernel.blockRegisters});
-
       metrics = hpcrun_reify_metric_set(cct_node, ke_block_shared_memory_id);
-      hpcrun_metric_std_set(ke_block_shared_memory_id, metrics,
+      hpcrun_metric_std_inc(ke_block_shared_memory_id, metrics,
         (cct_metric_data_t){.i = activity->data.kernel.blockSharedMemory});
 
       metrics = hpcrun_reify_metric_set(cct_node, ke_count_metric_id);
@@ -532,6 +585,10 @@ cupti_activity_attribute(cupti_activity_t *activity, cct_node_t *cct_node)
         int index = sync_metric_id[activity->data.synchronization.syncKind];
         metric_data_list_t *metrics = hpcrun_reify_metric_set(cct_node, index);
         hpcrun_metric_std_inc(index, metrics, (cct_metric_data_t){ .r =
+          (activity->data.synchronization.end - activity->data.synchronization.start) / 1000.0});
+
+        metrics = hpcrun_reify_metric_set(cct_node, sync_time_metric_id);
+        hpcrun_metric_std_inc(sync_time_metric_id, metrics, (cct_metric_data_t){.r =
           (activity->data.synchronization.end - activity->data.synchronization.start) / 1000.0});
       }
       break;
@@ -644,7 +701,7 @@ cupti_enable_activities
     cupti_pc_sampling_enable(context, pc_sampling_frequency);
   }
 
-  cupti_correlation_enable(context);
+  cupti_correlation_enable();
 
   PRINT("Exit cupti_enable_activities\n");
 }
@@ -700,8 +757,12 @@ METHOD_FN(shutdown)
 static bool
 METHOD_FN(supports_event, const char *ev_str)
 {
+#ifndef HPCRUN_STATIC_LINK
   return hpcrun_ev_is(ev_str, OMPT_NVIDIA) || hpcrun_ev_is(ev_str, CUDA_NVIDIA) ||
     hpcrun_ev_is(ev_str, OMPT_PC_SAMPLING) || hpcrun_ev_is(ev_str, CUDA_PC_SAMPLING);
+#else
+  return false;
+#endif
 
 #if 0
     hpcrun_ev_is(ev_str, OMPT_MEMORY_EXPLICIT) ||
@@ -718,187 +779,199 @@ METHOD_FN(process_event_list, int lush_metrics)
   TMSG(CUDA,"nevents = %d", nevents);
 
 #define getindex(name, index) index
-#define declare_stall_metrics(name, index) \
-  stall_metric_id[index] = hpcrun_set_new_metric_info(stall_kind, name);
-#define hide_stall_metrics(name, index) \
-  hpcrun_set_display(stall_metric_id[index], 0, 1);
 
-  stall_kind = hpcrun_metrics_new_kind();
-  FORALL_GPU_INST(declare_stall_metrics);
-  FORALL_GPU_INST_LAT(declare_stall_metrics);
-  FORALL_STL(declare_stall_metrics);	
-  FORALL_STL(hide_stall_metrics);
+#define declare_cur_metrics(name, index) \
+  cur_metrics[index] = hpcrun_set_new_metric_info(cur_kind, name);
+
+#define declare_cur_metrics_real(name, index) \
+  cur_metrics[index] = hpcrun_set_new_metric_info_and_period(cur_kind, name, \
+    MetricFlags_ValFmt_Real, 1, metric_property_none);
+
+#define hide_cur_metrics(name, index) \
+  hpcrun_set_display(cur_metrics[index], 0);
+
+#define create_cur_kind cur_kind = hpcrun_metrics_new_kind()
+#define close_cur_kind hpcrun_close_kind(cur_kind)
+
+#define cur_kind stall_kind
+#define cur_metrics stall_metric_id
+
+  create_cur_kind;
+  // GPU INST must be the first kind for sample apportion
+  FORALL_GPU_INST(declare_cur_metrics);
+  FORALL_GPU_INST_LAT(declare_cur_metrics);
+  FORALL_STL(declare_cur_metrics);	
+  FORALL_STL(hide_cur_metrics);
   gpu_inst_metric_id = stall_metric_id[FORALL_GPU_INST(getindex)];
   gpu_inst_lat_metric_id = stall_metric_id[FORALL_GPU_INST_LAT(getindex)];
-  hpcrun_close_kind(stall_kind);
+  close_cur_kind;
 
-#define declare_im_metrics(name, index) \
-  im_metric_id[index] = hpcrun_set_new_metric_info(im_kind, name);
-#define hide_im_metrics(name, index) \
-  hpcrun_set_display(im_metric_id[index], 0, 1);
+#undef cur_kind
+#undef cur_metrics
 
-#define declare_im_metric_time(name, index) \
-  im_metric_id[index] = hpcrun_set_new_metric_info_and_period(im_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none);
-#define hide_im_metric_time(name, index) \
-  hpcrun_set_display(im_metric_id[index], 0, 1);
+#define cur_kind im_kind
+#define cur_metrics im_metric_id
 
-  im_kind = hpcrun_metrics_new_kind();
-  FORALL_IM(declare_im_metrics);	
-  FORALL_IM(hide_im_metrics);	
-  FORALL_IM_TIME(declare_im_metric_time);
-  FORALL_IM_TIME(hide_im_metric_time);
+  create_cur_kind;
+  FORALL_IM(declare_cur_metrics);	
+  FORALL_IM(hide_cur_metrics);	
+  FORALL_IM_TIME(declare_cur_metrics_real);
   im_time_metric_id = im_metric_id[FORALL_IM_TIME(getindex)];
-  hpcrun_close_kind(im_kind);
+  close_cur_kind;
 
-#define declare_em_metrics(name, index) \
-  em_metric_id[index] = hpcrun_set_new_metric_info(em_kind, name);
-#define hide_em_metrics(name, index) \
-  hpcrun_set_display(em_metric_id[index], 0, 1);
+#undef cur_kind
+#undef cur_metrics
 
-#define declare_em_metric_time(name, index) \
-  em_metric_id[index] = hpcrun_set_new_metric_info_and_period(em_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none);
-#define hide_em_metric_time(name, index) \
-  hpcrun_set_display(em_metric_id[index], 0, 1);
+#define cur_kind em_kind
+#define cur_metrics em_metric_id
 
-  em_kind = hpcrun_metrics_new_kind();
-  FORALL_EM(declare_em_metrics);	
-  FORALL_EM(hide_em_metrics);
-  FORALL_EM_TIME(declare_em_metric_time);
-  FORALL_EM_TIME(hide_em_metric_time);
+  create_cur_kind;
+  FORALL_EM(declare_cur_metrics);	
+  FORALL_EM(hide_cur_metrics);
+  FORALL_EM_TIME(declare_cur_metrics_real);
   em_time_metric_id = em_metric_id[FORALL_EM_TIME(getindex)];
-  hpcrun_close_kind(em_kind);
+  close_cur_kind;
 
-#define declare_me_metrics(name, index) \
-  me_metric_id[index] = hpcrun_set_new_metric_info(me_kind, name);
-#define hide_me_metrics(name, index) \
-  hpcrun_set_display(me_metric_id[index], 0, 1);
+#undef cur_kind
+#undef cur_metrics
 
-#define declare_me_metric_time(name, index) \
-  me_metric_id[index] = hpcrun_set_new_metric_info_and_period(me_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none);
-#define hide_me_metric_time(name, index) \
-  hpcrun_set_display(me_metric_id[index], 0, 1);
+#define cur_kind me_kind
+#define cur_metrics me_metric_id
 
-  me_kind = hpcrun_metrics_new_kind();
-  FORALL_ME(declare_me_metrics);	
-  FORALL_ME(hide_me_metrics);
-  FORALL_ME_TIME(declare_me_metric_time);
-  FORALL_ME_TIME(hide_me_metric_time);
+  create_cur_kind;
+  FORALL_ME(declare_cur_metrics);	
+  FORALL_ME(hide_cur_metrics);
+  FORALL_ME_TIME(declare_cur_metrics_real);
   me_time_metric_id = me_metric_id[FORALL_ME_TIME(getindex)];
-  hpcrun_close_kind(me_kind);
+  close_cur_kind;
 
-#define declare_ke_metrics(name, index) \
-  ke_metric_id[index] = hpcrun_set_new_metric_info(ke_kind, name);
+#undef cur_kind
+#undef cur_metrics
 
-#define hide_ke_metrics(name, index) \
-  hpcrun_set_display(ke_metric_id[index], 0, 1);
+#define cur_kind me_set_kind
+#define cur_metrics me_set_metric_id
 
-#define declare_ke_metric_time(name, index) \
-  ke_metric_id[index] = hpcrun_set_new_metric_info_and_period(ke_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none);
-#define hide_ke_metric_time(name, index) \
-  hpcrun_set_display(ke_metric_id[index], 0, 1);
+  create_cur_kind;
+  FORALL_ME_SET(declare_cur_metrics);	
+  FORALL_ME_SET(hide_cur_metrics);
+  FORALL_ME_SET_TIME(declare_cur_metrics_real);
+  me_set_time_metric_id = me_set_metric_id[FORALL_ME_SET_TIME(getindex)];
+  close_cur_kind;
 
-#define declare_ke_occupancy_metrics(name, index) \
-  ke_metric_id[index] = hpcrun_set_new_metric_info_and_period(ke_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none); \
-  hpcrun_set_display(ke_metric_id[index], 1, 0);
+#undef cur_kind
+#undef cur_metrics
 
-  ke_kind = hpcrun_metrics_new_kind();
-  FORALL_KE(declare_ke_metrics);	
-  FORALL_KE(hide_ke_metrics);	
-  FORALL_KE_TIME(declare_ke_metric_time);	
-  FORALL_KE_TIME(hide_ke_metric_time);	
-  FORALL_KE_OCCUPANCY(declare_ke_occupancy_metrics);
+#define cur_kind ke_kind
+#define cur_metrics ke_metric_id
+
+  create_cur_kind;
+  FORALL_KE(declare_cur_metrics);	
+  FORALL_KE(hide_cur_metrics);	
+  FORALL_KE_TIME(declare_cur_metrics_real);	
+  FORALL_KE_OCCUPANCY(declare_cur_metrics_real);
   ke_static_shared_metric_id = ke_metric_id[0];
   ke_dynamic_shared_metric_id = ke_metric_id[1];
   ke_local_metric_id = ke_metric_id[2];
   ke_active_warps_per_sm_metric_id = ke_metric_id[3];
   ke_max_active_warps_per_sm_metric_id = ke_metric_id[4];
-  ke_block_threads_id = ke_metric_id[5];
-  ke_block_registers_id = ke_metric_id[6];
+  ke_thread_registers_id = ke_metric_id[5];
+  ke_block_threads_id = ke_metric_id[6];
   ke_block_shared_memory_id = ke_metric_id[7];
   ke_count_metric_id = ke_metric_id[8];
   ke_time_metric_id = ke_metric_id[9];
   ke_occupancy_metric_id = ke_metric_id[10];
-  hpcrun_close_kind(ke_kind);
 
+  hpcrun_set_percent(ke_occupancy_metric_id, 1);
   metric_desc_t* ke_occupancy_metric = hpcrun_id2metric_linked(ke_occupancy_metric_id);
-  char *ke_occupancy_buffer = hpcrun_malloc(sizeof(char) * MAX_CHAR_FORMULA);
+  char *ke_occupancy_buffer = hpcrun_malloc_safe(sizeof(char) * MAX_CHAR_FORMULA);
   sprintf(ke_occupancy_buffer, "$%d/$%d", ke_active_warps_per_sm_metric_id, ke_max_active_warps_per_sm_metric_id);
   ke_occupancy_metric->formula = ke_occupancy_buffer;
 
-#define declare_sync_metrics(name, index) \
-  sync_metric_id[index] = hpcrun_set_new_metric_info_and_period(sync_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none);
-#define hide_sync_metrics(name, index) \
-  hpcrun_set_display(sync_metric_id[index], 0, 1);
+  close_cur_kind;
 
-  sync_kind = hpcrun_metrics_new_kind();
-  FORALL_SYNC(declare_sync_metrics);	
-  FORALL_SYNC(hide_sync_metrics);	
-  hpcrun_close_kind(sync_kind);
+#undef cur_kind
+#undef cur_metrics
 
-#define declare_gl_metrics(name, index) \
-  gl_metric_id[index] = hpcrun_set_new_metric_info(gl_kind, name);
-#define hide_gl_metrics(name, index) \
-  hpcrun_set_display(gl_metric_id[index], 0, 1);
+#define cur_kind sync_kind
+#define cur_metrics sync_metric_id
 
-  gl_kind = hpcrun_metrics_new_kind();
-  FORALL_GL(declare_gl_metrics);	
-  FORALL_GL(hide_gl_metrics);	
-  hpcrun_close_kind(gl_kind);
+  create_cur_kind;
+  FORALL_SYNC(declare_cur_metrics_real);	
+  FORALL_SYNC(hide_cur_metrics);	
+  FORALL_SYNC_TIME(declare_cur_metrics_real);
+  sync_time_metric_id = sync_metric_id[5];
+  close_cur_kind;
 
-#define declare_sh_metrics(name, index) \
-  sh_metric_id[index] = hpcrun_set_new_metric_info(sh_kind, name);
-#define hide_sh_metrics(name, index) \
-  hpcrun_set_display(sh_metric_id[index], 0, 1);
+#undef cur_kind
+#undef cur_metrics
 
-  sh_kind = hpcrun_metrics_new_kind();
-  FORALL_SH(declare_sh_metrics);	
-  FORALL_SH(hide_sh_metrics);	
-  hpcrun_close_kind(sh_kind);
+#define cur_kind gl_kind
+#define cur_metrics gl_metric_id
 
-#define declare_bh_metrics(name, index) \
-  bh_metric_id[index] = hpcrun_set_new_metric_info(bh_kind, name);
-#define hide_bh_metrics(name, index) \
-  hpcrun_set_display(bh_metric_id[index], 0, 1);
+  create_cur_kind;
+  FORALL_GL(declare_cur_metrics);	
+  FORALL_GL(hide_cur_metrics);	
+  close_cur_kind;
 
-  bh_kind = hpcrun_metrics_new_kind();
-  FORALL_BH(declare_bh_metrics);	
-  FORALL_BH(hide_bh_metrics);	
+#undef cur_kind
+#undef cur_metrics
+
+#define cur_kind sh_kind
+#define cur_metrics sh_metric_id
+
+  create_cur_kind;
+  FORALL_SH(declare_cur_metrics);	
+  FORALL_SH(hide_cur_metrics);	
+  close_cur_kind;
+
+#undef cur_kind
+#undef cur_metrics
+
+#define cur_kind bh_kind
+#define cur_metrics bh_metric_id
+
+  create_cur_kind;
+  FORALL_BH(declare_cur_metrics);	
+  FORALL_BH(hide_cur_metrics);	
   bh_diverged_metric_id = bh_metric_id[0];
   bh_executed_metric_id = bh_metric_id[1];
-  hpcrun_close_kind(bh_kind);
+  close_cur_kind;
 
-#define declare_info_metrics(name, index) \
-  info_metric_id[index] = hpcrun_set_new_metric_info(info_kind, name);
+#undef cur_kind
+#undef cur_metrics
 
-#define hide_info_metrics(name, index) \
-  hpcrun_set_display(info_metric_id[index], 0, 1);
+#define cur_kind info_kind
+#define cur_metrics info_metric_id
 
-#define declare_sm_efficiency_metrics(name, index) \
-  info_metric_id[index] = hpcrun_set_new_metric_info_and_period(info_kind, name, \
-    MetricFlags_ValFmt_Real, 1, metric_property_none); \
-  hpcrun_set_display(info_metric_id[index], 1, 0);
-
-  info_kind = hpcrun_metrics_new_kind();
-  FORALL_INFO(declare_info_metrics);	
-  FORALL_INFO(hide_info_metrics);
-  FORALL_INFO_EFFICIENCY(declare_sm_efficiency_metrics);
+  create_cur_kind;
+  FORALL_INFO(declare_cur_metrics);	
+  FORALL_INFO(hide_cur_metrics);
+  FORALL_INFO_EFFICIENCY(declare_cur_metrics_real);
   info_dropped_samples_id = info_metric_id[0];
   info_period_in_cycles_id = info_metric_id[1];
   info_total_samples_id = info_metric_id[2];
   info_sm_full_samples_id = info_metric_id[3];
   info_sm_efficiency_id = info_metric_id[4];
-  hpcrun_close_kind(info_kind);
 
+  hpcrun_set_percent(info_sm_efficiency_id, 1);
   metric_desc_t* sm_efficiency_metric = hpcrun_id2metric_linked(info_sm_efficiency_id);
-  char *sm_efficiency_buffer = hpcrun_malloc(sizeof(char) * MAX_CHAR_FORMULA);
+  char *sm_efficiency_buffer = hpcrun_malloc_safe(sizeof(char) * MAX_CHAR_FORMULA);
   sprintf(sm_efficiency_buffer, "$%d/$%d", info_total_samples_id, info_sm_full_samples_id);
   sm_efficiency_metric->formula = sm_efficiency_buffer;
+
+  close_cur_kind;
+
+#ifndef HPCRUN_STATIC_LINK
+  if (cuda_bind()) {
+    EEMSG("hpcrun: unable to bind to NVIDIA CUDA library %s\n", dlerror());
+    monitor_real_exit(-1);
+  }
+
+  if (cupti_bind()) {
+    EEMSG("hpcrun: unable to bind to NVIDIA CUPTI library %s\n", dlerror());
+    monitor_real_exit(-1);
+  }
+#endif
 
   // Fetch the event string for the sample source
   // only one event is allowed
@@ -907,7 +980,6 @@ METHOD_FN(process_event_list, int lush_metrics)
   hpcrun_extract_ev_thresh(event, sizeof(nvidia_name), nvidia_name,
     &pc_sampling_frequency, pc_sampling_frequency_default);
   if (hpcrun_ev_is(nvidia_name, CUDA_NVIDIA) || hpcrun_ev_is(nvidia_name, CUDA_PC_SAMPLING)) {
-    cupti_metrics_init();
     cuda_init_placeholders();
     
     // Register hpcrun callbacks
@@ -915,6 +987,20 @@ METHOD_FN(process_event_list, int lush_metrics)
     device_finalizer_register(device_finalizer_type_flush, &device_finalizer_flush);
     device_finalizer_shutdown.fn = cupti_device_shutdown;
     device_finalizer_register(device_finalizer_type_shutdown, &device_finalizer_shutdown);
+
+    // Get control knobs
+    int device_buffer_size = control_knob_value_get_int(HPCRUN_CUDA_DEVICE_BUFFER_SIZE);
+    int device_semaphore_size = control_knob_value_get_int(HPCRUN_CUDA_DEVICE_SEMAPHORE_SIZE);
+    if (device_buffer_size == 0) {
+      device_buffer_size = DEFAULT_DEVICE_BUFFER_SIZE;
+    }
+    if (device_semaphore_size == 0) {
+      device_semaphore_size = DEFAULT_DEVICE_SEMAPHORE_SIZE;
+    }
+
+    PRINT("Device buffer size %d\n", device_buffer_size);
+    PRINT("Device semaphore size %d\n", device_semaphore_size);
+    cupti_device_buffer_config(device_buffer_size, device_semaphore_size);
 
     // Register cupti callbacks
     cupti_trace_init();

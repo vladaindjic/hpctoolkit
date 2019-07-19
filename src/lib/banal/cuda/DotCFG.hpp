@@ -45,9 +45,9 @@ struct Inst {
         dual_second = true;
       }
     }
-    std::istringstream iss(inst_str);
+    std::istringstream *iss = new std::istringstream(inst_str);
     std::string s;
-    if (std::getline(iss, s, ':')) {
+    if (std::getline(*iss, s, ':')) {
       if (s.find("<") != std::string::npos) {
         auto pos = s.find(">");
         this->port = s.substr(1, pos - 1);
@@ -56,7 +56,7 @@ struct Inst {
       std::stringstream ss;
       ss << std::hex << s;
       ss >> offset;
-      if (std::getline(iss, s, ':')) {
+      if (std::getline(*iss, s, ':')) {
         s.erase(std::remove(s.begin(), s.end(), '{'), s.end());
         s.erase(std::remove(s.begin(), s.end(), '}'), s.end());
         s.erase(std::remove(s.begin(), s.end(), ';'), s.end());
@@ -66,8 +66,9 @@ struct Inst {
         s.erase(std::remove(s.begin(), s.end(), '`'), s.end());
         std::regex e("\\\\ ");
         std::string newline("\n");
-        iss = std::istringstream(std::regex_replace(s, e, newline));
-        while (std::getline(iss, s)) {
+        delete iss;
+        iss = new std::istringstream(std::regex_replace(s, e, newline));
+        while (std::getline(*iss, s)) {
           if (s != "") {
             if (opcode == "") {
               if (s.find("@") != std::string::npos) {
@@ -114,6 +115,7 @@ struct Inst {
         }
       }
     }
+    delete iss;
   }
 };
 

@@ -7,7 +7,8 @@
 typedef enum {
   CUPTI_ENTRY_TYPE_ACTIVITY = 1,
   CUPTI_ENTRY_TYPE_NOTIFICATION = 2,
-  CUPTI_ENTRY_TYPE_COUNT = 3
+  CUPTI_ENTRY_TYPE_BUFFER = 3,
+  CUPTI_ENTRY_TYPE_COUNT = 4
 } cupti_entry_type_t;
 
 // generic entry
@@ -46,6 +47,13 @@ typedef struct cupti_memory {
   uint32_t memKind;
 } cupti_memory_t;
 
+typedef struct cupti_memset {
+  uint64_t start;
+  uint64_t end;
+  uint64_t bytes;
+  uint32_t memKind;
+} cupti_memset_t;
+
 // kernel
 typedef struct cupti_kernel {
   uint64_t start;
@@ -55,8 +63,8 @@ typedef struct cupti_kernel {
   int32_t localMemoryTotal;
   uint32_t activeWarpsPerSM;
   uint32_t maxActiveWarpsPerSM;
+  uint32_t threadRegisters;
   uint32_t blockThreads;
-  uint32_t blockRegisters;
   uint32_t blockSharedMemory;
 } cupti_kernel_t;
 
@@ -107,6 +115,7 @@ typedef struct cupti_activity {
     cupti_pc_sampling_record_info_t pc_sampling_record_info;
     cupti_memcpy_t memcpy;
     cupti_memory_t memory;
+    cupti_memset_t memset;
     cupti_kernel_t kernel;
     cupti_global_access_t global_access;
     cupti_shared_access_t shared_access;
@@ -129,7 +138,7 @@ typedef struct cupti_entry_notification {
 } cupti_entry_notification_t;
 
 // activity allocator
-extern cupti_node_t *
+cupti_node_t *
 cupti_activity_node_new
 (
  CUpti_Activity *activity,
@@ -138,7 +147,7 @@ cupti_activity_node_new
 );
 
 
-extern void
+void
 cupti_activity_node_set
 (
  cupti_node_t *cupti_node,
@@ -148,7 +157,7 @@ cupti_activity_node_set
 );
 
 // notification allocator
-extern cupti_node_t *
+cupti_node_t *
 cupti_notification_node_new
 (
  uint64_t host_op_id,
@@ -158,7 +167,7 @@ cupti_notification_node_new
 );
 
 
-extern void
+void
 cupti_notification_node_set
 (
  cupti_node_t *cupti_node,

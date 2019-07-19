@@ -114,6 +114,7 @@
 #include "device-initializers.h"
 #include "device-finalizers.h"
 #include "module-ignore-map.h"
+#include "control-knob.h"
 #include "addr_to_module.h"
 #include "epoch.h"
 #include "thread_data.h"
@@ -209,6 +210,7 @@ int lush_metrics = 0; // FIXME: global variable for now
 
 static hpcrun_options_t opts;
 static bool hpcrun_is_initialized_private = false;
+static bool hpcrun_dlopen_forced = false;
 static bool safe_to_sync_sample = false;
 static void* main_addr = NULL;
 static void* main_lower = NULL;
@@ -277,6 +279,12 @@ copy_execname(char* process_name)
 //
 // *** Accessor functions ****
 //
+
+void
+hpcrun_force_dlopen(bool forced)
+{
+  hpcrun_dlopen_forced = forced;
+}
 
 bool
 hpcrun_is_initialized()
@@ -851,6 +859,8 @@ monitor_init_process(int *argc, char **argv, void* data)
   hpcrun_registered_sources_init();
 
   messages_init();
+
+  control_knob_init();  
 
   hpcrun_do_custom_init();
 
@@ -1576,13 +1586,15 @@ MONITOR_EXT_WRAP_NAME(pthread_cond_broadcast)(pthread_cond_t* cond)
 void
 monitor_pre_dlopen(const char* path, int flags)
 {
-  if (! hpcrun_is_initialized()) {
-    hpcrun_dlopen_flags_push(false);
-    return;
-  }
-  if (! hpcrun_safe_enter()) {
-    hpcrun_dlopen_flags_push(false);
-    return;
+  if (! hpcrun_dlopen_forced) {
+    if (! hpcrun_is_initialized()) {
+      hpcrun_dlopen_flags_push(false);
+      return;
+    }
+    if (! hpcrun_safe_enter()) {
+      hpcrun_dlopen_flags_push(false);
+      return;
+    }
   }
   hpcrun_dlopen_flags_push(true);
   hpcrun_pre_dlopen(path, flags);
@@ -1596,11 +1608,13 @@ monitor_dlopen(const char *path, int flags, void* handle)
   if (!hpcrun_dlopen_flags_pop()) {
     return;
   }
-  if (! hpcrun_is_initialized()) {
-    return;
-  }
-  if (! hpcrun_safe_enter()) {
-    return;
+  if (! hpcrun_dlopen_forced) {
+    if (! hpcrun_is_initialized()) {
+      return;
+    }
+    if (! hpcrun_safe_enter()) {
+      return;
+    }
   }
   hpcrun_dlopen(path, flags, handle);
   hpcrun_safe_exit();

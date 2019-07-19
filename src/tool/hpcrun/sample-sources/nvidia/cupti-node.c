@@ -73,15 +73,15 @@ cupti_activity_node_set
       entry->activity.data.kernel.end = activity_kernel->end;
       uint32_t activeWarpsPerSM = 0;
       uint32_t maxActiveWarpsPerSM = 0;
+      uint32_t threadRegisters = 0;
       uint32_t blockThreads = 0;
-      uint32_t blockRegisters = 0;
       uint32_t blockSharedMemory = 0;
       cupti_occupancy_analyze(activity_kernel, &activeWarpsPerSM, &maxActiveWarpsPerSM,
-        &blockThreads, &blockRegisters, &blockSharedMemory);
+        &threadRegisters, &blockThreads, &blockSharedMemory);
       entry->activity.data.kernel.activeWarpsPerSM = activeWarpsPerSM;
       entry->activity.data.kernel.maxActiveWarpsPerSM = maxActiveWarpsPerSM;
+      entry->activity.data.kernel.threadRegisters = threadRegisters;
       entry->activity.data.kernel.blockThreads = blockThreads;
-      entry->activity.data.kernel.blockRegisters = blockRegisters;
       entry->activity.data.kernel.blockSharedMemory = blockSharedMemory;
       break;
     }
@@ -152,6 +152,16 @@ cupti_activity_node_set
       entry->activity.data.memory.end = activity_mem->end;
       break;
     }
+    case CUPTI_ACTIVITY_KIND_MEMSET:
+    {
+      CUpti_ActivityMemset *activity_memset = (CUpti_ActivityMemset *)activity;
+      entry->activity.kind = CUPTI_ACTIVITY_KIND_MEMORY;
+      entry->activity.data.memset.memKind = activity_memset->memoryKind;
+      entry->activity.data.memset.bytes = activity_memset->bytes;
+      entry->activity.data.memset.start = activity_memset->start;
+      entry->activity.data.memset.end = activity_memset->end;
+      break;
+    }
     default:
       break;
   }
@@ -166,8 +176,8 @@ cupti_activity_node_new
  cupti_node_t *next
 )
 {
-  cupti_node_t *node = (cupti_node_t *)hpcrun_malloc(sizeof(cupti_node_t));
-  node->entry = (cupti_entry_activity_t *)hpcrun_malloc(sizeof(cupti_entry_activity_t));
+  cupti_node_t *node = (cupti_node_t *)hpcrun_malloc_safe(sizeof(cupti_node_t));
+  node->entry = (cupti_entry_activity_t *)hpcrun_malloc_safe(sizeof(cupti_entry_activity_t));
   cupti_activity_node_set(node, activity, cct_node, next);
   return node;
 }
@@ -201,8 +211,8 @@ cupti_notification_node_new
  cupti_node_t *next
 )
 {
-  cupti_node_t *node = (cupti_node_t *)hpcrun_malloc(sizeof(cupti_node_t));
-  cupti_entry_notification_t *entry = (cupti_entry_notification_t *)hpcrun_malloc(sizeof(cupti_entry_notification_t));
+  cupti_node_t *node = (cupti_node_t *)hpcrun_malloc_safe(sizeof(cupti_node_t));
+  cupti_entry_notification_t *entry = (cupti_entry_notification_t *)hpcrun_malloc_safe(sizeof(cupti_entry_notification_t));
   node->entry = entry;
   cupti_notification_node_set(node, host_op_id, cct_node, record, next);
   return node;

@@ -77,10 +77,6 @@
 #include "ompt-region-debug.h"
 #include "ompt-thread.h"
 
-// johnmc merge
-#if 0
-#include "ompt-parallel-region-map.h"
-#endif
 
 
 //*****************************************************************************
@@ -172,51 +168,10 @@ ompt_parallel_begin_internal
     region_data->depth = parent_region->depth + 1;
   }
 
-  if (ompt_eager_context_p()){
+  if (ompt_eager_context_p()) {
      region_data->call_path =
        ompt_parallel_begin_context(region_id, 
 				   flags & ompt_parallel_invoker_program);
-// johnmc merge
-#if 0
-  cct_node_t *callpath =
-    ompt_parallel_begin_context(region_id, ++levels_to_skip, 
-                               invoker == ompt_invoker_program);
-
-  assert(region_id != 0);
-  // device_num -1 reserved for unknown device 
-  ompt_parallel_region_map_insert((uint64_t) region_id, callpath);
-
-  if (!td->master) {
-    if (td->outer_region_id == 0) {
-      // this callback occurs in the context of the parent, so
-      // the enclosing parallel region is available at level 0
-      td->outer_region_id = parent_region_id;
-      td->outer_region_context = NULL;
-    } else {
-      // check whether we should update the outermost id
-      // if the outer-most region with td->outer_region_id is an 
-      // outer region of current region,
-      // then no need to update outer-most id in the td
-      // else if it is not an outer region of the current region, 
-      // we have to update the outer-most id 
-      int i=0;
-      uint64_t outer_id = 0;
-  
-      outer_id = hpcrun_ompt_get_parallel_id(i);
-      while (outer_id > 0) {
-        if (outer_id == td->outer_region_id) break;
-  
-        outer_id = hpcrun_ompt_get_parallel_id(++i);
-      }
-      if (outer_id == 0){
-        // parent region id
-        td->outer_region_id = hpcrun_ompt_get_parallel_id(0); 
-        td->outer_region_context = 0;
-        TMSG(DEFER_CTXT, "enter a new outer region 0x%lx (start team)", 
-          td->outer_region_id);
-      }
-    }
-#endif
   }
 }
 
@@ -238,23 +193,17 @@ ompt_parallel_end_internal
     ompt_notification_t *notification = stack_el->notification;
     if (notification->unresolved_cct) {
       // CASE: thread took sample in an explicit task
-      //printf("NOT_UCP: %p, REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
-      //       notification->unresolved_cct, region_data->region_id, region_data->call_path, &threads_queue);
 
       // FIXME vi3: consider to combine this if with next
       // calling hpcrun_sample_callpath (by calling ompt_region_context and
       // ompt_region_context_end_region_not_eager) twice is obviously overhead
       ending_region = region_data;
-//      cct_node_t *prefix = ompt_region_context(region_data->region_id, ompt_scope_end,
-//                                               flags & ompt_parallel_invoker_program);
 
       if (!region_data->call_path) {
-        //printf("We are providing the call path for the region: REG_ID: %lx, TH_Q: %p\n",
-        //       region_data->region_id, &threads_queue);
         // Thread did not took a sample outside the explicit task, so it did not have
         // an oportunity to provide region's call path.
         // The call path will be provided now.
-        ompt_region_context_end_region_not_eager(region_data->region_id, ompt_scope_end,
+        ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
                                                  flags & ompt_parallel_invoker_program);
       }
 
@@ -277,37 +226,20 @@ ompt_parallel_end_internal
         // but do not insert them in any tree
         ending_region = region_data;
         // need to provide call path, because master did not take a sample inside region
-        ompt_region_context_end_region_not_eager(region_data->region_id, ompt_scope_end,
-                                     flags & ompt_parallel_invoker_program);
+        ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
+                                 flags & ompt_parallel_invoker_program);
         ending_region = NULL;
       }
 
       // notify next thread
       wfq_enqueue(OMPT_BASE_T_STAR(to_notify), to_notify->threads_queue);
-    }else{
+    } else {
       // if none, you can reuse region
       // this thread is region creator, so it could add to private region's list
       // FIXME vi3: check if you are right
       ompt_region_release(region_data);
       // or should use this
       // wfq_enqueue((ompt_base_t*)region_data, &public_region_freelist);
-
-// johnmc merge
-#if 0
-  hpcrun_safe_enter();
-  ompt_parallel_region_map_entry_t *record = ompt_parallel_region_map_lookup(parallel_id);
-  if (record) {
-    if (ompt_parallel_region_map_entry_refcnt_get(record) > 0) {
-      // associate calling context with region if it is not already present
-      if (ompt_parallel_region_map_entry_callpath_get(record) == NULL) {
-        ompt_parallel_region_map_entry_callpath_set
-          (record, 
-           ompt_region_context(parallel_id, ompt_context_end, 
-                               ++levels_to_skip, invoker == ompt_invoker_program));
-      }
-    } else {
-      ompt_parallel_region_map_refcnt_update(parallel_id, 0L);
-#endif
     }
   }
 
@@ -389,6 +321,14 @@ ompt_implicit_task_internal_begin
   task_data->ptr = NULL;
 
   ompt_region_data_t* region_data = (ompt_region_data_t*)parallel_data->ptr;
+
+  if (region_data == NULL) {
+    // there are no parallel region callbacks for the initial task.
+    // region_data == NULL indicates that this is an initial task. 
+    // do nothing for initial tasks.
+    return;
+  }
+
   cct_node_t *prefix = region_data->call_path;
 
   task_data->ptr = prefix;

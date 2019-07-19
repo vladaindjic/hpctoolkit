@@ -44,62 +44,56 @@
 //
 // ******************************************************* EndRiceCopyright *
 
-#ifndef __OMPT_STATE_PLACEHOLDERS_H__
-#define __OMPT_STATE_PLACEHOLDERS_H__
-
-
-
 //***************************************************************************
+//
+// File:
+//   libdl.h
+//
+// Purpose:
+//   simple wrappers that facilitate using dlopen and dlsym to dynamically 
+//   bind symbols for use by hpcrun sample sources.
+//  
+//***************************************************************************
+
+#ifndef _HPCTOOLKIT_LIBDL_H_
+#define _HPCTOOLKIT_LIBDL_H_
+
+//*****************************************************************************
+// system include files
+//*****************************************************************************
+
+#include <dlfcn.h>
+
+
+
+//*****************************************************************************
 // local include files
-//***************************************************************************
+//*****************************************************************************
 
-#include <hpcrun/utilities/ip-normalized.h>
-
-#include "ompt-types.h"
+#include <monitor.h>
 
 
 
-//***************************************************************************
-// types
-//***************************************************************************
+//*****************************************************************************
+// macros
+//*****************************************************************************
 
-typedef struct {
-  void           *pc;
-  ip_normalized_t pc_norm; 
-} ompt_placeholder_t;
+#define DLERR -1
 
+#define DYN_FN_NAME(f) f ## _fn
 
-typedef struct {
-#define declare_ph(f) ompt_placeholder_t f;
-  FOREACH_OMPT_PLACEHOLDER_FN(declare_ph);
-  declare_ph(region_unresolved);
-  declare_ph(ompt_op_none);
-  declare_ph(ompt_op_alloc);
-  declare_ph(ompt_op_copy_in);
-  declare_ph(ompt_op_copy_out);
-  declare_ph(ompt_op_delete);
-  declare_ph(ompt_op_kernel_submit);
-#undef declare_ph 
-} ompt_placeholders_t; 
-
-
-
-//***************************************************************************
-// forward declarations
-//***************************************************************************
-
-extern ompt_placeholders_t ompt_placeholders;
-
-
-
-//***************************************************************************
-// interface operations 
-//***************************************************************************
-
-void
-ompt_init_placeholders
-(
- ompt_function_lookup_t ompt_fn_lookup
-);
+#define CHK_DLOPEN(h, lib, flags)		      \
+  void* h = dlopen(lib, flags);          \
+  if (!h) {					      \
+    return -1;					      \
+  }                                                   
+  
+#define CHK_DLSYM(h, fn) {						\
+    dlerror();								\
+    DYN_FN_NAME(fn) = dlsym(h, #fn);					\
+    if (DYN_FN_NAME(fn) == 0) {						\
+      return -1;							\
+    }									\
+  }
 
 #endif

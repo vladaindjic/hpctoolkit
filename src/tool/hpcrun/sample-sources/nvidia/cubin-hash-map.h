@@ -1,5 +1,5 @@
-#ifndef _hpctoolkit_ompt_region_map_h_
-#define _hpctoolkit_ompt_region_map_h_
+#ifndef _HPCTOOLKIT_CUBIN_HASH_MAP_H_
+#define _HPCTOOLKIT_CUBIN_HASH_MAP_H_
 
 /******************************************************************************
  * system includes
@@ -7,36 +7,41 @@
 
 #include <stdint.h>
 
-
-
 /******************************************************************************
  * local includes
  *****************************************************************************/
-
-#include <hpcrun/cct/cct.h>
-
-
 
 /******************************************************************************
  * type definitions 
  *****************************************************************************/
 
-typedef struct ompt_region_map_entry_s ompt_region_map_entry_t;
-
-
+typedef struct cubin_hash_map_entry_s cubin_hash_map_entry_t;
 
 /******************************************************************************
  * interface operations
  *****************************************************************************/
 
-ompt_region_map_entry_t *ompt_region_map_lookup(uint64_t id);
+cubin_hash_map_entry_t *
+cubin_hash_map_lookup
+(
+ uint32_t cubin_id
+);
 
-void ompt_region_map_insert(uint64_t region_id, cct_node_t *call_path, int64_t device_id);
 
-bool ompt_region_map_refcnt_update(uint64_t region_id, int val);
+void
+cubin_hash_map_insert
+(
+ uint32_t cubin_id,
+ const void *cubin,
+ size_t size
+);
 
-uint64_t ompt_region_map_entry_refcnt_get(ompt_region_map_entry_t *entry);
 
-cct_node_t *ompt_region_map_entry_callpath_get(ompt_region_map_entry_t *entry);
+unsigned char *
+cubin_hash_map_entry_hash_get
+(
+ cubin_hash_map_entry_t *entry,
+ unsigned int *len
+);
 
 #endif

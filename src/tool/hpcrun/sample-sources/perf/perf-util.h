@@ -104,9 +104,6 @@ typedef struct perf_mmap_data_s {
   u32   header_misc; /* information about the sample */
   u32   header_type; /* either sample record or other */
 
-  // only for PERF_RECORD_SWITCH
-  u64 	context_switch_time;
-
 } perf_mmap_data_t;
 
 
@@ -118,7 +115,8 @@ typedef struct perf_mmap_data_s {
 typedef struct event_info_s {
   int    id;
   struct perf_event_attr attr; // the event attribute
-  int    metric;               // metric ID of the event (raw counter)
+  int    perf_metric_id;
+  int    hpcrun_metric_id;
   metric_desc_t *metric_desc;  // pointer on hpcrun metric descriptor
 
   // predefined metric

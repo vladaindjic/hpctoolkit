@@ -193,6 +193,7 @@ UNW_COMMON_FILES = \
 	unwind/common/interval_t.c			\
 	unwind/common/libunw_intervals.c		\
 	unwind/common/stack_troll.c			\
+	unwind/common/uw_hash.c			\
 	unwind/common/uw_recipe_map.c
 
 UNW_X86_FILES = \
@@ -312,6 +313,8 @@ MY_BASE_FILES =				\
 	thread_data.c			\
 	thread_use.c			\
 	thread_finalize.c		\
+	control-knob.c   \
+	control-knob.h   \
 	hpcrun_flag_stacks.c \
 	device-finalizers.c \
 	device-initializers.c \
@@ -328,8 +331,8 @@ MY_BASE_FILES =				\
 	cct/cct-node-vector.c     \
 	\
 	cct2metrics.c                   \
-	\
-	trampoline/common/trampoline.c  \
+##	\
+##	trampoline/common/trampoline.c  \
 	\
 	lush/lush-backtrace.h lush/lush-backtrace.c \
 	lush/lush.h lush/lush.c	\
@@ -356,9 +359,8 @@ MY_BASE_FILES =				\
 	ompt/ompt-queues.c              \
 	ompt/ompt-region.c              \
 	ompt/ompt-region-debug.c        \
-	ompt/ompt-state-placeholders.c  \
+	ompt/ompt-placeholders.c        \
 	ompt/ompt-device-map.c          \
-	ompt/ompt-parallel-region-map.c \
 	ompt/ompt-task.c                \
 	ompt/ompt-thread.c              \
 	\
@@ -368,6 +370,14 @@ MY_BASE_FILES =				\
 	utilities/timer.c		\
 	utilities/tokenize.h utilities/tokenize.c \
 	utilities/unlink.h utilities/unlink.c
+
+if HOST_CPU_PPC
+MY_BASE_FILES +=			\
+        trampoline/common/trampoline_eager.c
+else
+MY_BASE_FILES +=			\
+        trampoline/common/trampoline_lazy.c
+endif
 
 if OPT_ENABLE_PERF_EVENT
 MY_BASE_FILES +=  \
@@ -447,24 +457,24 @@ if OPT_PAPI_CUPTI
 endif
 
 if OPT_ENABLE_CUDA
-    MY_CUDA_FILES = sample-sources/nvidia/cuda-api.c \
-                    sample-sources/nvidia/cuda-state-placeholders.c
+    MY_CUDA_FILES = sample-sources/nvidia/cuda-api.c 		\
+	sample-sources/nvidia/cuda-device-map.c			\
+	sample-sources/nvidia/cuda-state-placeholders.c
 endif
 
 if OPT_ENABLE_CUPTI
-MY_CUPTI_FILES = sample-sources/nvidia/nvidia.c         \
-								 sample-sources/nvidia/cubin-id-map.c               \
-								 sample-sources/nvidia/cubin-md5-map.c              \
-								 sample-sources/nvidia/cubin-symbols.c              \
-								 sample-sources/nvidia/cupti-analysis.c             \
-								 sample-sources/nvidia/cupti-api.c                  \
-								 sample-sources/nvidia/cupti-correlation-id-map.c   \
-								 sample-sources/nvidia/cupti-device-id-map.c        \
-								 sample-sources/nvidia/cupti-function-id-map.c      \
-								 sample-sources/nvidia/cupti-host-op-map.c          \
-								 sample-sources/nvidia/cupti-stack.c        \
-								 sample-sources/nvidia/cupti-node.c         \
-								 sample-sources/nvidia/cupti-record.c 
+MY_CUPTI_FILES = sample-sources/nvidia/nvidia.c			\
+	sample-sources/nvidia/cubin-id-map.c			\
+	sample-sources/nvidia/cubin-hash-map.c			\
+	sample-sources/nvidia/cubin-symbols.c			\
+	sample-sources/nvidia/cupti-analysis.c			\
+	sample-sources/nvidia/cupti-api.c			\
+	sample-sources/nvidia/cupti-correlation-id-map.c	\
+	sample-sources/nvidia/cupti-function-id-map.c		\
+	sample-sources/nvidia/cupti-host-op-map.c		\
+	sample-sources/nvidia/cupti-stack.c			\
+	sample-sources/nvidia/cupti-node.c			\
+	sample-sources/nvidia/cupti-record.c	 
 endif
 
 MY_UPC_FILES = sample-sources/upc.c
@@ -679,9 +689,9 @@ if OPT_BGQ_BACKEND
 endif
 
 libhpcrun_la_LDFLAGS = -Wl,-Bsymbolic 	\
-	-L$(LIBMONITOR_LIB) -lmonitor -lpthread -lrt -L$(LIBELF_LIB) -lelf -lcrypto \
+	-L$(LIBMONITOR_LIB) -lmonitor -lpthread -lrt -L$(LIBELF_LIB) -lelf \
         $(LIBUNWIND_LDFLAGS_DYN) $(LZMA_LDFLAGS_DYN) \
-        $(PERFMON_LDFLAGS_DYN)
+        $(PERFMON_LDFLAGS_DYN) $(MBEDTLS_LIBS)
 
 libhpcrun_ga_la_LDFLAGS = -Wl,-Bsymbolic
 
@@ -818,8 +828,6 @@ if OPT_ENABLE_CUPTI
   libhpcrun_la_SOURCES  += $(MY_CUPTI_FILES)
   libhpcrun_o_SOURCES   += $(MY_CUPTI_FILES)
   libhpcrun_la_CPPFLAGS += $(CUPTI_INC_FLGS)
-  libhpcrun_la_LDFLAGS  += $(CUPTI_LD_FLGS)
-  libhpcrun_la_LDFLAGS  += -L/usr/lib64/nvidia -lcuda
 
   MY_CPP_DEFINES  += -DHPCRUN_SS_NVIDIA
 endif
@@ -873,7 +881,6 @@ if OPT_ENABLE_CUDA
   libhpcrun_la_SOURCES += $(MY_CUDA_FILES)
   libhpcrun_la_CPPFLAGS += -DENABLE_CUDA
   libhpcrun_la_CFLAGS  += $(OPT_CUDA_IFLAGS) -g
-  libhpcrun_la_LDFLAGS += $(OPT_CUDA_LDFLAGS)
 endif
 
 if UNW_LIBUNW
