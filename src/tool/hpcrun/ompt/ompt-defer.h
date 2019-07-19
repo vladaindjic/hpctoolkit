@@ -222,4 +222,8 @@ tmp_end_region_resolve
  cct_node_t* prefix
 );
 
+// vi3: used to memoize the call path that corresponds to the
+// user level functions before eventual extension with
+// cct nodes that correspond to the kernel functions
+extern __thread cct_node_t *cct_path_before_kernel_extension;
 #endif

@@ -87,7 +87,10 @@
 
 #define DEFER_DEBUGGING 0
 
-
+// vi3: used to memoize the call path that corresponds to the
+// user level functions before eventual extension with
+// cct nodes that correspond to the kernel functions
+__thread cct_node_t *cct_path_before_kernel_extension = NULL;
 
 //*****************************************************************************
 // private operations
@@ -1151,6 +1154,16 @@ provide_callpath_for_regions_if_needed
  cct_node_t *cct
 )
 {
+  // vi3: It is possible that thread takes a sample inside linux kernel.
+  // Kernel cct nodes would be appended to the call path that corresponds
+  // to the user level code.
+  // OMPT Frames are aware only about user level code, so we need
+  // the call path that corresponds to the user level code.
+  // That is the call path before eventual extension with cct nodes of kernel
+  // functions.
+  cct = cct_path_before_kernel_extension ?
+  cct_path_before_kernel_extension : cct;
+
   if (bt->partial_unwind) {
     deferred_resolution_breakpoint();
   }
