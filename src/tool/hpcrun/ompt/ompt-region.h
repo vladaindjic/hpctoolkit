@@ -82,6 +82,12 @@ hpcrun_ompt_region_free
  ompt_region_data_t *region_data
 );
 
+cct_node_t*
+hpcrun_cct_insert_path_return_leaf_tmp
+(
+  cct_node_t *root,
+  cct_node_t *path
+);
 
 
 #endif

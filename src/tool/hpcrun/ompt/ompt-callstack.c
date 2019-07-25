@@ -271,6 +271,7 @@ collapse_callstack
 //  bt->fence = FENCE_MAIN;
 }
 
+__thread int nested_regions_before_explicit_task = 0;
 
 static void
 ompt_elide_runtime_frame(
@@ -279,6 +280,8 @@ ompt_elide_runtime_frame(
   int isSync
 )
 {
+
+  nested_regions_before_explicit_task = 0;
   frame_t **bt_outer = &bt->last;
   frame_t **bt_inner = &bt->begin;
 
@@ -500,6 +503,8 @@ ompt_elide_runtime_frame(
 
       exit0 = reenter1 = NULL;
       // --------------------------------
+
+      nested_regions_before_explicit_task++;
 
     } else if (exit0 && !reenter1) {
       // corner case: reenter1 is in the team master's stack, not mine. eliminate all
@@ -792,7 +797,7 @@ ompt_cct_cursor_finalize
   if (ompt_eager_context || TD_GET(master))
       return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (omp_task_context && omp_task_context == task_data_invalid) {
-    region_stack_el_t *stack_el = &region_stack[top_index];
+    region_stack_el_t *stack_el = &region_stack[top_index - nested_regions_before_explicit_task];
     ompt_notification_t *notification = stack_el->notification;
 
     //if (notification->region_data->call_path != NULL && stack_el->team_master) {
@@ -849,7 +854,7 @@ ompt_cct_cursor_finalize
 #endif
     }
   }
-
+  nested_regions_before_explicit_task = 0;
   return cct_cursor;
 }
 

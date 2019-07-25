@@ -207,7 +207,16 @@ ompt_parallel_end_internal
                                                  flags & ompt_parallel_invoker_program);
       }
 
-      cct_node_t *prefix = region_data->call_path;
+      // FIXME vi3: tmp solution to handle tasks
+      cct_node_t *prefix =
+        ompt_region_context_eager(region_data->region_id, ompt_scope_end,
+                                  flags & ompt_parallel_invoker_program);
+
+      // top_cct_node of region_data->call_path is not THREAD_ROOT
+      prefix =
+        hpcrun_cct_insert_path_return_leaf(
+          hpcrun_get_thread_epoch()->csdata.thread_root,
+          prefix);
 
       // if combined this if branch with branch of next if
       // we will remove this line

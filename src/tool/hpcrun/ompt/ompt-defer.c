@@ -727,13 +727,13 @@ try_resolve_one_region_context
 
     // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
     // when had this condtion, once infinity happen
-    if (parent_unresolved_cct == hpcrun_get_thread_epoch()->csdata.thread_root) {
-      // from initial region, we should remove the first one
-      prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
-    } else {
+//    if (parent_unresolved_cct == hpcrun_get_thread_epoch()->csdata.thread_root) {
+//      // from initial region, we should remove the first one
+//      prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
+//    } else {
       // for resolving inner region, we should consider all cct nodes from prefix
       prefix = hpcrun_cct_insert_path_return_leaf_tmp(parent_unresolved_cct, region_call_path);
-    }
+//    }
 
     if (prefix == NULL) {
       deferred_resolution_breakpoint();
@@ -917,6 +917,17 @@ top_cct
 }
 #endif
 
+void
+top_cct_node
+(
+  cct_node_t **cct,
+  frame_t **it,
+  frame_t *end
+)
+{
+  // cct_node that corresponds to the end frame address
+  for(; *it < end; (*it)++, *cct=hpcrun_cct_parent(*cct));
+}
 
 #define UINT64_T(value) (uint64_t)value
 
@@ -938,16 +949,77 @@ first_frame_below
     return NULL;
   }
 
+  // path_beg ==> end
+  // path_end ==> start (and it is changing (everything is reversed compare to cct_insert_backtrace.c)
+  // FIXME: find how to use extern version of retain_recursion
+  bool retain_recursion = false;
+  ip_normalized_t child_routine = ip_normalized_NULL;
   frame_t *it;
-  for(it = start; it <= end; it++, (*index)++) {
-    // FIXME: exit frame of current should be the same as enter_frame.ptr of previous frane
-    if (UINT64_T(it->cursor.sp) >= frame_address){
-      return it;
-    }
+  for (it = start; it <= end; it++) {
+      if ( (! retain_recursion) &&
+	          (end >= it + 1) &&
+            ip_normalized_eq(&(it->the_function), &(child_routine)) &&
+	          ip_normalized_eq(&(it->the_function), &((it + 1)->the_function))) {
+        // do nothing
+      } else {
+        if (UINT64_T(it->cursor.sp) >= frame_address){
+          return it;
+        }
+        (*index)++;
+      }
+      child_routine = it->the_function;
   }
+//  for(it = start; it <= end; it++, (*index)++) {
+//    // FIXME: exit frame of current should be the same as enter_frame.ptr of previous frane
+//    if (UINT64_T(it->cursor.sp) >= frame_address){
+//      return it;
+//    }
+//  }
   return NULL;
 }
 
+void
+first_frame_below_tmp
+(
+  frame_t **it,
+  uint64_t frame_address,
+  frame_t *end,
+  cct_node_t **cct
+)
+{
+  // all frames are below, so take first
+  if (UINT64_T((*it)->cursor.sp) > frame_address ) {
+    return;
+  }
+  // all frames are above, so we can take the closest one
+  // to the frame_address
+  if (UINT64_T(end->cursor.sp) <= frame_address) {
+//    *it = end;
+//    *cct = hpcrun_cct_children(top_cct(*cct)); // top_cct is UNRESOLVED or THREAD_ROOT
+    top_cct_node(cct, it, end);
+    return;
+  }
+
+  // path_beg ==> end
+  // path_end ==> start (and it is changing (everything is reversed compare to cct_insert_backtrace.c)
+  // FIXME: find how to use extern version of retain_recursion
+  bool retain_recursion = false;
+  ip_normalized_t child_routine = ip_normalized_NULL;
+  for(; (*it) <= end; (*it)++) {
+    if ( (! retain_recursion) &&
+         (end >= *it + 1) &&
+         ip_normalized_eq(&((*it)->the_function), &(child_routine)) &&
+         ip_normalized_eq(&((*it)->the_function), &((*it + 1)->the_function))) {
+      // do nothing
+    } else {
+      if (UINT64_T((*it)->cursor.sp) > frame_address){
+        return;
+      }
+      *cct = hpcrun_cct_parent(*cct);
+    }
+    child_routine = (*it)->the_function;
+  }
+}
 
 // first_frame_above
 frame_t*
@@ -959,12 +1031,32 @@ first_frame_above
   int *index
 )
 {
+
+
+
   // exit_frame points above the bt_outer
   // The best we can do is to set it = bt_outer
   // We are doing this in loop because we need to update the index.
   frame_t *it;
   if (frame_address > UINT64_T(end->cursor.sp)) {
-    for(it = start; it <= end; it++, (*index)++);
+    // path_beg ==> end
+    // path_end ==> start
+    // (everything is reversed compare to cct_insert_backtrace.c)
+    // FIXME: find how to use extern version of retain_recursion
+    bool retain_recursion = false;
+    ip_normalized_t child_routine = ip_normalized_NULL;
+    for (it = start; it <= end; it++) {
+      if ( (! retain_recursion) &&
+	          (end >= it + 1) &&
+            ip_normalized_eq(&(it->the_function), &(child_routine)) &&
+	          ip_normalized_eq(&(it->the_function), &((it + 1)->the_function))) {
+        // do nothing
+      } else {
+        (*index)++;
+      }
+      child_routine = it->the_function;
+    }
+
     // Indicater for the caller that we don't have anymore frames
     // on the stack. We pass through them all.
     // NOTE vi3: Index would point one frame above bt_outer.
@@ -993,6 +1085,51 @@ first_frame_above
   return it;
 }
 
+void
+first_frame_above_tmp
+(
+  frame_t **it,
+  uint64_t frame_address,
+  frame_t *end,
+  cct_node_t **cct
+)
+{
+  // all frames are below, so we can take the closest one
+  // to the frame_address
+  if (UINT64_T((*it)->cursor.sp) >= frame_address) {
+    return;
+  }
+  // all frames are, so take the last one
+  if (UINT64_T(end->cursor.sp) < frame_address) {
+//    *it = end;
+//    *cct = hpcrun_cct_children(top_cct(*cct)); // top cct node can be UNRESOLVED or THREAD_ROOT
+    top_cct_node(cct, it, end);
+    return;
+  }
+
+  // path_beg ==> end
+  // path_end ==> start
+  // (everything is reversed compare to cct_insert_backtrace.c)
+  // FIXME: find how to use extern version of retain_recursion
+  bool retain_recursion = false;
+  ip_normalized_t child_routine = ip_normalized_NULL;
+  for(; (*it) <= end - 1; (*it)++) {
+    if ( (! retain_recursion) &&
+         (end >= *it + 1) &&
+         ip_normalized_eq(&((*it)->the_function), &(child_routine)) &&
+         ip_normalized_eq(&((*it)->the_function), &((*it + 1)->the_function))) {
+      // do nothing
+    } else {
+
+      if (UINT64_T((*it)->cursor.sp) < frame_address &&
+          UINT64_T((*it + 1)->cursor.sp) >= frame_address) {
+        return;
+      }
+      *cct = hpcrun_cct_parent(*cct);
+    }
+    child_routine = (*it)->the_function;
+  }
+}
 
 cct_node_t*
 get_cct_from_prefix
@@ -1061,7 +1198,7 @@ copy_prefix
 
 }
 
-
+#if 0
 // Check whether we found the outermost region in which current thread is the master
 // returns -1 when there is no regions
 // returns 0 if the region is not the outermost region of which current thread is master
@@ -1086,7 +1223,7 @@ is_outermost_region_thread_is_master
 
   return 0;
 }
-
+#endif
 
 #if DEFER_DEBUGGING
 
@@ -1150,10 +1287,11 @@ dont_resolve_region
          || current_notification->region_data->call_path != NULL;
 }
 
+#if 0
 int
 prefix_length
 (
- cct_node_t *bottom_prefix, 
+ cct_node_t *bottom_prefix,
  cct_node_t *top_prefix
 )
 {
@@ -1169,6 +1307,7 @@ prefix_length
 
   return len;
 }
+#endif
 
 void
 provide_callpath_for_regions_if_needed
@@ -1403,7 +1542,6 @@ provide_callpath_for_end_of_the_region
       deferred_resolution_breakpoint();
     }
 
-    int index = 0;
     ompt_frame_t *current_frame = hpcrun_ompt_get_task_frame(0);
     if (!current_frame) {
       return;
@@ -1419,7 +1557,6 @@ provide_callpath_for_end_of_the_region
     cct_node_t *prefix = NULL;
     // This function is called after implicit task end,
     // which means that this region is poped from the stack.
-    int region_depth = top_index + 1;
 
     if (UINT64_T(current_frame->enter_frame.ptr) == 0
         && UINT64_T(current_frame->exit_frame.ptr) != 0) {
@@ -1430,12 +1567,18 @@ provide_callpath_for_end_of_the_region
         // thread take a simple in the region which is not the innermost
         // all innermost regions have been finished
 
-        bottom_prefix = get_cct_from_prefix(cct, index);
-        it = first_frame_above(it, bt_outer,
-                               UINT64_T(current_frame->exit_frame.ptr),
-                               &index);
-        top_prefix = get_cct_from_prefix(cct, index);
-        process_topomost_cct(cct, &top_prefix, index, region_depth);
+//        bottom_prefix = get_cct_from_prefix(cct, index);
+//        it = first_frame_above(it, bt_outer,
+//                               UINT64_T(current_frame->exit_frame.ptr),
+//                               &index);
+//        top_prefix = get_cct_from_prefix(cct, index);
+//        process_topomost_cct(cct, &top_prefix, index, region_depth);
+
+
+        bottom_prefix = cct;
+        first_frame_above_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
+                              bt_outer, &cct);
+        top_prefix = cct;
         prefix = copy_prefix(top_prefix, bottom_prefix);
         if (!prefix) {
           deferred_resolution_breakpoint();
@@ -1456,8 +1599,10 @@ provide_callpath_for_end_of_the_region
 
         // FIXME vi3: this happened in the first region when master not took sample
 
-        bottom_prefix = get_cct_from_prefix(cct, index);
-        top_prefix = top_cct(cct);
+//        bottom_prefix = get_cct_from_prefix(cct, index);
+//        top_prefix = top_cct(cct);
+        bottom_prefix = cct;
+        top_prefix = hpcrun_cct_children(top_cct(cct)); // top_cct is UNRESOLVED or THREAD_ROOT
 
         // copy prefix
         prefix = copy_prefix(top_prefix, bottom_prefix);
