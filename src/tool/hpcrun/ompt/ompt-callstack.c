@@ -782,7 +782,9 @@ ompt_cct_cursor_finalize
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already
   //        relative to one root or another.
-  if (omp_task_context && omp_task_context != task_data_invalid) {
+  if (ompt_eager_context_p()) {
+    // we will always pass here if ompt_eager_context is true
+    // maybe omp_task_context is redundant
     cct_node_t *root;
 #if 1
     root = ompt_region_root(omp_task_context);
@@ -794,16 +796,11 @@ ompt_cct_cursor_finalize
     }
 #endif
   // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
-  if (ompt_eager_context || TD_GET(master))
-      return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
-  } else if (omp_task_context && omp_task_context == task_data_invalid) {
+    return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
+  } else if (omp_task_context) {
+    // thread is inside explicit task, but we don't have a call path to it
     region_stack_el_t *stack_el = &region_stack[top_index - nested_regions_before_explicit_task];
     ompt_notification_t *notification = stack_el->notification;
-
-    //if (notification->region_data->call_path != NULL && stack_el->team_master) {
-    //  printf("Team master took sample outside the explicit task before: REG_ID: %lx, REG_CP: %p, TH_Q: %p\n",
-    //         notification->region_data->region_id, notification->region_data->call_path, &threads_queue);
-    //}
 
     // if no unresolved cct placeholder for the region, create it
     if (!notification->unresolved_cct) {
