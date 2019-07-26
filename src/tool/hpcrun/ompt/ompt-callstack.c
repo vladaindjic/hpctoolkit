@@ -763,6 +763,39 @@ ompt_backtrace_finalize
 // interface operations
 //******************************************************************************
 
+void
+add_unresolved_cct_to_parent_region_if_needed
+(
+  region_stack_el_t *stack_element
+)
+{
+  // unresolved_cct has been already created
+  // either in this explicit task or while registering
+  // for the region where thread is not the master.
+  if (stack_element->notification->unresolved_cct)
+    return;
+  // going from the thread root and insert UNRESOLVED_CCT nodes
+  cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  region_stack_el_t *current;
+  for(current = (region_stack_el_t *) &region_stack; current <= stack_element; current++) {
+    // vi3>> mozda optimizacija da krenemo od onog gde nismo master
+
+    // already created UNRESOLVED_CCT for this region
+    // when thread has been registered for the region
+    if (current->notification->unresolved_cct) {
+      parent_cct = current->notification->unresolved_cct;
+      continue;
+    }
+
+    current->notification->unresolved_cct =
+      hpcrun_cct_insert_addr(parent_cct,
+        &ADDR2(UNRESOLVED, current->notification->region_data->region_id));
+    parent_cct = current->notification->unresolved_cct;
+  }
+
+}
+
+
 cct_node_t *
 ompt_cct_cursor_finalize
 (
@@ -799,19 +832,11 @@ ompt_cct_cursor_finalize
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (omp_task_context) {
     // thread is inside explicit task, but we don't have a call path to it
-    region_stack_el_t *stack_el = &region_stack[top_index - nested_regions_before_explicit_task];
-    ompt_notification_t *notification = stack_el->notification;
-
-    // if no unresolved cct placeholder for the region, create it
-    if (!notification->unresolved_cct) {
-      // this part of code should be executed only by team master
-      //printf("I should be a master: %d\n", stack_el->team_master);
-      cct_node_t *new_cct =
-              hpcrun_cct_insert_addr(cct->thread_root, &ADDR2(UNRESOLVED, notification->region_data->region_id));
-      notification->unresolved_cct = new_cct;
-    }
+    region_stack_el_t *stack_el = (region_stack_el_t *)omp_task_context;
+    // insert UNRESOLVED_CCT node where is needed
+    add_unresolved_cct_to_parent_region_if_needed(stack_el);
     // return a placeholder for the sample taken inside tasks
-    return notification->unresolved_cct;
+    return stack_el->notification->unresolved_cct;
   }
 
   // FIXME: vi3 consider this when tracing, for now everything works fine

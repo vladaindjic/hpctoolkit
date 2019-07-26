@@ -925,8 +925,24 @@ top_cct_node
   frame_t *end
 )
 {
+  // path_beg ==> end
+  // path_end ==> start
+  // (everything is reversed compare to cct_insert_backtrace.c)
+  // FIXME: find how to use extern version of retain_recursion
+  bool retain_recursion = false;
+  ip_normalized_t child_routine = ip_normalized_NULL;
   // cct_node that corresponds to the end frame address
-  for(; *it < end; (*it)++, *cct=hpcrun_cct_parent(*cct));
+  for(; *it < end; (*it)++) {
+    if ( (! retain_recursion) &&
+         (end >= *it + 1) &&
+         ip_normalized_eq(&((*it)->the_function), &(child_routine)) &&
+         ip_normalized_eq(&((*it)->the_function), &((*it + 1)->the_function))) {
+      // do nothing
+    } else {
+      *cct = hpcrun_cct_parent(*cct);
+    }
+    child_routine = (*it)->the_function;
+  }
 }
 
 #define UINT64_T(value) (uint64_t)value

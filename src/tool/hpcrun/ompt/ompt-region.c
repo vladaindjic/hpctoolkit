@@ -207,16 +207,10 @@ ompt_parallel_end_internal
                                                  flags & ompt_parallel_invoker_program);
       }
 
-      // FIXME vi3: tmp solution to handle tasks
+      cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
       cct_node_t *prefix =
-        ompt_region_context_eager(region_data->region_id, ompt_scope_end,
-                                  flags & ompt_parallel_invoker_program);
-
-      // top_cct_node of region_data->call_path is not THREAD_ROOT
-      prefix =
-        hpcrun_cct_insert_path_return_leaf(
-          hpcrun_get_thread_epoch()->csdata.thread_root,
-          prefix);
+        hpcrun_cct_insert_path_return_leaf_tmp(parent_cct,
+          region_data->call_path);
 
       // if combined this if branch with branch of next if
       // we will remove this line
