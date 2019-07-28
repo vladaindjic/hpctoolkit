@@ -114,7 +114,16 @@ ompt_task_begin_internal
     // only possible when ompt_eager_context == false,
     // because we don't collect call path for the innermost region eagerly
 //    task_data->ptr = task_data_invalid;
-    task_data->ptr = &region_stack[top_index];
+    // FIXME vi3: I guess it is possible that one thread executes this
+    // callback and another execute the task.
+    // Instead of memoizing the pointer to the stack element,
+    // we are going to memoize top_index which is the same as region depth.
+    // If the top_index is 0. that is equal to NULL, which will tell
+    // elider and ompt_cct_cursror_finalizer that thread is not inside
+    // explicit task. The workarround is to add some constant greater than 1,
+    // because top_index can be in range [-1, 128]. If we add only 1 and if
+    // top_index is -1. than we are facing againg to aforementioned problem.
+    task_data->value = (uint64_t)top_index + 33;
   }
 
   td->overhead --;

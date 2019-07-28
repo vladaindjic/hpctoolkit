@@ -304,10 +304,15 @@ ompt_elide_runtime_frame(
     case ompt_state_wait_barrier:
     case ompt_state_wait_barrier_implicit:
     case ompt_state_wait_barrier_explicit:
-      // collapse barriers on non-master ranks 
+      // FIXME vi3->jmc: This wasn't here, so it is possible that
+      // we use context from previous sample. This will lead that
+      // omp_barrier is going to be put next to the implicit task of the region.
+      // It will work only if we eagerly collect region's call paths.
+      TD_GET(omp_task_context) = 0;
+      // collapse barriers on non-master ranks
       if (hpcrun_ompt_get_thread_num(0) != 0) {
-	collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait_state);
-	goto return_label;
+	      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait_state);
+	      goto return_label;
       }
       break; 
     case ompt_state_idle:
@@ -831,8 +836,10 @@ ompt_cct_cursor_finalize
   // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (omp_task_context) {
+    // we memoized the region depth in ompt_task_begin_internal
+    int region_depth = (uint64_t)omp_task_context - 33;
     // thread is inside explicit task, but we don't have a call path to it
-    region_stack_el_t *stack_el = (region_stack_el_t *)omp_task_context;
+    region_stack_el_t *stack_el = &region_stack[region_depth];
     // insert UNRESOLVED_CCT node where is needed
     add_unresolved_cct_to_parent_region_if_needed(stack_el);
     // return a placeholder for the sample taken inside tasks

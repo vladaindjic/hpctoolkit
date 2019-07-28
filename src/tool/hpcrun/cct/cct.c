@@ -898,7 +898,7 @@ void
 hpcrun_cct_merge(cct_node_t* cct_a, cct_node_t* cct_b,
 		 merge_op_t merge, merge_op_arg_t arg)
 {
-  if (hpcrun_cct_is_leaf (cct_a) && hpcrun_cct_is_leaf(cct_b)) {
+  if (!cct_a->children && !cct_b->children) {
     // nothing to clean, because cct_b is leaf
     merge(cct_a, cct_b, arg);
   }
