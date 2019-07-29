@@ -334,7 +334,9 @@ ompt_implicit_task_internal_begin
 
   cct_node_t *prefix = region_data->call_path;
 
-  task_data->ptr = prefix;
+  // Only full call path can be memoized.
+  if (ompt_eager_context_p())
+    task_data->ptr = prefix;
 
   if (!ompt_eager_context_p()) {
     // FIXME vi3: check if this is fine
