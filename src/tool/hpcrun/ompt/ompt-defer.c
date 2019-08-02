@@ -1402,6 +1402,7 @@ provide_callpath_for_regions_if_needed
     // this happened
   } else if (UINT64_T(current_frame->enter_frame.ptr) <= UINT64_T(bt_inner->cursor.sp)
              && UINT64_T(bt_inner->cursor.sp) <= UINT64_T(current_frame->exit_frame.ptr)) { // FIXME should put =
+    printf("vi3>> 1405\n");
     // thread take a simple in the region which is not the innermost
     // all innermost regions have been finished
     if (!first_frame_below_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
@@ -1411,16 +1412,32 @@ provide_callpath_for_regions_if_needed
     }
     // this happened
   } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
+    printf("vi3>> 1416\n");
     // take a sample inside the runtime
     return;
   } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
              && UINT64_T(current_frame->exit_frame.ptr) == 0) {
     // FIXME: check what this means
     // this happened
-    return;
+    // Two possible options:
+    if (top_index >= 0) { // I think that this check is redudant. (The same as at the beginning of the function)
+      // 1. The task has been recently finished and removed from the stack.
+      ompt_frame_t *tmp = hpcrun_ompt_get_task_frame(1);
+      if (!first_frame_below_tmp(
+                 &it,
+                 UINT64_T(tmp->enter_frame.ptr),
+                                 bt_outer, &cct)) {
+        return;
+      }
+    } else {
+      // 2. Initial task
+      printf("We are inside initial task\n");
+      return;
+    }
+
   } else if (UINT64_T(current_frame->exit_frame.ptr) == 0
              && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->enter_frame.ptr)) {
-
+    printf("vi3>> 1440\n");
     // FIXME vi3: this happened in the first region when master not took sample
 
     bottom_prefix = cct;
@@ -1436,6 +1453,7 @@ provide_callpath_for_regions_if_needed
 
     return;
   } else {
+    printf("vi3>> 1456\n");
     deferred_resolution_breakpoint();
     return;
   }
