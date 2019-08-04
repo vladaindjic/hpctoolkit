@@ -1412,7 +1412,7 @@ provide_callpath_for_regions_if_needed
     }
     // this happened
   } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
-    printf("vi3>> 1416\n");
+    printf("vi3>> 1416\n"); // jednom u nestedtasks
     // take a sample inside the runtime
     return;
   } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
@@ -1586,21 +1586,27 @@ provide_callpath_for_end_of_the_region
 
     if (UINT64_T(current_frame->enter_frame.ptr) == 0
         && UINT64_T(current_frame->exit_frame.ptr) != 0) {
-        // thread take a sample inside user code of the parallel region
+      printf("vi3>> 1589\n");
+      if (!first_frame_below_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
+                                 bt_outer, &cct)) {
+        deferred_resolution_breakpoint();
+        return;
+      }
+      bottom_prefix = cct;
+      ompt_frame_t *current_frame = hpcrun_ompt_get_task_frame(1);
+      first_frame_above_tmp(&it,
+                            UINT64_T(current_frame->exit_frame.ptr),
+                            bt_outer, &cct);
+      top_prefix = cct;
+      prefix = copy_prefix(top_prefix, bottom_prefix);
+      ending_region->call_path = prefix;
+
+      // thread take a sample inside user code of the parallel region
         // this region is the the innermost
     } else if (UINT64_T(current_frame->enter_frame.ptr) <= UINT64_T(bt_inner->cursor.sp)
                && UINT64_T(bt_inner->cursor.sp) <= UINT64_T(current_frame->exit_frame.ptr)) { // FIXME should put =
         // thread take a simple in the region which is not the innermost
         // all innermost regions have been finished
-
-//        bottom_prefix = get_cct_from_prefix(cct, index);
-//        it = first_frame_above(it, bt_outer,
-//                               UINT64_T(current_frame->exit_frame.ptr),
-//                               &index);
-//        top_prefix = get_cct_from_prefix(cct, index);
-//        process_topomost_cct(cct, &top_prefix, index, region_depth);
-
-
         bottom_prefix = cct;
         first_frame_above_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
                               bt_outer, &cct);
@@ -1614,19 +1620,18 @@ provide_callpath_for_end_of_the_region
 
 
     } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
-        // take a sample inside the runtime
+      printf("vi3>> 1632\n");
+      // take a sample inside the runtime
     } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
                && UINT64_T(current_frame->exit_frame.ptr) == 0) {
-        // FIXME: check what this means
+      printf("vi3>> 1636\n");
+      // FIXME: check what this means
         // Note: this happens
         deferred_resolution_breakpoint();
     } else if (UINT64_T(current_frame->exit_frame.ptr) == 0
                && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->enter_frame.ptr)) {
 
         // FIXME vi3: this happened in the first region when master not took sample
-
-//        bottom_prefix = get_cct_from_prefix(cct, index);
-//        top_prefix = top_cct(cct);
         bottom_prefix = cct;
         top_prefix = hpcrun_cct_children(top_cct(cct)); // top_cct is UNRESOLVED or THREAD_ROOT
 
@@ -1642,6 +1647,7 @@ provide_callpath_for_end_of_the_region
         return;
 
     } else {
+      printf("vi3>> 1648\n");
       // a case has not been covered
       deferred_resolution_breakpoint();
     }
