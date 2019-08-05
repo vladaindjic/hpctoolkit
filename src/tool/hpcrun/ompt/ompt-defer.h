@@ -198,14 +198,6 @@ provide_callpath_for_regions_if_needed
 );
 
 
-void 
-provide_callpath_for_end_of_the_region
-(
- backtrace_info_t *bt, 
- cct_node_t *cct
-);
-
-
 // stack reorganization
 void 
 add_region_and_ancestors_to_stack
@@ -226,14 +218,5 @@ tmp_end_region_resolve
 // user level functions before eventual extension with
 // cct nodes that correspond to the kernel functions
 extern __thread cct_node_t *cct_path_before_kernel_extension;
-
-void
-process_topomost_cct
-(
-  cct_node_t *cct,
-  cct_node_t **top_most,
-  int index,
-  int region_depth
-);
 
 #endif

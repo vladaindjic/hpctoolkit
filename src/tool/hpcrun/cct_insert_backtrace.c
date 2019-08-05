@@ -437,12 +437,7 @@ help_hpcrun_backtrace2cct(cct_bundle_t* bundle, ucontext_t* context,
 					 metricId, metricIncr, data);
 
   if (!ompt_eager_context_p()) {
-    // FIXME vi3: a big hack
-    if (isSync == 33) {
-      provide_callpath_for_end_of_the_region(&bt, n);
-    } else {
-      provide_callpath_for_regions_if_needed(&bt, n);
-    }
+    provide_callpath_for_regions_if_needed(&bt, n);
   }
 
   if (bt.n_trolls != 0) hpcrun_stats_trolled_inc();

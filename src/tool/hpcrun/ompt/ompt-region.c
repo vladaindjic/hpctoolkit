@@ -200,11 +200,13 @@ ompt_parallel_end_internal
       ending_region = region_data;
 
       if (!region_data->call_path) {
+        top_index++;
         // Thread did not took a sample outside the explicit task, so it did not have
         // an oportunity to provide region's call path.
         // The call path will be provided now.
         ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
                                                  flags & ompt_parallel_invoker_program);
+        top_index--;
       }
 
       cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
@@ -228,9 +230,11 @@ ompt_parallel_end_internal
         // we must create them and send them as a region path,
         // but do not insert them in any tree
         ending_region = region_data;
+        top_index++;
         // need to provide call path, because master did not take a sample inside region
         ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
                                  flags & ompt_parallel_invoker_program);
+        top_index--;
         ending_region = NULL;
       }
 

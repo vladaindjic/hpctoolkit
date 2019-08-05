@@ -947,55 +947,8 @@ top_cct_node
 
 #define UINT64_T(value) (uint64_t)value
 
-// first_frame_below
-frame_t*
-first_frame_below
-(
-  frame_t *start,
-  frame_t *end,
-  uint64_t frame_address,
-  int *index
-)
-{
-  // if frame_address is below the outer_most frame
-  // than below for loop makes no sense.
-  if (frame_address > UINT64_T(end->cursor.sp)) {
-    printf("ispao iz opsega\t");
-    deferred_resolution_breakpoint();
-    return NULL;
-  }
-
-  // path_beg ==> end
-  // path_end ==> start (and it is changing (everything is reversed compare to cct_insert_backtrace.c)
-  // FIXME: find how to use extern version of retain_recursion
-  bool retain_recursion = false;
-  ip_normalized_t child_routine = ip_normalized_NULL;
-  frame_t *it;
-  for (it = start; it <= end; it++) {
-      if ( (! retain_recursion) &&
-	          (end >= it + 1) &&
-            ip_normalized_eq(&(it->the_function), &(child_routine)) &&
-	          ip_normalized_eq(&(it->the_function), &((it + 1)->the_function))) {
-        // do nothing
-      } else {
-        if (UINT64_T(it->cursor.sp) >= frame_address){
-          return it;
-        }
-        (*index)++;
-      }
-      child_routine = it->the_function;
-  }
-//  for(it = start; it <= end; it++, (*index)++) {
-//    // FIXME: exit frame of current should be the same as enter_frame.ptr of previous frane
-//    if (UINT64_T(it->cursor.sp) >= frame_address){
-//      return it;
-//    }
-//  }
-  return NULL;
-}
-
 int
-first_frame_below_tmp
+first_frame_below
 (
   frame_t **it,
   uint64_t frame_address,
@@ -1039,72 +992,8 @@ first_frame_below_tmp
   return 0;
 }
 
-// first_frame_above
-frame_t*
-first_frame_above
-(
-  frame_t *start,
-  frame_t *end,
-  uint64_t frame_address,
-  int *index
-)
-{
-
-
-
-  // exit_frame points above the bt_outer
-  // The best we can do is to set it = bt_outer
-  // We are doing this in loop because we need to update the index.
-  frame_t *it;
-  if (frame_address > UINT64_T(end->cursor.sp)) {
-    // path_beg ==> end
-    // path_end ==> start
-    // (everything is reversed compare to cct_insert_backtrace.c)
-    // FIXME: find how to use extern version of retain_recursion
-    bool retain_recursion = false;
-    ip_normalized_t child_routine = ip_normalized_NULL;
-    for (it = start; it <= end; it++) {
-      if ( (! retain_recursion) &&
-	          (end >= it + 1) &&
-            ip_normalized_eq(&(it->the_function), &(child_routine)) &&
-	          ip_normalized_eq(&(it->the_function), &((it + 1)->the_function))) {
-        // do nothing
-      } else {
-        (*index)++;
-      }
-      child_routine = it->the_function;
-    }
-
-    // Indicater for the caller that we don't have anymore frames
-    // on the stack. We pass through them all.
-    // NOTE vi3: Index would point one frame above bt_outer.
-    // That is not problem to us, because cct node which corresponds
-    // to bt_outer frame has parent who is set in ompt_cct_cursor_finalize
-    // function.
-    return NULL;
-  }
-
-  // don't need to check if it == NULL, because
-  // frame_address <= bt_outer
-  it = first_frame_below(start, end, frame_address, index);
-
-  // we are now one frame above, should go one frame below
-  it--;
-  (*index)--;
-
-  if (frame_address > UINT64_T(it->cursor.sp)) {
-    //printf("***********first_frame_above********Inside user code\n");
-  } else if (frame_address == UINT64_T(it)) {
-    // printf("***********first_frame_above********The same address\n");
-  } else {
-    deferred_resolution_breakpoint();
-  }
-
-  return it;
-}
-
 int
-first_frame_above_tmp
+first_frame_above
 (
   frame_t **it,
   uint64_t frame_address,
@@ -1150,29 +1039,6 @@ first_frame_above_tmp
 
   // what should I else return
   return 0;
-}
-
-cct_node_t*
-get_cct_from_prefix
-(
- cct_node_t* cct, 
- int index
-)
-{
-  if (!cct)
-    return NULL;
-
-  // FIXME: this is just a temporary solution
-  cct_node_t* current = cct;
-  int current_index = 0;
-  while(current) {
-    if (current_index == index) {
-      return current;
-    }
-    current = hpcrun_cct_parent(current);
-    current_index++;
-  }
-  return NULL;
 }
 
 
@@ -1367,7 +1233,8 @@ provide_callpath_for_regions_if_needed
   // correspond to the task from elider. It is not able to provide the call path
   // of the region, because it does not have cct nodes of the region's parent.
   cct_node_t *omp_task_context = TD_GET(omp_task_context);
-  if (omp_task_context) {
+  if (omp_task_context && !ending_region) {
+    // Must not enter here if called by ompt_parallel_end callback
     deferred_resolution_breakpoint();
     return;
   }
@@ -1392,68 +1259,73 @@ provide_callpath_for_regions_if_needed
 
   if (UINT64_T(current_frame->enter_frame.ptr) == 0
     && UINT64_T(current_frame->exit_frame.ptr) != 0) {
-    // thread take a sample inside user code of the parallel region
+    // CASE 1: thread take a sample inside user code of the parallel region
     // this region is the the innermost
-    if (!first_frame_below_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
-                               bt_outer, &cct)) {
+    // CASE 2: Called by ompt_parallel_end callback of the nested
+    // innermost region
+    if (!first_frame_below(&it, UINT64_T(current_frame->exit_frame.ptr),
+                           bt_outer, &cct)) {
       deferred_resolution_breakpoint();
       return;
     }
-    // this happened
+    //printf("vi3>> 1405 ending_region: %p, top_index: %d\n", ending_region, top_index);
   } else if (UINT64_T(current_frame->enter_frame.ptr) <= UINT64_T(bt_inner->cursor.sp)
              && UINT64_T(bt_inner->cursor.sp) <= UINT64_T(current_frame->exit_frame.ptr)) { // FIXME should put =
-    printf("vi3>> 1405\n");
-    // thread take a simple in the region which is not the innermost
-    // all innermost regions have been finished
-    if (!first_frame_below_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
-                               bt_outer, &cct)) {
-      deferred_resolution_breakpoint();
-      return;
-    }
-    // this happened
-  } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
-    printf("vi3>> 1416\n"); // jednom u nestedtasks
-    // take a sample inside the runtime
-    return;
-  } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
-             && UINT64_T(current_frame->exit_frame.ptr) == 0) {
-    // FIXME: check what this means
-    // this happened
-    // Two possible options:
-    if (top_index >= 0) { // I think that this check is redudant. (The same as at the beginning of the function)
-      // 1. The task has been recently finished and removed from the stack.
-      ompt_frame_t *tmp = hpcrun_ompt_get_task_frame(1);
-      if (!first_frame_below_tmp(
-                 &it,
-                 UINT64_T(tmp->enter_frame.ptr),
-                                 bt_outer, &cct)) {
-        return;
-      }
-    } else {
-      // 2. Initial task
-      printf("We are inside initial task\n");
-      return;
-    }
-
-  } else if (UINT64_T(current_frame->exit_frame.ptr) == 0
-             && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->enter_frame.ptr)) {
-    printf("vi3>> 1440\n");
-    // FIXME vi3: this happened in the first region when master not took sample
-
+    //printf("vi3>> 1408 ending_region: %p, top_index: %d\n", ending_region, top_index);
+    // Called by ompt_parallel_end of the region which is inside
+    // explicit task.
     bottom_prefix = cct;
-    // top_cct is either THREAD_ROOT or UNRESOLVED
-    top_prefix = hpcrun_cct_children(top_cct(cct));
-
+    first_frame_above(&it, UINT64_T(current_frame->exit_frame.ptr),
+                      bt_outer, &cct);
+    top_prefix = cct;
     prefix = copy_prefix(top_prefix, bottom_prefix);
     if (!prefix) {
       deferred_resolution_breakpoint();
       return;
     }
     current_notification->region_data->call_path = prefix;
-
+    // FIXME vi3>> try if it is possible to combine with for loop below
+    // I finish here if region is inside task.
+    // When omp_task_context exists, we cannot distinguish difference
+    // between explicit and implicit task, so it is safer to stop provider.
+    return;
+  } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
+    //printf("vi3>> 1424 ending_region: %p, top_index: %d\n", ending_region, top_index);
+    // jednom u nestedtasks, regionintask2
+    // take a sample inside the runtime
+    return;
+  } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
+             && UINT64_T(current_frame->exit_frame.ptr) == 0) {
+    //printf("vi3>> 1430 ending_region: %p, top_index: %d\n", ending_region, top_index);
+    // Two cases according to standard:
+    // 1. The task has been recently finished and removed from the stack.
+    // 2. Initial task (Not possible because the region stack would be empty.
+    //    We checked this at the beginning of the function)
+    ompt_frame_t *parent_frame = hpcrun_ompt_get_task_frame(1);
+    // Thread took a sample inside runtime frames of the parent region.
+    // If we go one frame below the enter_frame, we will be inside the user
+    // code of the parent region, which is the end of the call path
+    // of the innermost region.
+    if (!first_frame_below(&it, UINT64_T(parent_frame->enter_frame.ptr),
+                           bt_outer, &cct)) {
+      return;
+    }
+  } else if (UINT64_T(current_frame->exit_frame.ptr) == 0
+             && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->enter_frame.ptr)) {
+    //printf("vi3>> 1446 ending_region: %p, top_index: %d\n", ending_region, top_index);
+    // Called by ompt_parallel_end callback at the end of the outer most region
+    bottom_prefix = cct;
+    top_prefix = hpcrun_cct_children(top_cct(cct)); // top_cct is UNRESOLVED or THREAD_ROOT
+    // copy prefix
+    prefix = copy_prefix(top_prefix, bottom_prefix);
+    if (!prefix) {
+      deferred_resolution_breakpoint();
+      return;
+    }
+    current_notification->region_data->call_path = prefix;
     return;
   } else {
-    printf("vi3>> 1456\n");
+    //printf("vi3>> 1459 ending_region: %p, top_index: %d\n", ending_region, top_index);
     deferred_resolution_breakpoint();
     return;
   }
@@ -1463,11 +1335,10 @@ provide_callpath_for_regions_if_needed
   int stack_index = top_index;
 
 
-  // at the beginning of the loop we should be one frame below the exit_frame
-  // which means that we are inside user code of the parent region or inside
+  // We are inside user code of the parent region or inside
   // the initial implicit task
-  // if the current thread is the initial master
-  // while loop
+  // if the current thread is the initial master and if there is only one
+  // active region.
   for (;;) {
     frame_level++;
     current_frame = hpcrun_ompt_get_task_frame(frame_level);
@@ -1513,9 +1384,9 @@ provide_callpath_for_regions_if_needed
     // In that case, we will go until the bottom of the backtrace stack
     // and get the corresponding cct. After that, we can only finish.
     have_more_frames =
-      first_frame_above_tmp(&it,
-                            UINT64_T(current_frame->exit_frame.ptr),
-                            bt_outer, &cct);
+      first_frame_above(&it,
+                        UINT64_T(current_frame->exit_frame.ptr),
+                        bt_outer, &cct);
     top_prefix = cct;
     prefix = copy_prefix(top_prefix, bottom_prefix);
     if (!prefix) {
@@ -1544,9 +1415,9 @@ provide_callpath_for_regions_if_needed
       return;
     }
     // go to parent region frame and do everything again
-    if (!first_frame_below_tmp(&it,
-                               UINT64_T(current_frame->exit_frame.ptr),
-                               bt_outer, &cct)) {
+    if (!first_frame_below(&it,
+                           UINT64_T(current_frame->exit_frame.ptr),
+                           bt_outer, &cct)) {
       // no more frames on the stack
       deferred_resolution_breakpoint();
       return;
@@ -1554,103 +1425,6 @@ provide_callpath_for_regions_if_needed
 
   }
 
-}
-
-
-void
-provide_callpath_for_end_of_the_region
-(
- backtrace_info_t *bt, 
- cct_node_t *cct
-)
-{
-    if (bt->partial_unwind) {
-      deferred_resolution_breakpoint();
-    }
-
-    ompt_frame_t *current_frame = hpcrun_ompt_get_task_frame(0);
-    if (!current_frame) {
-      return;
-    }
-    frame_t *bt_inner = bt->begin;
-    frame_t *bt_outer = bt->last;
-    // frame iterator
-    frame_t *it = bt_inner;
-
-
-    cct_node_t *bottom_prefix = NULL;
-    cct_node_t *top_prefix = NULL;
-    cct_node_t *prefix = NULL;
-    // This function is called after implicit task end,
-    // which means that this region is poped from the stack.
-
-    if (UINT64_T(current_frame->enter_frame.ptr) == 0
-        && UINT64_T(current_frame->exit_frame.ptr) != 0) {
-      printf("vi3>> 1589\n");
-      if (!first_frame_below_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
-                                 bt_outer, &cct)) {
-        deferred_resolution_breakpoint();
-        return;
-      }
-      bottom_prefix = cct;
-      ompt_frame_t *current_frame = hpcrun_ompt_get_task_frame(1);
-      first_frame_above_tmp(&it,
-                            UINT64_T(current_frame->exit_frame.ptr),
-                            bt_outer, &cct);
-      top_prefix = cct;
-      prefix = copy_prefix(top_prefix, bottom_prefix);
-      ending_region->call_path = prefix;
-
-      // thread take a sample inside user code of the parallel region
-        // this region is the the innermost
-    } else if (UINT64_T(current_frame->enter_frame.ptr) <= UINT64_T(bt_inner->cursor.sp)
-               && UINT64_T(bt_inner->cursor.sp) <= UINT64_T(current_frame->exit_frame.ptr)) { // FIXME should put =
-        // thread take a simple in the region which is not the innermost
-        // all innermost regions have been finished
-        bottom_prefix = cct;
-        first_frame_above_tmp(&it, UINT64_T(current_frame->exit_frame.ptr),
-                              bt_outer, &cct);
-        top_prefix = cct;
-        prefix = copy_prefix(top_prefix, bottom_prefix);
-        if (!prefix) {
-          deferred_resolution_breakpoint();
-          return;
-        }
-        ending_region->call_path = prefix;
-
-
-    } else if (UINT64_T(bt_inner->cursor.sp) < UINT64_T(current_frame->enter_frame.ptr)) {
-      printf("vi3>> 1632\n");
-      // take a sample inside the runtime
-    } else if (UINT64_T(current_frame->enter_frame.ptr) == 0
-               && UINT64_T(current_frame->exit_frame.ptr) == 0) {
-      printf("vi3>> 1636\n");
-      // FIXME: check what this means
-        // Note: this happens
-        deferred_resolution_breakpoint();
-    } else if (UINT64_T(current_frame->exit_frame.ptr) == 0
-               && UINT64_T(bt_inner->cursor.sp) >= UINT64_T(current_frame->enter_frame.ptr)) {
-
-        // FIXME vi3: this happened in the first region when master not took sample
-        bottom_prefix = cct;
-        top_prefix = hpcrun_cct_children(top_cct(cct)); // top_cct is UNRESOLVED or THREAD_ROOT
-
-        // copy prefix
-        prefix = copy_prefix(top_prefix, bottom_prefix);
-        if (!prefix) {
-          deferred_resolution_breakpoint();
-          return;
-        }
-
-        ending_region->call_path = prefix;
-
-        return;
-
-    } else {
-      printf("vi3>> 1648\n");
-      // a case has not been covered
-      deferred_resolution_breakpoint();
-    }
 }
 
 
@@ -1680,43 +1454,4 @@ tmp_end_region_resolve
     //printf("*********************** tmp_end_region_resolve else branch\n");
     deferred_resolution_breakpoint();
   }
-}
-
-void
-process_topomost_cct
-(
-  cct_node_t *cct,
-  cct_node_t **top_most,
-  int index,
-  int region_depth
-)
-{
-  // The topmost cct node must not be UNRESOLVED.
-  // The topmost cct node can be thread root only if the region_depth is zero
-  // (outermost region) and if the thread is the initial master.
-
-  // top_most is UNRESOLVED
-  // Take the cct node which is below it.
-  if (hpcrun_cct_addr(*top_most)->ip_norm.lm_id == (uint16_t)UNRESOLVED) {
-    *top_most = get_cct_from_prefix(cct, index - 1);
-    return;
-  }
-
-  if (*top_most == hpcrun_get_thread_epoch()->csdata.thread_root) {
-
-    if (region_depth == 0 && TD_GET(master)) {
-      // The thread is the initial master
-      // Region depth is zero
-      // top_most cct node is the same as thread root
-      // Everything is fine
-      return;
-    }
-
-    // We need to take cct node that is underneath the top_most cct node.
-    *top_most = get_cct_from_prefix(cct, index - 1);
-  }
-
-  // NOTE vi3: maybe we could use *top_most = (*top_most) -> children
-  // instead of calling get_cct_from_prefix which take a lot of time
-  // in log call chains
 }
