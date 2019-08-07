@@ -189,26 +189,26 @@ ompt_parallel_end_internal
     // check if there is any thread registered that should be notified that region call path is available
     ompt_notification_t* to_notify = (ompt_notification_t*) wfq_dequeue_public(&region_data->queue);
 
-    region_stack_el_t *stack_el = &region_stack[top_index + 1];
+    // mark that current region is ending
+    ending_region = region_data;
+    // implicit task end callback happened before, so top of the stack
+    // is below the current region that is ending
+    top_index++;
+
+    region_stack_el_t *stack_el = &region_stack[top_index];
     ompt_notification_t *notification = stack_el->notification;
+
+    if (!region_data->call_path &&
+          (notification->unresolved_cct || to_notify)) {
+      // the region has not been provided before, so we will do that now
+      ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
+                               flags & ompt_parallel_invoker_program);
+    }
+
+
     if (notification->unresolved_cct) {
-      // CASE: thread took sample in an explicit task
-
-      // FIXME vi3: consider to combine this if with next
-      // calling hpcrun_sample_callpath (by calling ompt_region_context and
-      // ompt_region_context_end_region_not_eager) twice is obviously overhead
-      ending_region = region_data;
-
-      if (!region_data->call_path) {
-        top_index++;
-        // Thread did not took a sample outside the explicit task, so it did not have
-        // an oportunity to provide region's call path.
-        // The call path will be provided now.
-        ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
-                                                 flags & ompt_parallel_invoker_program);
-        top_index--;
-      }
-
+      // CASE: thread took sample in an explicit task,
+      // so we need to resolve everything under pseudo node
       cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
       cct_node_t *prefix =
         hpcrun_cct_insert_path_return_leaf_tmp(parent_cct,
@@ -217,27 +217,9 @@ ompt_parallel_end_internal
       // if combined this if branch with branch of next if
       // we will remove this line
       tmp_end_region_resolve(notification, prefix);
-      ending_region = NULL;
     }
 
     if (to_notify){
-      if (region_data->call_path == NULL){
-        // FIXME vi3: this is one big hack
-        // different function is call for providing callpaths
-        // FIXME vi3: also check if this add some ccts somewhere
-        // probably does because it call hpcrun_sample_callpath
-        // these ccts should not be added underneath thread root
-        // we must create them and send them as a region path,
-        // but do not insert them in any tree
-        ending_region = region_data;
-        top_index++;
-        // need to provide call path, because master did not take a sample inside region
-        ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
-                                 flags & ompt_parallel_invoker_program);
-        top_index--;
-        ending_region = NULL;
-      }
-
       // notify next thread
       wfq_enqueue(OMPT_BASE_T_STAR(to_notify), to_notify->threads_queue);
     } else {
@@ -248,7 +230,13 @@ ompt_parallel_end_internal
       // or should use this
       // wfq_enqueue((ompt_base_t*)region_data, &public_region_freelist);
     }
+
   }
+
+  // return to outer region if any
+  top_index--;
+  // mark that no region is ending
+  ending_region = NULL;
 
   // FIXME: vi3: what is this?
   // FIXME: not using team_master but use another routine to

@@ -538,6 +538,9 @@ ompt_elide_runtime_frame(
       //   (2) collapse context to an <openmp idle>
       //------------------------------------------------------------------------
       *bt_outer = *bt_inner;
+      // It is possible that we are inside explicit task
+      // and delete its context here.
+      // Because of that we are going to unnecessarily go into provider.
       TD_GET(omp_task_context) = 0;
       collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
     }
@@ -811,6 +814,8 @@ ompt_cct_cursor_finalize
 {
 
   // when providing a path for the region in which we had a task
+  // This could potential lead to garbage in the tree of thread root
+  // Maybe to use unresolved_root instead.
   if (!ompt_eager_context && ending_region) {
     return TD_GET(master) ? cct_cursor : cct_not_master_region;
   }
@@ -821,8 +826,6 @@ ompt_cct_cursor_finalize
   //        I think we can just return omp_task_context here. it is already
   //        relative to one root or another.
   if (ompt_eager_context_p()) {
-    // we will always pass here if ompt_eager_context is true
-    // maybe omp_task_context is redundant
     cct_node_t *root;
 #if 1
     root = ompt_region_root(omp_task_context);
@@ -833,7 +836,6 @@ ompt_cct_cursor_finalize
       root = hpcrun_get_thread_epoch()->csdata.tree_root;
     }
 #endif
-  // FIXME: vi3 why is this called here??? Makes troubles for worker thread when !ompt_eager_context
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (omp_task_context) {
     // we memoized the region depth in ompt_task_begin_internal
