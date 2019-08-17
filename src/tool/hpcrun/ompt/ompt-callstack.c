@@ -302,13 +302,24 @@ ompt_elide_runtime_frame(
   // collapse callstack if a thread is idle or waiting in a barrier
   switch(check_state()) {
     case ompt_state_wait_barrier:
-    case ompt_state_wait_barrier_implicit:
-    case ompt_state_wait_barrier_explicit:
-      // FIXME vi3->jmc: This wasn't here, so it is possible that
-      // we use context from previous sample. This will lead that
-      // omp_barrier is going to be put next to the implicit task of the region.
-      // It will work only if we eagerly collect region's call paths.
+      // According to standard, this should never happen.
+      // Current implementation of runtime shows this state
+      // when thread is waiting on explicit barrier
+    case ompt_state_wait_barrier_implicit: // mark it idle
       TD_GET(omp_task_context) = 0;
+      if (hpcrun_ompt_get_thread_num(0) != 0) {
+        collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
+        goto return_label;
+      }
+      break;
+    case ompt_state_wait_barrier_explicit: // attribute them to the corresponding
+      // We are inside implicit or explicit task.
+      // If we are collecting regions' callpaths synchronously, then we
+      // are sure that hpcrun_ompt_get_task_data(0) exists.
+      // If we are asynchronously resolving call paths, then
+      // TD_GET(omp_task_context) will be NULL. We will handle this
+      // in ompt_cct_cursor_finalize.
+      TD_GET(omp_task_context) = hpcrun_ompt_get_task_data(0)->ptr;
       // collapse barriers on non-master ranks
       if (hpcrun_ompt_get_thread_num(0) != 0) {
 	      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait_state);
@@ -481,7 +492,6 @@ ompt_elide_runtime_frame(
 
 
 
-    // FIXME vi3: This makes trouble with master thread when defering
     if (exit0 && reenter1) {
 
 
@@ -492,12 +502,6 @@ ompt_elide_runtime_frame(
       // By eliminating the topmost frame we should avoid the appearance of the same frame twice 
       //  in the callpath
 
-      // FIXME vi3: find better way to solve this  "This makes trouble with master thread when defering"
-//      if (TD_GET(master)){
-//        return;
-//      }
-//      if (omp_get_thread_num() == 0)
-//        return;
 
       //------------------------------------
       // The prefvous version DON'T DELETE
@@ -759,8 +763,12 @@ ompt_backtrace_finalize
   uint64_t region_id = TD_GET(region_id);
 
   ompt_elide_runtime_frame(bt, region_id, isSync);
-
-  if(!isSync && !ompt_eager_context_p() && !bt->collapsed){
+  // FIXME vi3>> Worker thread is waiting on explicit barrier and backtrace is
+  // collapsed, but thread needs to be registered for the innermost region's
+  // call path.
+  bool wait_on_exp_barr = check_state() == ompt_state_wait_barrier_explicit;
+  if(!isSync && !ompt_eager_context_p()
+             && (!bt->collapsed || wait_on_exp_barr)){
     register_to_all_regions();
   }
 }
@@ -821,6 +829,8 @@ ompt_cct_cursor_finalize
   }
 
   cct_node_t *omp_task_context = TD_GET(omp_task_context);
+  bool worker_exp_barr = check_state() == ompt_state_wait_barrier_explicit
+                         && hpcrun_ompt_get_thread_num(0) != 0;
 
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already
@@ -837,25 +847,28 @@ ompt_cct_cursor_finalize
     }
 #endif
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
-  } else if (omp_task_context) {
-    // we memoized the region depth in ompt_task_begin_internal
-    int region_depth = (uint64_t)omp_task_context - 33;
-    // thread is inside explicit task, but we don't have a call path to it
+  } else if (omp_task_context || worker_exp_barr) {
+    // If the current thread is worker and is waiting on explicit barrier, then
+    // call path will be inserted under unresolved cct node of
+    // the inner most region.
+    // If not, then the thread is inside explicit task. In that case,
+    // get the region depth from omp_task_context and find the region at that
+    // depth. Insert call path under unresolved cct node
+    // that belongs to that region.
+    int region_depth = worker_exp_barr ? top_index
+                                       : (uint64_t)omp_task_context - 33;
     region_stack_el_t *stack_el = &region_stack[region_depth];
-    // insert UNRESOLVED_CCT node where is needed
     add_unresolved_cct_to_parent_region_if_needed(stack_el);
-    // return a placeholder for the sample taken inside tasks
     return stack_el->notification->unresolved_cct;
   }
 
-  // FIXME: vi3 consider this when tracing, for now everything works fine
   // if I am not the master thread, full context may not be immediately available.
   // if that is the case, then it will later become available in a deferred fashion.
   if (!TD_GET(master)) { // sub-master thread in nested regions
 
 //    uint64_t region_id = TD_GET(region_id);
 //    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
-//    ompt_region_data_t* region_data = (ompt_region_data_t*)current_parallel_data->ptr;
+//    ompt_region_data_t* region_data = (ompt_region_data_t*)current_p  arallel_data->ptr;
     // FIXME: check whether bottom frame elided will be right for IBM runtime
     //        without help of get_idle_frame
 
