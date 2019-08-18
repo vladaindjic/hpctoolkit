@@ -110,10 +110,14 @@
 #define typed_queue_steal(type, qtype)		\
   typed_queue_op(type, qtype, steal)			
 
+// steal routine name for a typed queue
+#define typed_queue_pop_or_steal(type, qtype)		\
+  typed_queue_op(type, qtype, pop_or_steal)
+
 
 // define typed wrappers for a queue type 
 #define typed_queue(type, qtype)				\
-  void								\
+  static void								\
   typed_queue_elem_ptr_set(type, qtype)				\
     (typed_queue_elem_ptr(type) *e,				\
      typed_queue_elem(type) *v)					\
@@ -122,7 +126,7 @@
 			    (q_element_t *) v);			\
   }								\
   								\
-  typed_queue_elem(type) *					\
+  static typed_queue_elem(type) *					\
   typed_queue_elem_ptr_get(type, qtype)				\
     (typed_queue_elem_ptr(type) *e)				\
   {								\
@@ -131,7 +135,7 @@
     return r;							\
   }								\
   								\
-  typed_queue_elem(type) *					\
+  static typed_queue_elem(type) *					\
   typed_queue_swap(type, qtype)					\
     (typed_queue_elem_ptr(type) *q, typed_queue_elem(type) *v)	\
   {								\
@@ -141,7 +145,7 @@
     return e;							\
   }								\
   								\
-  void								\
+  static void								\
   typed_queue_push(type, qtype)					\
     (typed_queue_elem_ptr(type) *q, typed_queue_elem(type) *e)	\
   {								\
@@ -149,7 +153,7 @@
 			 (q_element_t *) e);			\
   }								\
   								\
-  typed_queue_elem(type) *					\
+  static typed_queue_elem(type) *					\
   typed_queue_pop(type, qtype)					\
   (typed_queue_elem_ptr(type) *q)				\
   {								\
@@ -158,12 +162,21 @@
     return e;							\
   }								\
   								\
-  typed_queue_elem(type) *					\
+  static typed_queue_elem(type) *					\
   typed_queue_steal(type, qtype)				\
   (typed_queue_elem_ptr(type) *q)				\
   {								\
     typed_queue_elem(type) *e = (typed_queue_elem(type) *)	\
       queue_op(qtype,steal)((q_element_ptr_t *) q);		\
+    return e;							\
+  }               \
+  static typed_queue_elem(type) *					\
+  typed_queue_pop_or_steal(type, qtype)				\
+  (typed_queue_elem_ptr(type) *q1, typed_queue_elem_ptr(type) *q2)				\
+  {								\
+    typed_queue_elem(type) *e = (typed_queue_elem(type) *)	\
+      queue_op(qtype,pop_or_steal)((q_element_ptr_t *) q1,    \
+                                   (q_element_ptr_t *) q2);		\
     return e;							\
   }
 
@@ -241,6 +254,12 @@ squeue_steal
 );
 
 
+q_element_t *
+squeue_pop_or_steal
+(
+  q_element_ptr_t *q1,
+  q_element_ptr_t *q2
+);
 
 //-----------------------------------------------------------------------------
 // concurrent LIFO queue interface operations
@@ -293,5 +312,13 @@ cqueue_steal
 (
   q_element_ptr_t *q
 );
+
+q_element_t *
+cqueue_pop_or_steal
+(
+  q_element_ptr_t *q1,
+  q_element_ptr_t *q2
+);
+
 
 #endif

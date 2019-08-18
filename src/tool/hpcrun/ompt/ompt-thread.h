@@ -67,29 +67,24 @@
 // global data
 //******************************************************************************
 
-// list of regions for which a thread is registered that are not yet resolved
-extern __thread ompt_trl_el_t* registered_regions;
 
 // thread's notifications queueus
 //
 // public thread's notification queue
-extern __thread ompt_wfq_t threads_queue;
+extern __thread typed_queue_elem_ptr(notification) threads_queue;
 
 // private thread's notification queue
-extern __thread ompt_data_t* private_threads_queue;
+extern __thread typed_queue_elem_ptr(notification) private_threads_queue;
 
 // freelists
 
 // thread's list of notification that can be reused
-extern __thread ompt_notification_t* notification_freelist_head;
-
-// thread's list of region's where thread was registered and resolved them
-extern __thread ompt_trl_el_t* thread_region_freelist_head;
+extern __thread typed_queue_elem_ptr(notification) notification_freelist_head;
 
 // region's free lists
 
 // public freelist where all thread's can enqueue region_data to be reused
-extern __thread ompt_wfq_t public_region_freelist;
+extern __thread typed_queue_elem_ptr(region) public_region_freelist;
 
 
 // stack that contais all nested parallel region
@@ -98,13 +93,12 @@ extern __thread region_stack_el_t region_stack[];
 extern  __thread int top_index;
 
 // Memoization process vi3:
-extern __thread ompt_region_data_t *not_master_region;
+extern __thread typed_queue_elem(region) *not_master_region;
 extern __thread cct_node_t *cct_not_master_region;
 
 
 // FIXME vi3: just a temp solution
-extern __thread ompt_region_data_t *ending_region;
-extern __thread ompt_frame_t *top_ancestor_frame;
+extern __thread typed_queue_elem(region) *ending_region;
 
 // number of unresolved regions
 extern __thread int unresolved_cnt;
@@ -144,13 +138,13 @@ pop_region_stack
 
 void push_region_stack
 (
- ompt_notification_t* notification, 
- bool took_sample, 
+ typed_queue_elem(notification)* notification,
+ bool took_sample,
  bool team_master
 );
 
 
-void 
+void
 clear_region_stack
 (
  void

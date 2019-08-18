@@ -51,7 +51,7 @@
 // macros
 //*****************************************************************************
 
-#define REGION_DEBUG 0
+#define REGION_DEBUG 1
 
 //*****************************************************************************
 // macros
@@ -88,7 +88,7 @@
 void
 ompt_region_debug_notify_needed
 (
- ompt_notification_t *notification
+ typed_queue_elem(notification) *notification
 );
 
 
@@ -96,7 +96,7 @@ ompt_region_debug_notify_needed
 void
 ompt_region_debug_notify_received
 (
- ompt_notification_t *notification
+ typed_queue_elem(notification) *notification
 );
 
 
@@ -111,7 +111,7 @@ ompt_region_debug_init
 void
 ompt_region_debug_region_create
 (
-  ompt_region_data_t* region
+  typed_queue_elem(region)* region
 );
 
 

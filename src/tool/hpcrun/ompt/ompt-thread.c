@@ -58,19 +58,16 @@
 //******************************************************************************
 
 // Memoization process vi3:
-__thread ompt_region_data_t* not_master_region = NULL;
+__thread typed_queue_elem(region)* not_master_region = NULL;
 __thread cct_node_t* cct_not_master_region = NULL;
 
-__thread ompt_trl_el_t* registered_regions = NULL;
-
 //__thread ompt_threads_queue_t threads_queue;
-__thread ompt_wfq_t threads_queue;
-__thread ompt_data_t* private_threads_queue = NULL;
+__thread typed_queue_elem_ptr(notification) threads_queue;
+__thread typed_queue_elem_ptr(notification) private_threads_queue;
 
 // freelists
-__thread ompt_notification_t* notification_freelist_head = NULL;
-__thread ompt_trl_el_t* thread_region_freelist_head = NULL;
-__thread ompt_wfq_t public_region_freelist;
+__thread typed_queue_elem_ptr(notification) notification_freelist_head;
+__thread typed_queue_elem_ptr(region) public_region_freelist;
 
 // stack for regions
 __thread region_stack_el_t region_stack[MAX_NESTING_LEVELS];
@@ -81,8 +78,7 @@ __thread int top_index = -1;
 __thread int unresolved_cnt = 0;
 
 // FIXME vi3: just a temp solution
-__thread ompt_region_data_t *ending_region = NULL;
-__thread ompt_frame_t *top_ancestor_frame = NULL;
+__thread typed_queue_elem(region) *ending_region = NULL;
 
 
 
@@ -140,7 +136,7 @@ pop_region_stack
 void
 push_region_stack
 (
- ompt_notification_t* notification, 
+ typed_queue_elem(notification)* notification,
  bool took_sample, 
  bool team_master
 )

@@ -82,10 +82,10 @@
 
 typedef struct region_resolve_tracker_s {
   q_element_ptr_t next;
-  ompt_region_data_t *region;
+  typed_queue_elem(region) *region;
   uint64_t region_id;
   int thread_id;
-  ompt_notification_t *notification;
+  typed_queue_elem(notification) *notification;
 } typed_queue_elem(rn);
 
 typedef q_element_ptr_t typed_queue_elem_ptr(rn);
@@ -98,7 +98,7 @@ typedef q_element_ptr_t typed_queue_elem_ptr(rn);
 
 static spinlock_t debuginfo_lock = SPINLOCK_UNLOCKED;
 
-ompt_region_data_t *global_region_list = 0;
+typed_queue_elem(region) *global_region_list = 0;
 
 // (pending) region notification list
 typed_queue_elem_ptr(rn) rn_list;
@@ -154,7 +154,7 @@ static int
 rn_matches
 (
   typed_queue_elem(rn) *rn,
-  ompt_region_data_t *region,
+  typed_queue_elem(region) *region,
   int thread_id
 )
 {
@@ -171,7 +171,9 @@ rn_print
 {
   printf("region %p id 0x%lx notification %p notification->next %14p thread %3d "
 	 "region->region_id 0x%lx      %s\n", rn->region, 
-	 rn->region_id, rn->notification, rn->notification->next.next, rn->thread_id, rn->region->region_id, 
+	 rn->region_id, rn->notification,
+	 typed_queue_elem_ptr_get(notification, qtype)(&rn->notification->next),
+	 rn->thread_id, rn->region->region_id,
 	 what);
 }
  
@@ -179,11 +181,11 @@ rn_print
 static void
 rn_queue_drop
 (
- ompt_notification_t *notification,
+ typed_queue_elem(notification) *notification,
  int thread_id
 )
 {
-  ompt_region_data_t *region = notification->region_data;
+  typed_queue_elem(region) *region = notification->region_data;
 
   // invariant: cur is pointer to container for next element
   typed_queue_elem_ptr(rn) *cur = &rn_list;
@@ -220,7 +222,7 @@ rn_queue_drop
 void
 ompt_region_debug_notify_needed
 (
- ompt_notification_t *notification
+ typed_queue_elem(notification) *notification
 )
 {
   int tid = monitor_get_thread_num();
@@ -256,7 +258,7 @@ ompt_region_debug_init
 void
 ompt_region_debug_notify_received
 (
-  ompt_notification_t *notification
+  typed_queue_elem(notification) *notification
 )
 {
   spinlock_lock(&debuginfo_lock);
@@ -272,7 +274,7 @@ ompt_region_debug_notify_received
 void
 ompt_region_debug_region_create
 (
-  ompt_region_data_t* r
+  typed_queue_elem(region)* r
 )
 {
   // region tracking for debugging
@@ -291,18 +293,18 @@ hpcrun_ompt_region_check
   void
 )
 {
-   ompt_region_data_t *e = global_region_list;
+   typed_queue_elem(region) *e = global_region_list;
    while (e) {
      printf("region %p region id 0x%lx call_path = %p queue head = %p\n", 
-	    e, e->region_id, e->call_path, atomic_load(&e->queue.head));
+	    e, e->region_id, e->call_path, typed_queue_elem_ptr_get(notification, qtype)(&e->queue));
 
-     ompt_notification_t *n = (ompt_notification_t *) atomic_load(&e->queue.head);
+     typed_queue_elem(notification) *n = typed_queue_elem_ptr_get(notification, qtype)(&e->queue);
      while(n) {
        printf("   notification %p region %p region_id 0x%lx threads_queue %p unresolved_cct %p next %p\n",
-	      n, n->region_data, n->region_id, n->threads_queue, n->unresolved_cct, n->next.next);
-       n = (ompt_notification_t *) n->next.next;
+	      n, n->region_data, n->region_id, n->threads_queue, n->unresolved_cct, typed_queue_elem_ptr_get(notification, qtype)(&n->next));
+       n = (typed_queue_elem(notification) *) typed_queue_elem_ptr_get(notification, qtype)(&n->next);
      }
-     e = (ompt_region_data_t *) e->next_region;
+     e = (typed_queue_elem(region) *) e->next_region;
    } 
 
    typed_queue_elem(rn) *rn = 

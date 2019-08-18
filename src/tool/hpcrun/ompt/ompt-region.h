@@ -79,7 +79,7 @@ ompt_parallel_region_register_callbacks
 void 
 hpcrun_ompt_region_free
 (
- ompt_region_data_t *region_data
+ typed_queue_elem(region) *region_data
 );
 
 cct_node_t*

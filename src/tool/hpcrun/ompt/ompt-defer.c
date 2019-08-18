@@ -415,41 +415,13 @@ hpcrun_region_lookup
 
 // added by vi3
 
-
-
-// FIXME: move this function at better place
-
-int 
-get_stack_index
-(
- ompt_region_data_t *region_data
-)
-{
-  int i;
-  for (i = top_index; i>=0; i--) {
-    if (region_stack[i].notification->region_data->region_id == region_data->region_id) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-/*
- * r0
- *   r1
- *     r2 -> r3 (thread 123) -> r4 -> r5
- *        -> r6 -> r7 -> r8
- *     r9 (thread 123) -> r10
- * */
-
-
-ompt_notification_t*
+typed_queue_elem(notification)*
 help_notification_alloc
 (
- ompt_region_data_t *region_data
+ typed_queue_elem(region) *region_data
 )
 {
-  ompt_notification_t *notification = hpcrun_ompt_notification_alloc();
+  typed_queue_elem(notification) *notification = hpcrun_ompt_notification_alloc();
   notification->region_data = region_data;
   notification->region_id = region_data->region_id;
   notification->threads_queue = &threads_queue;
@@ -463,12 +435,12 @@ help_notification_alloc
 void
 swap_and_free
 (
- ompt_region_data_t* region_data
+ typed_queue_elem(region)* region_data
 )
 {
 
   int depth = region_data->depth;
-  ompt_notification_t *notification;
+  typed_queue_elem(notification) *notification;
   region_stack_el_t *stack_element;
 
   // If notification at depth index of the stack
@@ -503,7 +475,7 @@ swap_and_free
 void
 add_region_and_ancestors_to_stack
 (
- ompt_region_data_t *region_data, 
+ typed_queue_elem(region) *region_data,
  bool team_master
 )
 {
@@ -513,7 +485,7 @@ add_region_and_ancestors_to_stack
     return;
   }
 
-  ompt_region_data_t *current = region_data;
+  typed_queue_elem(region) *current = region_data;
   int level = 0;
   int depth;
 
@@ -542,75 +514,22 @@ add_region_and_ancestors_to_stack
 }
 
 
-cct_node_t*
-add_pseudo_cct
-(
- ompt_region_data_t* region_data
-)
-{
-  // should add cct inside the tree
-  cct_node_t* new;
-  if (top_index == 0) {
-    // this is the first parallel region add pseudo cct
-    // which corresponds to the region as a child of thread root
-    new = hpcrun_cct_insert_addr((hpcrun_get_thread_epoch()->csdata).thread_root,
-                                 &(ADDR2(UNRESOLVED, region_data->region_id)));
-  } else {
-    // add cct as a child of a previous pseudo cct
-    new = hpcrun_cct_insert_addr(region_stack[top_index - 1].notification->unresolved_cct,
-                                 &(ADDR2(UNRESOLVED, region_data->region_id)));
-  }
-
-  return new;
-}
-
-
 void
 register_to_region
 (
- ompt_notification_t* notification
+ typed_queue_elem(notification)* notification
 )
 {
-  ompt_region_data_t* region_data = notification->region_data;
+  typed_queue_elem(region)* region_data = notification->region_data;
 
   ompt_region_debug_notify_needed(notification);
 
-  // create notification and enqueu to region's queue
-  OMPT_BASE_T_GET_NEXT(notification) = NULL;
-
   // register thread to region's wait free queue
-  wfq_enqueue(OMPT_BASE_T_STAR(notification), &region_data->queue);
+  typed_queue_elem_ptr_set(notification, qtype)(&notification->next, NULL);
+  typed_queue_push(notification, qtype)(&region_data->queue, notification);
 
   // increment the number of unresolved regions
   unresolved_cnt++;
-}
-
-ompt_notification_t*
-add_notification_to_stack
-(
- ompt_region_data_t* region_data
-)
-{
-    ompt_notification_t* notification = help_notification_alloc(region_data);
-    notification->region_data = region_data;
-    notification->threads_queue = &threads_queue;
-    // push to stack
-    push_region_stack(notification, 0, 0);
-    return notification;
-}
-
-
-void
-register_if_not_master
-(
- ompt_notification_t *notification
-)
-{
-  if (notification && not_master_region == notification->region_data) {
-    register_to_region(notification);
-    // should memoize the cct for not_master_region
-    cct_not_master_region = notification->unresolved_cct;
-  }
 }
 
 
@@ -700,17 +619,17 @@ try_resolve_one_region_context
  void
 )
 {
-  ompt_notification_t *old_head = NULL;
-
-  old_head = (ompt_notification_t*) 
-    wfq_dequeue_private(&threads_queue, OMPT_BASE_T_STAR_STAR(private_threads_queue));
+  // Pop from private queue, if anything
+  // If nothing, steal from public queue.
+  typed_queue_elem(notification) *old_head =
+    typed_queue_pop_or_steal(notification, qtype)(&private_threads_queue, &threads_queue);
 
   if (!old_head) return 0;
 
   unresolved_cnt--;
 
   // region to resolve
-  ompt_region_data_t *region_data = old_head->region_data;
+  typed_queue_elem(region) *region_data = old_head->region_data;
 
   ompt_region_debug_notify_received(old_head);
 
@@ -726,14 +645,7 @@ try_resolve_one_region_context
     cct_node_t *region_call_path = region_data->call_path;
 
     // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
-    // when had this condtion, once infinity happen
-//    if (parent_unresolved_cct == hpcrun_get_thread_epoch()->csdata.thread_root) {
-//      // from initial region, we should remove the first one
-//      prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
-//    } else {
-      // for resolving inner region, we should consider all cct nodes from prefix
-      prefix = hpcrun_cct_insert_path_return_leaf_tmp(parent_unresolved_cct, region_call_path);
-//    }
+    prefix = hpcrun_cct_insert_path_return_leaf_tmp(parent_unresolved_cct, region_call_path);
 
     if (prefix == NULL) {
       deferred_resolution_breakpoint();
@@ -745,7 +657,6 @@ try_resolve_one_region_context
       // delete unresolved_cct from parent
       hpcrun_cct_delete_self(unresolved_cct);
     } else {
-      //printf("*********************** try_resolve_one_region_context else branch\n");
       deferred_resolution_breakpoint();
     }
     // ==================================
@@ -755,9 +666,10 @@ try_resolve_one_region_context
   hpcrun_ompt_notification_free(old_head);
 
   // check if the notification needs to be forwarded 
-  ompt_notification_t* next = (ompt_notification_t*) wfq_dequeue_public(&region_data->queue);
+  typed_queue_elem(notification)* next =
+    typed_queue_pop(notification, qtype)(&region_data->queue);
   if (next) {
-    wfq_enqueue(OMPT_BASE_T_STAR(next), next->threads_queue);
+    typed_queue_push(notification, qtype)(next->threads_queue, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
     hpcrun_ompt_region_free(region_data);
@@ -1119,7 +1031,7 @@ print_prefix_info
 (
  char *message, 
  cct_node_t *prefix, 
- ompt_region_data_t *region_data, 
+ typed_queue_elem(region) *region_data,
  int stack_index, 
  backtrace_info_t *bt, 
  cct_node_t *cct
@@ -1164,7 +1076,7 @@ print_prefix_info
 static int
 dont_resolve_region
 (
- ompt_notification_t *current_notification
+ typed_queue_elem(notification) *current_notification
 )
 {
   // if current notification is null, or the thread is not the master
@@ -1224,7 +1136,7 @@ provide_callpath_for_regions_if_needed
   }
 
   // if thread is not the master of the region, or the region is resolved, then just return
-  ompt_notification_t *current_notification = top_region_stack()->notification;
+  typed_queue_elem(notification) *current_notification = top_region_stack()->notification;
   if (dont_resolve_region(current_notification)) {
     return;
   }
@@ -1431,7 +1343,7 @@ provide_callpath_for_regions_if_needed
 void
 tmp_end_region_resolve
 (
- ompt_notification_t *notification, 
+ typed_queue_elem(notification) *notification,
  cct_node_t* prefix
 )
 {
@@ -1445,13 +1357,11 @@ tmp_end_region_resolve
   // if the prefix and unresolved_cct are already equal,
   // no action is necessary
   if (prefix != unresolved_cct) {
-    //printf("*********************** tmp_end_region_resolve if branch\n");
     // prefix node should change the unresolved_cct
     hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
     // delete unresolved_cct from parent
     hpcrun_cct_delete_self(unresolved_cct);
   } else {
-    //printf("*********************** tmp_end_region_resolve else branch\n");
     deferred_resolution_breakpoint();
   }
 }

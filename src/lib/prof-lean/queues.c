@@ -138,6 +138,30 @@ squeue_steal
   return e;
 }
 
+// vi3: this function should never be used (I guess)
+q_element_t *
+squeue_pop_or_steal
+(
+  q_element_ptr_t *q1,
+  q_element_ptr_t *q2
+)
+{
+  // check if q1 contains some elements
+  q_element_t *e = squeue_ptr_get(q1);
+  if (!e) {
+    // steal chain from q2
+    e = squeue_steal(q2);
+    // both q1 and q2 are empty
+    if (!e) {
+      return e;
+    }
+    // push chain to q1
+    squeue_push(q1, e);
+  }
+  // pop from q1
+  return squeue_pop(q1);
+}
+
 void
 cqueue_ptr_set
 (
@@ -226,6 +250,30 @@ cqueue_steal
   return e;
 }
 
+// q1 must be thread private queue which means that we don't
+// need to take care about data race on q1.
+q_element_t *
+cqueue_pop_or_steal
+(
+  q_element_ptr_t *q1,
+  q_element_ptr_t *q2
+)
+{
+  // check if q1 contains some elements
+  q_element_t *e = cqueue_ptr_get(q1);
+  if (!e) {
+    // steal chain from q2
+    e = cqueue_steal(q2);
+    // both q1 and q2 are empty
+    if (!e) {
+      return e;
+    }
+    // push chain q1
+    cqueue_push(q1, e);
+  }
+  // pop from q1
+  return cqueue_pop(q1);
+}
 
 
 //*****************************************************************************

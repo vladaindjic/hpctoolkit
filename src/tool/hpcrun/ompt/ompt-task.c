@@ -102,7 +102,8 @@ ompt_task_begin_internal
     ompt_data_t *parallel_info = NULL;
     int team_size = 0;
     hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);
-    ompt_region_data_t* region_data = (ompt_region_data_t*) parallel_info->ptr;
+    typed_queue_elem(region)* region_data =
+      (typed_queue_elem(region)*) parallel_info->ptr;
     cct_node = region_data->call_path;
   }
 
@@ -110,10 +111,10 @@ ompt_task_begin_internal
 
   if (!ompt_eager_context_p()) {
     // this says that we have explicit task but not it's path
-    // we use this in elider (clip frames above the frame of the explicit task) and ompt_cursor_finalize
+    // we use this in elider (clip frames above the frame of the explicit task)
+    // and int ompt_cursor_finalize.
     // only possible when ompt_eager_context == false,
     // because we don't collect call path for the innermost region eagerly
-//    task_data->ptr = task_data_invalid;
     // FIXME vi3: I guess it is possible that one thread executes this
     // callback and another execute the task.
     // Instead of memoizing the pointer to the stack element,

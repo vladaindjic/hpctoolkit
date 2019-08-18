@@ -868,7 +868,7 @@ ompt_cct_cursor_finalize
 
 //    uint64_t region_id = TD_GET(region_id);
 //    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
-//    ompt_region_data_t* region_data = (ompt_region_data_t*)current_p  arallel_data->ptr;
+//    typed_queue_elem(region)* region_data = (typed_queue_elem(region)*)current_p  arallel_data->ptr;
     // FIXME: check whether bottom frame elided will be right for IBM runtime
     //        without help of get_idle_frame
 

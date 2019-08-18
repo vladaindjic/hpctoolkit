@@ -63,14 +63,6 @@
 // macros
 //*****************************************************************************
 
-#define OMPT_BASE_T_STAR(ptr) (ompt_base_t *)ptr
-#define OMPT_BASE_T_STAR_STAR(ptr) (ompt_base_t **)&ptr
-#define OMPT_BASE_T_GET_NEXT(ptr) ptr->next.next
-
-#define OMPT_REGION_DATA_T_START(ptr) (ompt_region_data_t *)ptr
-#define OMPT_NOTIFICATION_T_START(ptr) (ompt_notification_t *)ptr
-#define OMPT_TRL_EL_T_START(ptr) (ompt_trl_el_t *)ptr
-
 #define ompt_set_callback(e, cb) \
   ompt_set_callback_internal(e, (ompt_callback_t) cb)
 
@@ -203,7 +195,7 @@ ompt_task_full_context_p
 // allocate and free notifications
 //-----------------------------------------------------------------------------
 
-ompt_notification_t * 
+typed_queue_elem(notification) *
 hpcrun_ompt_notification_alloc
 (
  void
@@ -214,7 +206,7 @@ hpcrun_ompt_notification_alloc
 void 
 hpcrun_ompt_notification_free
 (
- ompt_notification_t *notification
+ typed_queue_elem(notification) *notification
 );
 
 
@@ -222,21 +214,8 @@ hpcrun_ompt_notification_free
 // allocate and free thread's regions
 //-----------------------------------------------------------------------------
 
-ompt_trl_el_t * 
-hpcrun_ompt_trl_el_alloc
-(
- void
-);
 
-
-void 
-hpcrun_ompt_trl_el_free
-(
- ompt_trl_el_t *thread_region
-);
-
-
-ompt_region_data_t * 
+typed_queue_elem(region) *
 hpcrun_ompt_get_region_data
 (
  int ancestor_level
@@ -247,36 +226,17 @@ hpcrun_ompt_get_region_data
 // access to region data
 //-----------------------------------------------------------------------------
 
-ompt_region_data_t * 
+typed_queue_elem(region) *
 hpcrun_ompt_get_current_region_data
 (
  void
 );
 
 
-ompt_region_data_t * 
+typed_queue_elem(region) *
 hpcrun_ompt_get_parent_region_data
 (
  void
-);
-
-
-//-----------------------------------------------------------------------------
-// freelist manipulation 
-//-----------------------------------------------------------------------------
-
-ompt_base_t * 
-freelist_remove_first
-(
- ompt_base_t **head
-);
-
-
-void 
-freelist_add_first
-(
- ompt_base_t *new, 
- ompt_base_t **head
 );
 
 

@@ -387,9 +387,11 @@ ompt_thread_begin
   ompt_thread_type_set(thread_type);
   undirected_blame_thread_start(&omp_idle_blame_info);
 
-  wfq_init(&threads_queue);
-
-  registered_regions = NULL;
+  // initialize freelist to NULL
+  typed_queue_elem_ptr_set(notification, qtype)(&notification_freelist_head, NULL);
+  typed_queue_elem_ptr_set(notification, qtype)(&threads_queue, NULL);
+  typed_queue_elem_ptr_set(notification, qtype)(&private_threads_queue, NULL);
+  typed_queue_elem_ptr_set(region, qtype)(&public_region_freelist, NULL);
   unresolved_cnt = 0;
 //  printf("Tree root begin: %p\n", td->core_profile_trace_data.epoch->csdata.tree_root);
 }
@@ -862,7 +864,7 @@ hpcrun_ompt_get_parallel_info_id
   hpcrun_ompt_get_parallel_info(ancestor_level, &parallel_info, &team_size);
   if (parallel_info == NULL) return 0;
   return parallel_info->value;
-//  ompt_region_data_t* region_data = (ompt_region_data_t*)parallel_info->ptr;
+//  typed_queue_elem(region)* region_data = (typed_queue_elem(region)*)parallel_info->ptr;
 //  return region_data->region_id;
 }
 
@@ -930,91 +932,36 @@ ompt_task_full_context_p
 }
 
 
-// added by vi3:
-
-// FIXME: be sure that everything is connected properl ymaybe we need
-// sometimes to call wfq_get_next just to wait eventually lately connections
-
-
-// vi3: freelist helper functions
-// rename freelist_remove_first
-ompt_base_t*
-freelist_remove_first(ompt_base_t **head){
-  if (*head){
-    ompt_base_t* first = *head;
-    // note: this is not thread safe, because of that we introduce private_queue_remove_first
-    *head = OMPT_BASE_T_GET_NEXT(first);
-    return first;
-  }
-  return ompt_base_nil;
-}
-
-
-void 
-freelist_add_first
-(
- ompt_base_t *new, 
- ompt_base_t **head
-)
-{
-  if (!new)
-    return;
-  OMPT_BASE_T_GET_NEXT(new) = *head;
-  *head = new;
-}
 // allocating and free notifications
-ompt_notification_t*
+typed_queue_elem(notification)*
 hpcrun_ompt_notification_alloc
 (
  void
 )
 {
   // only the current thread uses notification_freelist_head
-  ompt_notification_t* first = (ompt_notification_t*) freelist_remove_first(
-          OMPT_BASE_T_STAR_STAR(notification_freelist_head));
-  return first ? first : (ompt_notification_t*)hpcrun_malloc(sizeof(ompt_notification_t));
+  typed_queue_elem(notification)* first =
+    typed_queue_pop(notification, qtype)(&notification_freelist_head);
+  return first ? first :
+            (typed_queue_elem(notification)*)
+                  hpcrun_malloc(sizeof(typed_queue_elem(notification)));
 }
 
 
 void
 hpcrun_ompt_notification_free
 (
- ompt_notification_t *notification
+ typed_queue_elem(notification) *notification
 )
 {
   // reset unresolved_cct when freeing notification
   notification->unresolved_cct = NULL;
-  freelist_add_first(OMPT_BASE_T_STAR(notification), OMPT_BASE_T_STAR_STAR(notification_freelist_head));
+  typed_queue_push(notification, qtype)(&notification_freelist_head, notification);
 }
 
-
-// allocate and free thread's region
-ompt_trl_el_t*
-hpcrun_ompt_trl_el_alloc
-(
- void
-)
-{
-  // only the thread that owns thread_region_freelist_head access to it
-  ompt_trl_el_t* first = (ompt_trl_el_t*) freelist_remove_first(OMPT_BASE_T_STAR_STAR(thread_region_freelist_head));
-  return first ? first : (ompt_trl_el_t*)hpcrun_malloc(sizeof(ompt_trl_el_t));
-}
-
-
-void
-hpcrun_ompt_trl_el_free
-(
- ompt_trl_el_t *thread_region
-)
-{
-  freelist_add_first(OMPT_BASE_T_STAR(thread_region), OMPT_BASE_T_STAR_STAR(thread_region_freelist_head));
-}
-
-
-//FIXME: regex \(ompt_base_t\s+\*\)
 
 // vi3: Helper function to get region_data
-ompt_region_data_t*
+typed_queue_elem(region)*
 hpcrun_ompt_get_region_data
 (
  int ancestor_level
@@ -1026,11 +973,11 @@ hpcrun_ompt_get_region_data
   // FIXME: potential problem if parallel info is unavailable and runtime returns 1
   if (ret_val < 2)
     return NULL;
-  return parallel_data ? (ompt_region_data_t*)parallel_data->ptr : NULL;
+  return parallel_data ? (typed_queue_elem(region)*)parallel_data->ptr : NULL;
 }
 
 
-ompt_region_data_t*
+typed_queue_elem(region)*
 hpcrun_ompt_get_current_region_data
 (
  void
@@ -1040,7 +987,7 @@ hpcrun_ompt_get_current_region_data
 }
 
 
-ompt_region_data_t*
+typed_queue_elem(region)*
 hpcrun_ompt_get_parent_region_data
 (
  void
@@ -1052,18 +999,18 @@ hpcrun_ompt_get_parent_region_data
 int
 hpcrun_ompt_get_thread_num(int level)
 {
-    if (ompt_initialized) {
-        int task_type_flags;
-        ompt_data_t *task_data = NULL;
-        ompt_data_t *parallel_data = NULL;
-        ompt_frame_t *task_frame = NULL;
-        int thread_num = 0;
+  if (ompt_initialized) {
+    int task_type_flags;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    ompt_frame_t *task_frame = NULL;
+    int thread_num = 0;
 
-        ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
-        //printf("Task frame pointer = %p\n", task_frame);
-        return thread_num;
-    }
-    return -1;
+    ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    //printf("Task frame pointer = %p\n", task_frame);
+    return thread_num;
+  }
+  return -1;
 }
 
 

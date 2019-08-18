@@ -126,14 +126,6 @@ hpcrun_region_lookup
 
 
 int 
-length_trl
-(
- ompt_trl_el_t* regions_list_head, 
- int of_freelist
-);
-
-
-int 
 register_thread
 (
  int level
@@ -171,7 +163,7 @@ try_resolve_one_region_context
 void 
 resolve_one_region_context
 (
- ompt_region_data_t* region_data
+ typed_queue_elem(region)* region_data
 );
 
 
@@ -202,7 +194,7 @@ provide_callpath_for_regions_if_needed
 void 
 add_region_and_ancestors_to_stack
 (
- ompt_region_data_t *region_data, 
+ typed_queue_elem(region) *region_data,
  bool team_master
 );
 
@@ -210,7 +202,7 @@ add_region_and_ancestors_to_stack
 void 
 tmp_end_region_resolve
 (
- ompt_notification_t *notification, 
+ typed_queue_elem(notification) *notification,
  cct_node_t* prefix
 );
 
