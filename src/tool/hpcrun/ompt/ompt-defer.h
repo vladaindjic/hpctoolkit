@@ -180,16 +180,6 @@ ompt_resolve_region_contexts
  int is_process
 );
 
-
-// function which provides call path for regions where thread is the master
-void 
-provide_callpath_for_regions_if_needed
-(
-  backtrace_info_t* bt, 
-  cct_node_t* cct
-);
-
-
 // stack reorganization
 void 
 add_region_and_ancestors_to_stack

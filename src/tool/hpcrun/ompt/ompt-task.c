@@ -107,25 +107,9 @@ ompt_task_begin_internal
     cct_node = region_data->call_path;
   }
 
-  task_data->ptr = cct_node;
-
-  if (!ompt_eager_context_p()) {
-    // this says that we have explicit task but not it's path
-    // we use this in elider (clip frames above the frame of the explicit task)
-    // and int ompt_cursor_finalize.
-    // only possible when ompt_eager_context == false,
-    // because we don't collect call path for the innermost region eagerly
-    // FIXME vi3: I guess it is possible that one thread executes this
-    // callback and another execute the task.
-    // Instead of memoizing the pointer to the stack element,
-    // we are going to memoize top_index which is the same as region depth.
-    // If the top_index is 0. that is equal to NULL, which will tell
-    // elider and ompt_cct_cursror_finalizer that thread is not inside
-    // explicit task. The workarround is to add some constant greater than 1,
-    // because top_index can be in range [-1, 128]. If we add only 1 and if
-    // top_index is -1. than we are facing againg to aforementioned problem.
-    task_data->value = (uint64_t)top_index + 33;
-  }
+  // If cct_node is available, it will be used in order to se task_data->ptr = cct_node.
+  // otherwise task_data->value will be set to
+  task_data_set_info(task_data, cct_node, top_index);
 
   td->overhead --;
 }
@@ -171,4 +155,82 @@ ompt_task_register_callbacks
   assert(ompt_event_may_occur(retval));
 }
 
+// returns 0 if cct is present
+// returns 1 if region_depth is present
+// returns 2 if no information are present
+char
+task_data_get_info
+(
+  ompt_data_t *task_data,
+  cct_node_t **cct,
+  int *region_depth
+)
+{
+  if (!task_data)
+    return 2;
+
+  uint64_t mask = 1;
+  uint64_t info_type = task_data->value & mask;
+
+  if (!info_type) {
+    // store cct_node_t
+    *cct = (cct_node_t*)task_data->ptr;
+  } else {
+    // calculate and store region depth
+    uint64_t val = task_data->value;
+    val = val >> 1u;
+    *region_depth = val;
+  }
+
+  return (char)info_type;
+}
+
+void
+task_data_set_info
+(
+  ompt_data_t *task_data,
+  cct_node_t *cct,
+  int region_depth
+)
+{
+  if (region_depth != -1) {
+    uint64_t val = (uint64_t)region_depth;
+    val = val << 1u;
+    uint64_t mask = 1;
+    val = val | mask;
+    task_data->value = val;
+    return;
+  }
+  task_data->ptr = cct;
+}
+
+// returns 0 if cct is present
+// returns 1 if region_depth is present
+// returns 2 if no information are present
+char
+task_data_value_get_info
+(
+  void *task_data_content,
+  cct_node_t **cct,
+  int *region_depth
+)
+{
+  if (!task_data_content)
+    return 2;
+  uint64_t task_data_value = (uint64_t)task_data_content;
+  uint64_t mask = 1;
+  uint64_t info_type = task_data_value & mask;
+
+  if (!info_type) {
+    // store cct_node_t
+    *cct = (cct_node_t*)task_data_value;
+  } else {
+    // calculate and store region depth
+    uint64_t val = task_data_value;
+    val = val >> 1u;
+    *region_depth = val;
+  }
+
+  return (char)info_type;
+}
 

@@ -65,4 +65,27 @@ ompt_task_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 );
 
+char
+task_data_get_info(
+  ompt_data_t *task_data,
+  cct_node_t **cct,
+  int *region_depth
+);
+
+void
+task_data_set_info
+(
+  ompt_data_t *task_data,
+  cct_node_t *cct,
+  int region_depth
+);
+
+char
+task_data_value_get_info
+(
+  void *task_data_content,
+  cct_node_t **cct,
+  int *region_depth
+);
+
 #endif

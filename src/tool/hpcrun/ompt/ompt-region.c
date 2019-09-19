@@ -76,6 +76,7 @@
 #include "ompt-region.h"
 #include "ompt-region-debug.h"
 #include "ompt-thread.h"
+#include "ompt-task.h"
 
 
 
@@ -196,7 +197,7 @@ ompt_parallel_end_internal
     if (!region_data->call_path &&
           (notification->unresolved_cct || to_notify)) {
       // the region has not been provided before, so we will do that now
-      ompt_region_context_lazy(region_data->region_id, ompt_scope_end,
+      region_data->call_path = ompt_region_context_eager(region_data->region_id, ompt_scope_end,
                                flags & ompt_parallel_invoker_program);
     }
 
@@ -206,7 +207,7 @@ ompt_parallel_end_internal
       // so we need to resolve everything under pseudo node
       cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
       cct_node_t *prefix =
-        hpcrun_cct_insert_path_return_leaf_tmp(parent_cct,
+        hpcrun_cct_insert_path_return_leaf(parent_cct,
           region_data->call_path);
 
       // if combined this if branch with branch of next if
@@ -323,8 +324,10 @@ ompt_implicit_task_internal_begin
   cct_node_t *prefix = region_data->call_path;
 
   // Only full call path can be memoized.
-  if (ompt_eager_context_p())
-    task_data->ptr = prefix;
+  if (ompt_eager_context_p()) {
+    // region_depth is not important in this situation
+    task_data_set_info(task_data, prefix, -1);
+  }
 
   if (!ompt_eager_context_p()) {
     // FIXME vi3: check if this is fine
@@ -336,6 +339,7 @@ ompt_implicit_task_internal_begin
     if (index != 0){
       not_master_region = region_data;
     }
+    task_data_set_info(task_data, NULL, top_index);
   }
 }
 

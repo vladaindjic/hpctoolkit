@@ -436,10 +436,6 @@ help_hpcrun_backtrace2cct(cct_bundle_t* bundle, ucontext_t* context,
 					 tramp_found,
 					 metricId, metricIncr, data);
 
-  if (!ompt_eager_context_p()) {
-    provide_callpath_for_regions_if_needed(&bt, n);
-  }
-
   if (bt.n_trolls != 0) hpcrun_stats_trolled_inc();
   hpcrun_stats_frames_total_inc((long)(bt.last - bt.begin + 1));
   hpcrun_stats_trolled_frames_inc((long) bt.n_trolls);

@@ -62,6 +62,7 @@
 #include "ompt-interface.h"
 #include "ompt-placeholders.h"
 #include "ompt-thread.h"
+#include "ompt-task.h"
 
 #if defined(HOST_CPU_PPC) 
 #include "ompt-gcc4-ppc64.h"
@@ -821,21 +822,19 @@ ompt_cct_cursor_finalize
 )
 {
 
-  // when providing a path for the region in which we had a task
-  // This could potential lead to garbage in the tree of thread root
-  // Maybe to use unresolved_root instead.
-  if (!ompt_eager_context && ending_region) {
-    return TD_GET(master) ? cct_cursor : cct_not_master_region;
+  // Put region path under the unresolved root
+  if (!ompt_eager_context_p() && ending_region) {
+    return cct->unresolved_root;
   }
 
-  cct_node_t *omp_task_context = TD_GET(omp_task_context);
-  bool worker_exp_barr = check_state() == ompt_state_wait_barrier_explicit
-                         && hpcrun_ompt_get_thread_num(0) != 0;
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
 
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already
   //        relative to one root or another.
-  if (ompt_eager_context_p()) {
+  if (info_type == 0) {
     cct_node_t *root;
 #if 1
     root = ompt_region_root(omp_task_context);
@@ -847,58 +846,12 @@ ompt_cct_cursor_finalize
     }
 #endif
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
-  } else if (omp_task_context || worker_exp_barr) {
-    // If the current thread is worker and is waiting on explicit barrier, then
-    // call path will be inserted under unresolved cct node of
-    // the inner most region.
-    // If not, then the thread is inside explicit task. In that case,
-    // get the region depth from omp_task_context and find the region at that
-    // depth. Insert call path under unresolved cct node
-    // that belongs to that region.
-    int region_depth = worker_exp_barr ? top_index
-                                       : (uint64_t)omp_task_context - 33;
+  } else if (info_type == 1) {
     region_stack_el_t *stack_el = &region_stack[region_depth];
     add_unresolved_cct_to_parent_region_if_needed(stack_el);
     return stack_el->notification->unresolved_cct;
   }
 
-  // if I am not the master thread, full context may not be immediately available.
-  // if that is the case, then it will later become available in a deferred fashion.
-  if (!TD_GET(master)) { // sub-master thread in nested regions
-
-//    uint64_t region_id = TD_GET(region_id);
-//    ompt_data_t* current_parallel_data = TD_GET(current_parallel_data);
-//    typed_queue_elem(region)* region_data = (typed_queue_elem(region)*)current_p  arallel_data->ptr;
-    // FIXME: check whether bottom frame elided will be right for IBM runtime
-    //        without help of get_idle_frame
-
-    if (not_master_region && bt->bottom_frame_elided){
-      // it should be enough just to set cursor to unresolved node
-      // which corresponds to not_master_region
-
-      // everything is ok with cursos
-      cct_cursor = cct_not_master_region;
-
-// johnmc merge
-#if 0
-    if (region_id > 0 && bt->bottom_frame_elided) {
-
-      cct_node_t *prefix = lookup_region_id(region_id);
-      if (prefix) {
-	      // full context is available now. use it.
-	      cct_cursor = prefix;
-      } else {
-	      // full context is not available. if the there is a node for region_id in 
-	      // the unresolved tree, use it as the cursor to anchor the sample for now. 
-	      // it will be resolved later. otherwise, use the default cursor.
-	      prefix = hpcrun_cct_find_addr((hpcrun_get_thread_epoch()->csdata).unresolved_root,
-          &(ADDR2(UNRESOLVED, region_id)));
-	      if (prefix) cct_cursor = prefix;
-      }
-#endif
-    }
-  }
-  nested_regions_before_explicit_task = 0;
   return cct_cursor;
 }
 
