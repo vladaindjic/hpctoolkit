@@ -194,6 +194,12 @@ ompt_parallel_end_internal
     region_stack_el_t *stack_el = &region_stack[top_index];
     typed_queue_elem(notification) *notification = stack_el->notification;
 
+    // NOTE: These two conditions should be equal:
+    // 1. notification->unresolved_cct != NULL
+    // 2. stack_el->took_sample
+
+    // Region call path is missing.
+    // Some thread from the team took a sample in the region.
     if (!region_data->call_path &&
           (notification->unresolved_cct || to_notify)) {
       // the region has not been provided before, so we will do that now
@@ -201,7 +207,7 @@ ompt_parallel_end_internal
                                flags & ompt_parallel_invoker_program);
     }
 
-
+    // If master took a sample in this region, it needs to resolve its call path.
     if (notification->unresolved_cct) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
@@ -227,12 +233,11 @@ ompt_parallel_end_internal
       // wfq_enqueue((ompt_base_t*)region_data, &public_region_freelist);
     }
 
+    // return to outer region if any
+    top_index--;
+    // mark that no region is ending
+    ending_region = NULL;
   }
-
-  // return to outer region if any
-  top_index--;
-  // mark that no region is ending
-  ending_region = NULL;
 
   // FIXME: vi3: what is this?
   // FIXME: not using team_master but use another routine to

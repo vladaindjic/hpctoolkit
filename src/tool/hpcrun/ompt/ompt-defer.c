@@ -481,7 +481,7 @@ add_region_and_ancestors_to_stack
 {
 
   if (!region_data) {
-    // printf("*******************This is also possible. ompt-defer.c:394");
+    deferred_resolution_breakpoint();
     return;
   }
 
@@ -489,15 +489,18 @@ add_region_and_ancestors_to_stack
   int level = 0;
   int depth;
 
-  // up through region stack until first region which is on the stack
-  // if none of region is on the stack, then stack will be completely changed
+  // Add active regions on stack starting from the innermost.
+  // Stop when one of the following conditions is satisfied:
+  // 1. all active regions are added to stack
+  // 2. encounter on region that is active and that was previously added to the stack
   while (current) {
     depth = current->depth;
-    // found region which is on the stack
+    // found region which was previously added to the stack
     if (depth <= top_index &&
         region_stack[depth].notification->region_data->region_id == current->region_id) {
       break;
     }
+    // add corresponding notification on stack
     swap_and_free(current);
     // get the parent
     current = hpcrun_ompt_get_region_data(++level);
@@ -533,68 +536,69 @@ register_to_region
 }
 
 
-int
-get_took_sample_parent_index
-(
- void
-)
-{
-  int i;
-  for (i = top_index; i >= 0; i--) {
-    if (region_stack[i].took_sample) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-
 void
 register_to_all_regions
 (
  void
 )
 {
-  // find ancestor on the stack in which we took a sample
-  // a go until the top of the stack
-  int start_register_index = get_took_sample_parent_index() + 1;
+  // no active parallel regions
+  if (is_empty_region_stack()) {
+    return;
+  }
 
-  // mark that all descendants of previously mentioned ancestor took a sample
-  // for all descendants where thread is not the master in, register for descendant callpath
-  int i;
   region_stack_el_t *current_el;
-  cct_node_t *parent_cct;
-  cct_node_t *new_cct;
-  for (i = start_register_index; i <=top_index; i++) {
+  cct_node_t *current_cct = NULL;
+  cct_node_t *previous_cct = NULL;
+  typed_queue_elem(notification) *current_notification = NULL;
+  // Mark that thread took a sample in all active regions on the stack.
+  // Stop at region in which thread took a sample before.
+  // Add pseudo cct nodes for regions in which thread took a sample for the first time.
+  int i;
+  for (i = top_index; i >= 0; i--) {
     current_el = &region_stack[i];
-    // mark that we took sample
-    current_el->took_sample = true;
+    current_notification = current_el->notification;
+    // thread took a sample in this region before
+    if (current_el->took_sample) {
+      // connect with children pseudo node
+      if (previous_cct) {
+        current_cct = current_notification->unresolved_cct;
+        hpcrun_cct_insert_node(current_cct, previous_cct);
+      }
+      // stop
+      return;
+    }
 
+    // mark that thread took sample in this region
+    current_el->took_sample = true;
+    // worker thread register itself for the region's call path
     if (!current_el->team_master) {
-      // register for region's call path if not the master
       register_to_region(current_el->notification);
     }
 
-    // add unresolved cct at some place underneath thread root
-    // find parent of new_cct
-    parent_cct = (i == 0) ? hpcrun_get_thread_epoch()->csdata.thread_root
-            : region_stack[i-1].notification->unresolved_cct;
-
-    if (current_el->notification->region_data->region_id == 0) {
-	    deferred_resolution_breakpoint();
+    // add pseudo cct node
+    current_notification->unresolved_cct =
+        cct_node_create_from_addr_vi3(&ADDR2(UNRESOLVED,
+            current_notification->region_data->region_id));
+    current_cct = current_notification->unresolved_cct;
+    // connect it with children pseudo node (previous one)
+    if (previous_cct) {
+      hpcrun_cct_insert_node(current_cct, previous_cct);
     }
 
-    // insert cct as child of the parent_cct
-    new_cct =
-            hpcrun_cct_insert_addr(parent_cct,
-                                   &(ADDR2(UNRESOLVED, current_el->notification->region_data->region_id)));
-    // remebmer cct
-    current_el->notification->unresolved_cct = new_cct;
-
-    cct_not_master_region = current_el->notification->unresolved_cct;
-
+    previous_cct = current_cct;
   }
 
+  // thread registered itself for all regions that are active on the stack.
+  if (i < 0) {
+    // connect outermost region with thread root
+    hpcrun_cct_insert_node(hpcrun_get_thread_epoch()->csdata.thread_root, previous_cct);
+    // vi3: for debug purposes
+    if (!previous_cct) {
+      deferred_resolution_breakpoint();
+      printf("ompt-defer.c:609 This should not happen\n");
+    }
+  }
 
 }
 

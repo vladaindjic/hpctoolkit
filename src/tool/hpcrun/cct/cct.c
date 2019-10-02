@@ -1093,3 +1093,11 @@ hpcrun_cct_set_parent(cct_node_t* cct, cct_node_t* parent)
   cct->parent = parent;
 }
 
+cct_node_t*
+cct_node_create_from_addr_vi3
+(
+  cct_addr_t* addr
+)
+{
+  cct_node_create(addr, NULL);
+}
