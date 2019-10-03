@@ -300,6 +300,7 @@ ompt_elide_runtime_frame(
     goto return_label;
   }
 
+  int on_explicit_barrier = 0;
   // collapse callstack if a thread is idle or waiting in a barrier
   switch(check_state()) {
     case ompt_state_wait_barrier:
@@ -320,13 +321,18 @@ ompt_elide_runtime_frame(
       // If we are asynchronously resolving call paths, then
       // TD_GET(omp_task_context) will be NULL. We will handle this
       // in ompt_cct_cursor_finalize.
+#if 0
+      // Old code
       TD_GET(omp_task_context) = hpcrun_ompt_get_task_data(0)->ptr;
       // collapse barriers on non-master ranks
       if (hpcrun_ompt_get_thread_num(0) != 0) {
 	      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait_state);
 	      goto return_label;
       }
-      break; 
+      break;
+#endif
+      on_explicit_barrier = 1;
+      break;
     case ompt_state_idle:
       // collapse idle state
       TD_GET(omp_task_context) = 0;
@@ -385,7 +391,7 @@ ompt_elide_runtime_frame(
     goto clip_base_frames;
   }
 
-  if (fp_enter(frame0)) { 
+  if (fp_enter(frame0)) {
     // the sample was received inside the runtime; 
     // elide frames from top of stack down to runtime entry
     int found = 0;
@@ -394,6 +400,11 @@ ompt_elide_runtime_frame(
         if (isSync) {
           // for synchronous samples, elide runtime frames at top of stack
           *bt_inner = it;
+        } else if (on_explicit_barrier) {
+          // bt_inner points to __kmp_api_GOMP_barrier_10_alias
+          *bt_inner = it - 1;
+          // replace the last frame with explicit barrier placeholder
+          set_frame(*bt_inner, &ompt_placeholders.ompt_barrier_wait_state);
         }
         found = 1;
         break;
