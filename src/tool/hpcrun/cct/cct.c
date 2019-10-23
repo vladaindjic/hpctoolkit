@@ -580,9 +580,6 @@ void
 hpcrun_cct_delete_self(cct_node_t *cct)
 {
   hpcrun_cct_delete_addr(cct->parent, &cct->addr);
-  // FIXME vi3: I think below should be added, because of freelist
-  // cause previous function remove node from parent tree,
-  // but do not remove parent, left and right
   cct->left = NULL;
   cct->right = NULL;
   cct->parent = NULL;
@@ -1065,10 +1062,6 @@ void
 hpcrun_cct_node_free(cct_node_t *cct){
   add_node_to_freelist(cct);
 }
-
-
-// FIXME vi3: disccuss about hpcrun_merge
-
 
 
 cct_node_t*

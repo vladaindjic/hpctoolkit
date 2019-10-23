@@ -418,7 +418,6 @@ ompt_elide_runtime_frame(
     // frames at top of stack elided. continue with the rest
   }
 
-  // FIXME vi3: trouble with master thread when defering
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
     frame_t *exit0 = NULL, *reenter1 = NULL;
@@ -775,9 +774,9 @@ ompt_backtrace_finalize
   uint64_t region_id = TD_GET(region_id);
 
   ompt_elide_runtime_frame(bt, region_id, isSync);
-  // FIXME vi3>> Worker thread is waiting on explicit barrier and backtrace is
-  // collapsed, but thread needs to be registered for the innermost region's
-  // call path.
+  // If backtrace is collapsed and if worker thread in team is waiting
+  // on explicit barrier, it (worker threads) also needs to register
+  // itself for the call path of all active regions.
   bool wait_on_exp_barr = check_state() == ompt_state_wait_barrier_explicit;
   if(!isSync && !ompt_eager_context_p()
              && (!bt->collapsed || wait_on_exp_barr)){
@@ -858,9 +857,7 @@ ompt_cct_cursor_finalize
 #endif
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (info_type == 1) {
-    region_stack_el_t *stack_el = &region_stack[region_depth];
-    add_unresolved_cct_to_parent_region_if_needed(stack_el);
-    return stack_el->notification->unresolved_cct;
+    return region_stack[region_depth].notification->unresolved_cct;
   }
 
   return cct_cursor;

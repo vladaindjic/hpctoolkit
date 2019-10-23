@@ -59,11 +59,8 @@
 // local includes  
 //******************************************************************************
 
-#include <lib/prof-lean/stdatomic.h>
-#include <lib/prof-lean/queues.h>
-
 #include <hpcrun/cct/cct.h>
-
+#include "ompt-queues.h"
 
 
 //******************************************************************************
@@ -76,67 +73,99 @@
 // forward declarations of types
 //******************************************************************************
 
-typedef q_element_ptr_t typed_queue_elem_ptr(notification);
-typedef q_element_ptr_t typed_queue_elem_ptr(region);
-
 //******************************************************************************
 // type declarations 
 //******************************************************************************
 
+struct ompt_region_data_s;
+struct ompt_notification_s;
+struct mpsc_channel_region_s;
+struct mpsc_channel_notification_s;
 
+// struct used to store information about parallel region
 typedef struct ompt_region_data_s {
-  // region freelist, must be at the begin because od up/downcasting
-  // like inherited class in C++, inheretes from base_t
-  q_element_ptr_t next;
-
+  // used in stack and channel implementation, inherited from s_element_t
+  s_element_ptr_t next;
   // region's wait free queue
-  typed_queue_elem_ptr(notification) queue;
-
+  struct ompt_notification_s *notification_stack;
   // region's freelist which belongs to thread
-  typed_queue_elem_ptr(region) *thread_freelist;
-
+  struct mpsc_channel_region_s *owner_free_region_channel;
   // region id
   uint64_t region_id;
-
   // call_path to the region
   cct_node_t *call_path;
-
   // depth of the region, starts from zero
   int depth;
-
+  // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
-} typed_queue_elem(region);
+} typed_stack_elem(region);
 
-typed_queue(region, qtype)
+// declare pointer to previous struct
+typed_stack_declare_type(region);
 
-
-typedef struct {
-  // it can also cover freelist to, we do not need another next_freelist
-  q_element_ptr_t next;
-
-  typed_queue_elem(region) *region_data;
-
+// notification that contains information about region
+// used in inter-thread communication
+typedef struct ompt_notification_s {
+  // used in stack and channel implementation, inherited from s_element_t
+  s_element_ptr_t next;
+  struct ompt_region_data_s *region_data;
   // region id
   uint64_t region_id;
-
-  // struct ompt_threads_queue_s *threads_queue;
-  typed_queue_elem_ptr(notification) *threads_queue;
-
+  struct mpsc_channel_notification_s *notification_channel;
   // pointer to the cct pseudo node of the region that should be resolve
   cct_node_t* unresolved_cct;
-} typed_queue_elem(notification);
+} typed_stack_elem(notification);
 
-typed_queue(notification, qtype)
-
+// declare pointer to previous struct
+typed_stack_declare_type(notification);
 
 // region stack element which points to the corresponding
 // notification, and says if thread took sample and if the
 // thread is the master in team
 typedef struct region_stack_el_s {
-  typed_queue_elem(notification) *notification;
+  struct ompt_notification_s *notification;
   bool took_sample;
   bool team_master;
 } region_stack_el_t;
+
+
+// ============ region stacks declaration
+// declare api functions of sequential stack of regions
+typed_stack_declare(region, sstack);
+// declare api functions sequential stack of regions
+typed_stack_declare(region, cstack);
+
+// ============ notification stacks declaration
+// declare api functions of sequential stack of regions
+typed_stack_declare(notification, sstack);
+// declare api functions of concurrent stack of regions
+typed_stack_declare(notification, cstack);
+
+
+
+// ============ multi-producer single-consumer channels of regions
+// struct that represents single element of channel of regions
+typedef struct mpsc_channel_region_s {
+  typed_stack_elem_ptr(region) shared;
+  typed_stack_elem_ptr(region) private;
+} typed_channel_elem(region);
+// declare pointer to previous struct
+typed_channel_declare_type(region);
+// declare api functions of mpsc channel of regions
+typed_channel_declare(region);
+
+// ============ multi-producer single-consumer channels of notifications
+// struct that represents single element of channel of notifications
+typedef struct mpsc_channel_notification_s {
+  typed_stack_elem_ptr(notification) shared;
+  typed_stack_elem_ptr(notification) private;
+} typed_channel_elem(notification);
+// declare pointer to previous struct
+typed_channel_declare_type(notification);
+// declare api functions of mpsc channel of regions
+typed_channel_declare(notification);
+
+
 
 
 // FIXME vi3: ompt_data_t freelist manipulation

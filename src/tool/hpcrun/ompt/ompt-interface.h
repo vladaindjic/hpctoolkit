@@ -195,7 +195,7 @@ ompt_task_full_context_p
 // allocate and free notifications
 //-----------------------------------------------------------------------------
 
-typed_queue_elem(notification) *
+typed_stack_elem_ptr(notification)
 hpcrun_ompt_notification_alloc
 (
  void
@@ -206,7 +206,7 @@ hpcrun_ompt_notification_alloc
 void 
 hpcrun_ompt_notification_free
 (
- typed_queue_elem(notification) *notification
+ typed_stack_elem_ptr(notification) notification
 );
 
 
@@ -215,7 +215,7 @@ hpcrun_ompt_notification_free
 //-----------------------------------------------------------------------------
 
 
-typed_queue_elem(region) *
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_region_data
 (
  int ancestor_level
@@ -226,14 +226,14 @@ hpcrun_ompt_get_region_data
 // access to region data
 //-----------------------------------------------------------------------------
 
-typed_queue_elem(region) *
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_current_region_data
 (
  void
 );
 
 
-typed_queue_elem(region) *
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_parent_region_data
 (
  void

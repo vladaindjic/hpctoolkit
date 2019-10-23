@@ -74,7 +74,7 @@
 #include "ompt-callstack.h"
 #include "ompt-defer.h"
 #include "ompt-interface.h"
-#include "ompt-queues.h"
+//#include "ompt-queues.h"
 #include "ompt-region-debug.h"
 #include "ompt-placeholders.h"
 #include "ompt-thread.h"
@@ -415,16 +415,16 @@ hpcrun_region_lookup
 
 // added by vi3
 
-typed_queue_elem(notification)*
+typed_stack_elem_ptr(notification)
 help_notification_alloc
 (
- typed_queue_elem(region) *region_data
+ typed_stack_elem_ptr(region) region_data
 )
 {
-  typed_queue_elem(notification) *notification = hpcrun_ompt_notification_alloc();
+  typed_stack_elem_ptr(notification) notification = hpcrun_ompt_notification_alloc();
   notification->region_data = region_data;
   notification->region_id = region_data->region_id;
-  notification->threads_queue = &threads_queue;
+  notification->notification_channel = &thread_notification_channel;
   // reset unresolved_cct for the new notification
   notification->unresolved_cct = NULL;
 
@@ -435,18 +435,18 @@ help_notification_alloc
 void
 swap_and_free
 (
- typed_queue_elem(region)* region_data
+ typed_stack_elem_ptr(region) region_data
 )
 {
 
   int depth = region_data->depth;
-  typed_queue_elem(notification) *notification;
+  typed_stack_elem_ptr(notification) notification;
   region_stack_el_t *stack_element;
 
   // If notification at depth index of the stack
   // does not have initialize next pointer, that means
   // that is not enqueue anywhere and is not in the freelist,
-  // which means we can free it here.
+  // which means we can free it her_cstack_forall(e.
   stack_element = &region_stack[depth];
   notification = stack_element->notification;
   // we can free notification either if the thread is the master of the region
@@ -475,7 +475,7 @@ swap_and_free
 void
 add_region_and_ancestors_to_stack
 (
- typed_queue_elem(region) *region_data,
+ typed_stack_elem_ptr(region) region_data,
  bool team_master
 )
 {
@@ -485,7 +485,7 @@ add_region_and_ancestors_to_stack
     return;
   }
 
-  typed_queue_elem(region) *current = region_data;
+  typed_stack_elem_ptr(region) current = region_data;
   int level = 0;
   int depth;
 
@@ -511,6 +511,7 @@ add_region_and_ancestors_to_stack
   // FIXME vi3: should check if this is right
   // If the stack content does not corresponds to ancestors of the region_data,
   // then thread could only be master of the region_data, but not to its ancestors.
+
   // Values of argument team_master says if the thread is the master of region_data
   region_stack[top_index].team_master = team_master;
 
@@ -520,17 +521,16 @@ add_region_and_ancestors_to_stack
 void
 register_to_region
 (
- typed_queue_elem(notification)* notification
+ typed_stack_elem_ptr(notification) notification
 )
 {
-  typed_queue_elem(region)* region_data = notification->region_data;
+  typed_stack_elem_ptr(region) region_data = notification->region_data;
 
   ompt_region_debug_notify_needed(notification);
 
   // register thread to region's wait free queue
-  typed_queue_elem_ptr_set(notification, qtype)(&notification->next, NULL);
-  typed_queue_push(notification, qtype)(&region_data->queue, notification);
-
+  typed_stack_next_set(notification, cstack)(notification, 0);
+  typed_stack_push(notification, cstack)(&region_data->notification_stack, notification);
   // increment the number of unresolved regions
   unresolved_cnt++;
 }
@@ -550,7 +550,7 @@ register_to_all_regions
   region_stack_el_t *current_el;
   cct_node_t *current_cct = NULL;
   cct_node_t *previous_cct = NULL;
-  typed_queue_elem(notification) *current_notification = NULL;
+  typed_stack_elem_ptr(notification) current_notification = NULL;
   // Mark that thread took a sample in all active regions on the stack.
   // Stop at region in which thread took a sample before.
   // Add pseudo cct nodes for regions in which thread took a sample for the first time.
@@ -628,15 +628,15 @@ try_resolve_one_region_context
 {
   // Pop from private queue, if anything
   // If nothing, steal from public queue.
-  typed_queue_elem(notification) *old_head =
-    typed_queue_pop_or_steal(notification, qtype)(&private_threads_queue, &threads_queue);
+  typed_stack_elem_ptr(notification) old_head =
+    typed_channel_steal(notification)(&thread_notification_channel);
 
   if (!old_head) return 0;
 
   unresolved_cnt--;
 
   // region to resolve
-  typed_queue_elem(region) *region_data = old_head->region_data;
+  typed_stack_elem_ptr(region) region_data = old_head->region_data;
 
   ompt_region_debug_notify_received(old_head);
 
@@ -672,11 +672,11 @@ try_resolve_one_region_context
   // free notification
   hpcrun_ompt_notification_free(old_head);
 
-  // check if the notification needs to be forwarded 
-  typed_queue_elem(notification)* next =
-    typed_queue_pop(notification, qtype)(&region_data->queue);
+  // check if the notification needs to be forwarded
+  typed_stack_elem_ptr(notification) next =
+    typed_stack_pop(notification, sstack)(&region_data->notification_stack);
   if (next) {
-    typed_queue_push(notification, qtype)(next->threads_queue, next);
+    typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
     hpcrun_ompt_region_free(region_data);
@@ -781,7 +781,6 @@ ompt_resolve_region_contexts
     };
   }
 
-  // FIXME vi3: find all memory leaks
 }
 
 
@@ -888,7 +887,7 @@ print_prefix_info
 void
 tmp_end_region_resolve
 (
- typed_queue_elem(notification) *notification,
+ typed_stack_elem_ptr(notification) notification,
  cct_node_t* prefix
 )
 {

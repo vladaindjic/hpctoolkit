@@ -73,7 +73,7 @@
 #include "ompt-callstack.h"
 #include "ompt-defer.h"
 #include "ompt-interface.h"
-#include "ompt-queues.h"
+//#include "ompt-queues.h"
 #include "ompt-region.h"
 #include "ompt-placeholders.h"
 #include "ompt-task.h"
@@ -388,10 +388,11 @@ ompt_thread_begin
   undirected_blame_thread_start(&omp_idle_blame_info);
 
   // initialize freelist to NULL
-  typed_queue_elem_ptr_set(notification, qtype)(&notification_freelist_head, NULL);
-  typed_queue_elem_ptr_set(notification, qtype)(&threads_queue, NULL);
-  typed_queue_elem_ptr_set(notification, qtype)(&private_threads_queue, NULL);
-  typed_queue_elem_ptr_set(region, qtype)(&public_region_freelist, NULL);
+  // FIXME vi3>> Should I use this, or line below
+  //typed_stack_elem_ptr_set(notification, sstack)(&notification_freelist_head, 0);
+  notification_freelist_head = NULL;
+  typed_channel_init(notification)(&thread_notification_channel);
+  typed_channel_init(region)(&region_freelist_channel);
   unresolved_cnt = 0;
 //  printf("Tree root begin: %p\n", td->core_profile_trace_data.epoch->csdata.tree_root);
 }
@@ -933,35 +934,35 @@ ompt_task_full_context_p
 
 
 // allocating and free notifications
-typed_queue_elem(notification)*
+typed_stack_elem_ptr(notification)
 hpcrun_ompt_notification_alloc
 (
  void
 )
 {
   // only the current thread uses notification_freelist_head
-  typed_queue_elem(notification)* first =
-    typed_queue_pop(notification, qtype)(&notification_freelist_head);
+  typed_stack_elem_ptr(notification) first =
+    typed_stack_pop(notification, sstack)(&notification_freelist_head);
   return first ? first :
-            (typed_queue_elem(notification)*)
-                  hpcrun_malloc(sizeof(typed_queue_elem(notification)));
+            (typed_stack_elem_ptr(notification))
+                  hpcrun_malloc(sizeof(typed_stack_elem(notification)));
 }
 
 
 void
 hpcrun_ompt_notification_free
 (
- typed_queue_elem(notification) *notification
+ typed_stack_elem_ptr(notification) notification
 )
 {
   // reset unresolved_cct when freeing notification
   notification->unresolved_cct = NULL;
-  typed_queue_push(notification, qtype)(&notification_freelist_head, notification);
+  typed_stack_push(notification, cstack)(&notification_freelist_head, notification);
 }
 
 
 // vi3: Helper function to get region_data
-typed_queue_elem(region)*
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_region_data
 (
  int ancestor_level
@@ -973,11 +974,11 @@ hpcrun_ompt_get_region_data
   // FIXME: potential problem if parallel info is unavailable and runtime returns 1
   if (ret_val < 2)
     return NULL;
-  return parallel_data ? (typed_queue_elem(region)*)parallel_data->ptr : NULL;
+  return parallel_data ? (typed_stack_elem_ptr(region))parallel_data->ptr : NULL;
 }
 
 
-typed_queue_elem(region)*
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_current_region_data
 (
  void
@@ -987,7 +988,7 @@ hpcrun_ompt_get_current_region_data
 }
 
 
-typed_queue_elem(region)*
+typed_stack_elem_ptr(region)
 hpcrun_ompt_get_parent_region_data
 (
  void
@@ -1023,3 +1024,18 @@ ompt_set_callback_internal
 {
   return ompt_set_callback_fn(event, callback);
 }
+
+
+// implement sequential stack of regions
+typed_stack_impl(region, sstack);
+// implement concurrent stack of regions
+typed_stack_impl(region, cstack);
+// channel of regions
+typed_channel_impl(region);
+
+// implement sequential stack of notifications
+typed_stack_impl(notification, sstack);
+// implement concurrent stack of notifications
+typed_stack_impl(notification, cstack);
+// implement channel of notifications
+typed_channel_impl(notification);

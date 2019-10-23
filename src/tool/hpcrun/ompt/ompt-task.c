@@ -102,8 +102,8 @@ ompt_task_begin_internal
     ompt_data_t *parallel_info = NULL;
     int team_size = 0;
     hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);
-    typed_queue_elem(region)* region_data =
-      (typed_queue_elem(region)*) parallel_info->ptr;
+    typed_stack_elem_ptr(region) region_data =
+      (typed_stack_elem_ptr(region)) parallel_info->ptr;
     cct_node = region_data->call_path;
   }
 
@@ -184,6 +184,9 @@ task_data_get_info
 
   return (char)info_type;
 }
+
+// set_cct
+// set_depth
 
 void
 task_data_set_info

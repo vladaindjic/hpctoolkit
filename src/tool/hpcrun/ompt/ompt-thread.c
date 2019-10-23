@@ -57,17 +57,12 @@
 // global variables 
 //******************************************************************************
 
-// Memoization process vi3:
-__thread typed_queue_elem(region)* not_master_region = NULL;
-__thread cct_node_t* cct_not_master_region = NULL;
-
-//__thread ompt_threads_queue_t threads_queue;
-__thread typed_queue_elem_ptr(notification) threads_queue;
-__thread typed_queue_elem_ptr(notification) private_threads_queue;
+__thread typed_channel_elem(notification) thread_notification_channel;
 
 // freelists
-__thread typed_queue_elem_ptr(notification) notification_freelist_head;
-__thread typed_queue_elem_ptr(region) public_region_freelist;
+__thread typed_stack_elem_ptr(notification) notification_freelist_head = NULL;
+__thread typed_channel_elem(region) region_freelist_channel;
+
 
 // stack for regions
 __thread region_stack_el_t region_stack[MAX_NESTING_LEVELS];
@@ -78,7 +73,7 @@ __thread int top_index = -1;
 __thread int unresolved_cnt = 0;
 
 // FIXME vi3: just a temp solution
-__thread typed_queue_elem(region) *ending_region = NULL;
+__thread typed_stack_elem_ptr(region) ending_region = NULL;
 
 
 
@@ -136,7 +131,7 @@ pop_region_stack
 void
 push_region_stack
 (
- typed_queue_elem(notification)* notification,
+ typed_stack_elem_ptr(notification) notification,
  bool took_sample, 
  bool team_master
 )

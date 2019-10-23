@@ -67,38 +67,23 @@
 // global data
 //******************************************************************************
 
-
-// thread's notifications queueus
-//
-// public thread's notification queue
-extern __thread typed_queue_elem_ptr(notification) threads_queue;
-
-// private thread's notification queue
-extern __thread typed_queue_elem_ptr(notification) private_threads_queue;
-
-// freelists
+extern __thread typed_channel_elem(notification) thread_notification_channel;
 
 // thread's list of notification that can be reused
-extern __thread typed_queue_elem_ptr(notification) notification_freelist_head;
-
-// region's free lists
+extern __thread typed_stack_elem_ptr(notification) notification_freelist_head;
 
 // public freelist where all thread's can enqueue region_data to be reused
-extern __thread typed_queue_elem_ptr(region) public_region_freelist;
-
+extern __thread typed_channel_elem(region) region_freelist_channel;
 
 // stack that contais all nested parallel region
 // FIXME vi3: 128 levels are supported
 extern __thread region_stack_el_t region_stack[];
 extern  __thread int top_index;
 
-// Memoization process vi3:
-extern __thread typed_queue_elem(region) *not_master_region;
-extern __thread cct_node_t *cct_not_master_region;
 
 
 // FIXME vi3: just a temp solution
-extern __thread typed_queue_elem(region) *ending_region;
+extern __thread typed_stack_elem_ptr(region) ending_region;
 
 // number of unresolved regions
 extern __thread int unresolved_cnt;
@@ -138,7 +123,7 @@ pop_region_stack
 
 void push_region_stack
 (
- typed_queue_elem(notification)* notification,
+ typed_stack_elem_ptr(notification) notification,
  bool took_sample,
  bool team_master
 );

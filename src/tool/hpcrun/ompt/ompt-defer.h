@@ -163,7 +163,7 @@ try_resolve_one_region_context
 void 
 resolve_one_region_context
 (
- typed_queue_elem(region)* region_data
+ typed_stack_elem_ptr(region) region_data
 );
 
 
@@ -184,7 +184,7 @@ ompt_resolve_region_contexts
 void 
 add_region_and_ancestors_to_stack
 (
- typed_queue_elem(region) *region_data,
+ typed_stack_elem_ptr(region) region_data,
  bool team_master
 );
 
@@ -192,7 +192,7 @@ add_region_and_ancestors_to_stack
 void 
 tmp_end_region_resolve
 (
- typed_queue_elem(notification) *notification,
+ typed_stack_elem_ptr(notification) notification,
  cct_node_t* prefix
 );
 
