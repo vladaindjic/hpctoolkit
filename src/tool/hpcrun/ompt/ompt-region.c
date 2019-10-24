@@ -316,12 +316,12 @@ ompt_implicit_task_internal_begin
   // Only full call path can be memoized.
   if (ompt_eager_context_p()) {
     // region_depth is not important in this situation
-    task_data_set_info(task_data, prefix, -1);
+    task_data_set_cct(task_data, prefix);
   }
 
   if (!ompt_eager_context_p()) {
     add_region_and_ancestors_to_stack(region_data, index==0);
-    task_data_set_info(task_data, NULL, top_index);
+    task_data_set_depth(task_data, top_index);
   }
 }
 

@@ -72,6 +72,23 @@ task_data_get_info(
   int *region_depth
 );
 
+
+void
+task_data_set_cct
+(
+  ompt_data_t *task_data,
+  cct_node_t *cct
+);
+
+
+void
+task_data_set_depth
+(
+  ompt_data_t *task_data,
+  int region_depth
+);
+
+
 void
 task_data_set_info
 (
@@ -79,6 +96,7 @@ task_data_set_info
   cct_node_t *cct,
   int region_depth
 );
+
 
 char
 task_data_value_get_info

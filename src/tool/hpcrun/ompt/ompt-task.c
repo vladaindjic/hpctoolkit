@@ -98,6 +98,8 @@ ompt_task_begin_internal
     hpcrun_metricVal_t zero_metric_incr_metricVal;
     zero_metric_incr_metricVal.i = 0;
     cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal, 1, 1, NULL).sample_node;
+    // store cct_node in task_data
+    task_data_set_cct(task_data, cct_node);
   } else {
     ompt_data_t *parallel_info = NULL;
     int team_size = 0;
@@ -105,11 +107,21 @@ ompt_task_begin_internal
     typed_stack_elem_ptr(region) region_data =
       (typed_stack_elem_ptr(region)) parallel_info->ptr;
     cct_node = region_data->call_path;
+    // FIXME vi3>>> Since the thread is going to resolve the region call path after the region finishes,
+    // region_data->call_path is equal to NULL at the moment, so if-else statement should be redundant.
+#if 0
+    if (cct_node) {
+    // set cct_node, if available
+    task_data_set_cct(task_data, cct_node);
+  } else {
+    // otherwise, set depth of the innermost region
+    task_data_set_depth(task_data, top_index);
   }
-
-  // If cct_node is available, it will be used in order to se task_data->ptr = cct_node.
-  // otherwise task_data->value will be set to
-  task_data_set_info(task_data, cct_node, top_index);
+#else
+    // store depth of the innermost active region instead of cct_node, which is missing
+    task_data_set_depth(task_data, top_index);
+#endif
+  }
 
   td->overhead --;
 }
@@ -155,56 +167,30 @@ ompt_task_register_callbacks
   assert(ompt_event_may_occur(retval));
 }
 
-// returns 0 if cct is present
-// returns 1 if region_depth is present
-// returns 2 if no information are present
-char
-task_data_get_info
-(
-  ompt_data_t *task_data,
-  cct_node_t **cct,
-  int *region_depth
-)
-{
-  if (!task_data)
-    return 2;
-
-  uint64_t mask = 1;
-  uint64_t info_type = task_data->value & mask;
-
-  if (!info_type) {
-    // store cct_node_t
-    *cct = (cct_node_t*)task_data->ptr;
-  } else {
-    // calculate and store region depth
-    uint64_t val = task_data->value;
-    val = val >> 1u;
-    *region_depth = val;
-  }
-
-  return (char)info_type;
-}
-
-// set_cct
-// set_depth
 
 void
-task_data_set_info
+task_data_set_cct
 (
   ompt_data_t *task_data,
-  cct_node_t *cct,
+  cct_node_t *cct
+)
+{
+  task_data->ptr = cct;
+}
+
+
+void
+task_data_set_depth
+(
+  ompt_data_t *task_data,
   int region_depth
 )
 {
-  if (region_depth != -1) {
-    uint64_t val = (uint64_t)region_depth;
-    val = val << 1u;
-    uint64_t mask = 1;
-    val = val | mask;
-    task_data->value = val;
-    return;
-  }
-  task_data->ptr = cct;
+  uint64_t val = (uint64_t)region_depth;
+  val = val << 1u;
+  uint64_t mask = 1;
+  val = val | mask;
+  task_data->value = val;
 }
 
 // returns 0 if cct is present
