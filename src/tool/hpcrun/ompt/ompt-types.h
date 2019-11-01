@@ -119,15 +119,6 @@ typedef struct ompt_notification_s {
 // declare pointer to previous struct
 typed_stack_declare_type(notification);
 
-// region stack element which points to the corresponding
-// notification, and says if thread took sample and if the
-// thread is the master in team
-typedef struct region_stack_el_s {
-  struct ompt_notification_s *notification;
-  bool took_sample;
-  bool team_master;
-} region_stack_el_t;
-
 
 // ============ region stacks declaration
 // declare api functions of sequential stack of regions
@@ -166,7 +157,26 @@ typed_channel_declare_type(notification);
 typed_channel_declare(notification);
 
 
-
+// ========================= Random Access Stack of active parallel regions
+// Structure that represents a single element of random access stack of active parallel regions.
+// The first field of the structure represents the pointer to the corresponding
+// notification. Other two fields say if the thread, which is the owher of the stack,
+// took sample in the region and also if the
+// thread is the master of that region.
+typedef struct region_stack_el_s {
+  struct ompt_notification_s *notification;
+  bool took_sample;
+  bool team_master;
+} typed_random_access_stack_elem(region);
+// declare pointer to previous struct
+typed_random_access_stack_declare_type(region);
+// structure that represents random access stack of active parallel regions
+typedef struct {
+  typed_random_access_stack_elem(region) *array;
+  typed_random_access_stack_elem(region) *current;
+} typed_random_access_stack_struct(region);
+// declare api functions of random access stack of regions
+typed_random_access_stack_declare(region);
 
 // FIXME vi3: ompt_data_t freelist manipulation
 

@@ -438,40 +438,99 @@ swap_and_free
  typed_stack_elem_ptr(region) region_data
 )
 {
-
   int depth = region_data->depth;
-  typed_stack_elem_ptr(notification) notification;
-  region_stack_el_t *stack_element;
-
-  // If notification at depth index of the stack
-  // does not have initialize next pointer, that means
-  // that is not enqueue anywhere and is not in the freelist,
-  // which means we can free it her_cstack_forall(e.
-  stack_element = &region_stack[depth];
-  notification = stack_element->notification;
-  // we can free notification either if the thread is the master of the region
-  // or the thread did not take a sample inside region
+  typed_random_access_stack_elem(region) *stack_element =
+      typed_random_access_stack_get(region)(region_stack, depth);
+  typed_stack_elem_ptr(notification) notification = stack_element->notification;
+  // Notification can be freed either if the thread is the master of the region
+  // or the thread did not take a sample inside the region
   if (notification && (stack_element->team_master || !stack_element->took_sample)) {
     hpcrun_ompt_notification_free(notification);
   }
-
-  // add place on the stack for the region
+  // get and store new notification on the stack
   notification = help_notification_alloc(region_data);
-  region_stack[depth].notification = notification;
-  // thread could be master only for region_data, see explanation
-  // given in comment below
-  region_stack[depth].team_master = 0;
-  region_stack[depth].took_sample = 0;
-
-  // I previosly use this as a condition to free notification,
-  // which is bad and the explanation is below
-  // Notification can be at the end of the queue
-  // and this condition does not check thath
-  //    if (OMPT_BASE_T_GET_NEXT(notification) == NULL
-  //        && wfq_get_next(OMPT_BASE_T_STAR(notification)) == NULL) {
-
+  stack_element->notification = notification;
+  // invalidate value of team_master,
+  // will be set in function add_region_and_ancestors_to_stack
+  stack_element->team_master = 0;
+  // thread hasn't taken a sample in this region yet
+  stack_element->took_sample = 0;
 }
 
+#if 1
+
+bool
+add_one_region_to_stack
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  int *region_level = (int *) arg;
+
+  // get information about region at the specified level (region_level)
+  typed_stack_elem(region) *region_data = hpcrun_ompt_get_region_data(*region_level);
+
+  // Check if region was previously added on the stack.
+  if (region_data->depth <= typed_random_access_stack_top_index_get(region)(region_stack)
+      && region_data->region_id == el->notification->region_id) {
+    // el->notification->region_data represents the region that is
+    // at this moment on the stack of active regions
+    // (el is element of stack that is being processed at the moment).
+    // If it's (el->notification->region_data) id is equal to id of
+    // "region (region_data) at the region_level",
+    // stop further processing of stack elements.
+    // Stack is updated properly.
+    return 1;
+  }
+
+  // If previous condition fails, the stack is outdated and we need
+  // to update region which is contained in el variable, by calling below function,
+  // which will add corresponding notification on stack.
+  swap_and_free(region_data);
+
+  // update region level (one region above)
+  (*region_level)++;
+
+  // Continue with updating of stack of active regions
+  return 0;
+}
+
+void
+add_region_and_ancestors_to_stack
+(
+ typed_stack_elem_ptr(region) region_data,
+ bool team_master
+)
+{
+  if (!region_data) {
+    deferred_resolution_breakpoint();
+    return;
+  }
+
+  int level = 0;
+  // get the depth of the innermost region
+  int depth = hpcrun_ompt_get_region_data(level)->depth;
+
+  // Add active regions on stack starting from the innermost.
+  // Stop when one of the following conditions is satisfied:
+  // 1. all active regions are added to stack
+  // 2. encounter on region that is active and that was previously added to the stack
+  typed_random_access_stack_iterate_from(region)(depth, region_stack, add_one_region_to_stack, &level);
+
+  // region_data is the new top of the stack
+  typed_random_access_stack_top_index_set(region)(region_data->depth, region_stack);
+
+  // NOTE vi3: This should be right
+  // If the stack content does not corresponds to ancestors of the region_data,
+  // then thread could only be master of the region_data, but not to its ancestors.
+
+  // Values of argument team_master says if the thread is the master of region_data
+  typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
+}
+
+#elif
+// Old implementation
 void
 add_region_and_ancestors_to_stack
 (
@@ -496,8 +555,9 @@ add_region_and_ancestors_to_stack
   while (current) {
     depth = current->depth;
     // found region which was previously added to the stack
-    if (depth <= top_index &&
-        region_stack[depth].notification->region_data->region_id == current->region_id) {
+    if (depth <= typed_random_access_stack_top_index_get(region)(region_stack)
+          && typed_random_access_stack_get(region)(region_stack,
+              depth)->notification->region_data->region_id == current->region_id) {
       break;
     }
     // add corresponding notification on stack
@@ -507,15 +567,17 @@ add_region_and_ancestors_to_stack
   }
 
   // region_data is the new top of the stack
-  top_index = region_data->depth;
-  // FIXME vi3: should check if this is right
+  typed_random_access_stack_top_index_set(region)(region_data->depth, region_stack);
+
+  // NOTE vi3: This should be right
   // If the stack content does not corresponds to ancestors of the region_data,
   // then thread could only be master of the region_data, but not to its ancestors.
 
   // Values of argument team_master says if the thread is the master of region_data
-  region_stack[top_index].team_master = team_master;
+  typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
 
 }
+#endif
 
 
 void
@@ -536,27 +598,78 @@ register_to_region
 }
 
 
+bool
+thread_take_sample
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  cct_node_t **previous_cct_ptr = (cct_node_t **)arg;
+  // pseudo cct node of the inner region
+  cct_node_t *previous_cct = *previous_cct_ptr;
+  // notification that corresponds to the active region that is being processed at the moment
+  typed_stack_elem(notification) *notification = el->notification;
+
+  // thread took a sample in this region before
+  if (el->took_sample) {
+    // connect with children pseudo node
+    if (previous_cct) {
+      hpcrun_cct_insert_node(notification->unresolved_cct, previous_cct);
+    }
+    // Indication that processing of active regions should stop.
+    return 1;
+  }
+
+  // mark that thread took sample in this region for the first time
+  el->took_sample = true;
+  // worker thread register itself for the region's call path
+  if (!el->team_master) {
+    register_to_region(notification);
+  }
+
+  // add pseudo cct node that corresponds to the region
+  notification->unresolved_cct =
+      cct_node_create_from_addr_vi3(&ADDR2(UNRESOLVED,
+                                           notification->region_data->region_id));
+  // connect it with pseudo node of the inner region
+  if (previous_cct) {
+    hpcrun_cct_insert_node(notification->unresolved_cct, previous_cct);
+  }
+
+  // check if the region is outermost
+  if (notification->region_data->depth == 0) {
+    // connect the pseudo node of outermost region with thread root
+    hpcrun_cct_insert_node(hpcrun_get_thread_epoch()->csdata.thread_root, notification->unresolved_cct);
+    // Indication that all active regions have been processed
+    return 1;
+  }
+
+  // set previous_cct for the outer region
+  *previous_cct_ptr = notification->unresolved_cct;
+
+  // Indication that processing of active regions should continue
+  return 0;
+
+}
+
+
 void
 register_to_all_regions
 (
  void
 )
 {
-  // no active parallel regions
-  if (is_empty_region_stack()) {
-    return;
-  }
-
-  region_stack_el_t *current_el;
-  cct_node_t *current_cct = NULL;
   cct_node_t *previous_cct = NULL;
-  typed_stack_elem_ptr(notification) current_notification = NULL;
   // Mark that thread took a sample in all active regions on the stack.
   // Stop at region in which thread took a sample before.
   // Add pseudo cct nodes for regions in which thread took a sample for the first time.
+  typed_random_access_stack_forall(region)(region_stack, thread_take_sample, &previous_cct);
+#if 0
+  // Old Implementation
   int i;
-  for (i = top_index; i >= 0; i--) {
-    current_el = &region_stack[i];
+  for (i = typed_random_access_stack_top_index_get(region)(region_stack); i >= 0; i--) {
+    current_el = typed_random_access_stack_get(region)(region_stack, i);
     current_notification = current_el->notification;
     // thread took a sample in this region before
     if (current_el->took_sample) {
@@ -588,18 +701,7 @@ register_to_all_regions
 
     previous_cct = current_cct;
   }
-
-  // thread registered itself for all regions that are active on the stack.
-  if (i < 0) {
-    // connect outermost region with thread root
-    hpcrun_cct_insert_node(hpcrun_get_thread_epoch()->csdata.thread_root, previous_cct);
-    // vi3: for debug purposes
-    if (!previous_cct) {
-      deferred_resolution_breakpoint();
-      printf("ompt-defer.c:609 This should not happen\n");
-    }
-  }
-
+#endif
 }
 
 

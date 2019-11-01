@@ -176,10 +176,10 @@ ompt_parallel_end_internal
     // mark that current region is ending
     ending_region = region_data;
     // implicit task end callback happened before, so top of the stack
-    // is below the current region that is ending
-    top_index++;
+    // is below the region that is ending
+    typed_random_access_stack_push(region)(region_stack);
 
-    region_stack_el_t *stack_el = &region_stack[top_index];
+    typed_random_access_stack_elem(region) *stack_el = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem_ptr(notification) notification = stack_el->notification;
 
     // NOTE: These two conditions should be equal:
@@ -219,7 +219,7 @@ ompt_parallel_end_internal
     }
 
     // return to outer region if any
-    top_index--;
+    typed_random_access_stack_pop(region)(region_stack);
     // mark that no region is ending
     ending_region = NULL;
   }
@@ -321,7 +321,8 @@ ompt_implicit_task_internal_begin
 
   if (!ompt_eager_context_p()) {
     add_region_and_ancestors_to_stack(region_data, index==0);
-    task_data_set_depth(task_data, top_index);
+    task_data_set_depth(task_data,
+        typed_random_access_stack_top_index_get(region)(region_stack));
   }
 }
 
@@ -338,7 +339,7 @@ ompt_implicit_task_internal_end
   if (!ompt_eager_context_p()) {
     // the only thing we could do (certainly) here is to pop element from the stack
     // pop element from the stack
-    pop_region_stack();
+    typed_random_access_stack_pop(region)(region_stack);
     ompt_resolve_region_contexts_poll();
   }
 }

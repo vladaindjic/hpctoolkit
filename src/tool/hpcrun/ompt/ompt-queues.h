@@ -62,6 +62,8 @@
 
 #include <lib/prof-lean/stdatomic.h>
 //#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 
 
@@ -523,5 +525,274 @@ mpsc_channel_steal
 
 
 // ====================================
+
+// ==================================== Random Access Stack
+
+
+#define typed_random_access_stack_declare_type(type)		\
+  typedef typed_random_access_stack_elem(type) * typed_random_access_stack_elem_ptr(type)
+
+#define typed_random_access_stack_declare(type)		\
+  typed_random_access_stack(type, ignore)
+
+#define typed_random_access_stack_impl(type)			\
+  typed_random_access_stack(type, show)
+
+// routine name for a random_access_stack operation
+#define random_access_stack_op(op) \
+  random_access_stack_ ## op
+
+// typed random_access_stack pointer
+#define typed_random_access_stack_elem_ptr(type) \
+  type ## _ ## random_access_element_ptr_t
+
+#define typed_random_access_stack_elem(type) \
+  type ## _ ## random_access_element_t
+
+#define typed_random_access_stack_ptr(type) \
+  type ## _ ## random_access_stack_t *
+
+#define typed_random_access_stack_struct(type) \
+  type ## _ ## random_access_stack_t
+
+
+#define typed_random_access_stack_elem_fn(type, fn) \
+  type ## _ ## s_element_ ## fn
+
+// routine name for a typed random_access_stack operation
+#define typed_random_access_stack_op(type, op) \
+  type ## _random_access_stack_ ## op
+
+// init routine name for a typed random_access_stack
+#define typed_random_access_stack_init(type) \
+  typed_random_access_stack_op(type, init)
+
+// init routine name for a typed random_access_stack
+#define typed_random_access_stack_empty(type) \
+  typed_random_access_stack_op(type, empty)
+
+// push routine name for a typed random_access_stack
+#define typed_random_access_stack_push(type) \
+  typed_random_access_stack_op(type, push)
+
+// pop routine name for a typed random_access_stack
+#define typed_random_access_stack_pop(type) \
+  typed_random_access_stack_op(type, pop)
+
+// get routine name for a typed random_access_stack
+#define typed_random_access_stack_get(type) \
+  typed_random_access_stack_op(type, get)
+
+// top routine name for a typed random_access_stack
+#define typed_random_access_stack_top(type) \
+  typed_random_access_stack_op(type, top)
+
+// top_index_get routine name for a typed random_access_stack
+#define typed_random_access_stack_top_index_get(type) \
+  typed_random_access_stack_op(type, top_index_get)
+
+// top_index_set routine name for a typed random_access_stack
+#define typed_random_access_stack_top_index_set(type) \
+  typed_random_access_stack_op(type, top_index_set)
+
+// forall routine name for a typed random_access_stack
+#define typed_random_access_stack_forall(type) \
+  typed_random_access_stack_op(type, forall)
+
+// iterate_from routine name for a typed random_access_stack
+#define typed_random_access_stack_iterate_from(type) \
+  typed_random_access_stack_op(type, iterate_from)
+
+
+// define typed wrappers for a random_access_stack type
+#define typed_random_access_stack(type, macro) \
+  typed_random_access_stack_ptr(type) \
+  typed_random_access_stack_init(type) \
+  (size_t max_elements) \
+  macro({ \
+    typed_random_access_stack_ptr(type) stack = \
+        (typed_random_access_stack_ptr(type))random_access_stack_op(init)(max_elements, \
+                                                sizeof(typed_random_access_stack_elem(type))); \
+    return stack; \
+  }) \
+\
+  bool \
+  typed_random_access_stack_empty(type) \
+  (typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    return random_access_stack_op(empty)((random_access_stack_t *) stack); \
+  }) \
+  \
+  typed_random_access_stack_elem(type) * \
+  typed_random_access_stack_push(type) \
+  (typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    typed_random_access_stack_elem(type) *e = (typed_random_access_stack_elem(type) *) \
+    random_access_stack_op(push)((random_access_stack_t *) stack, \
+        sizeof(typed_random_access_stack_elem(type))); \
+    return e; \
+  }) \
+\
+  typed_random_access_stack_elem(type) * \
+  typed_random_access_stack_pop(type) \
+  (typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    typed_random_access_stack_elem(type) *e = (typed_random_access_stack_elem(type) *) \
+    random_access_stack_op(pop)((random_access_stack_t *) stack, \
+        sizeof(typed_random_access_stack_elem(type))); \
+    return e; \
+  }) \
+\
+  typed_random_access_stack_elem(type) * \
+  typed_random_access_stack_get(type) \
+  (typed_random_access_stack_ptr(type) stack, int index) \
+  macro({ \
+    typed_random_access_stack_elem(type) *e = (typed_random_access_stack_elem(type) *) \
+    random_access_stack_op(get)((random_access_stack_t *) stack, \
+        sizeof(typed_random_access_stack_elem(type)), index); \
+    return e; \
+  }) \
+\
+  typed_random_access_stack_elem(type) * \
+  typed_random_access_stack_top(type) \
+  (typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    typed_random_access_stack_elem(type) *e = (typed_random_access_stack_elem(type) *) \
+    random_access_stack_op(top)((random_access_stack_t *) stack); \
+    return e; \
+  }) \
+\
+  int \
+  typed_random_access_stack_top_index_get(type) \
+  (typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    return random_access_stack_op(top_index_get)((random_access_stack_t *) stack, \
+        sizeof(typed_random_access_stack_elem(type))); \
+  }) \
+\
+  void \
+  typed_random_access_stack_top_index_set(type) \
+  (int top_index, typed_random_access_stack_ptr(type) stack) \
+  macro({ \
+    random_access_stack_op(top_index_set)(top_index, (random_access_stack_t *) stack, \
+        sizeof(typed_random_access_stack_elem(type))); \
+  }) \
+\
+ void \
+ typed_random_access_stack_forall(type) \
+ (typed_random_access_stack_ptr(type) stack, \
+     bool (*fn)(typed_random_access_stack_elem(type) *, void *), void *arg) \
+  macro({ \
+    random_access_stack_op(forall)( \
+                                    (random_access_stack_t *) stack, \
+                                    (random_access_stack_forall_fn_t) fn, \
+                                    arg, \
+                                    sizeof(typed_random_access_stack_elem(type)));	\
+  }) \
+\
+ void \
+ typed_random_access_stack_iterate_from(type) \
+ (int start_from, typed_random_access_stack_ptr(type) stack, \
+     bool (*fn)(typed_random_access_stack_elem(type) *, void *), void *arg) \
+  macro({ \
+    random_access_stack_op(iterate_from)( \
+                                    start_from, \
+                                    (random_access_stack_t *) stack, \
+                                    (random_access_stack_forall_fn_t) fn, \
+                                    arg, \
+                                    sizeof(typed_random_access_stack_elem(type)));	\
+  }) \
+\
+
+
+
+typedef struct random_access_stack_u {
+  void *array;
+  void *current;
+} random_access_stack_t;
+
+typedef bool (*random_access_stack_forall_fn_t)(void *el, void *arg);
+
+
+random_access_stack_t *
+random_access_stack_init
+(
+  size_t max_elements,
+  size_t element_size
+);
+
+bool
+random_access_stack_empty
+(
+  random_access_stack_t *stack
+);
+
+void *
+random_access_stack_push
+(
+  random_access_stack_t *stack,
+  size_t element_size
+);
+
+void *
+random_access_stack_pop
+(
+  random_access_stack_t *stack,
+  size_t element_size
+);
+
+void *
+random_access_stack_get
+(
+  random_access_stack_t *stack,
+  size_t element_size,
+  int index
+);
+
+void *
+random_access_stack_top
+(
+  random_access_stack_t *stack
+);
+
+int
+random_access_stack_top_index_get
+(
+  random_access_stack_t *stack,
+  size_t element_size
+);
+
+void
+random_access_stack_top_index_set
+(
+  int top_index,
+  random_access_stack_t *stack,
+  size_t element_size
+);
+
+// iterate over each element e in the stack, call fn(e, arg)
+// and eventully break if return value of fn is different than zero
+void
+random_access_stack_forall
+(
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+);
+
+// Iterate over elements of stack started from element at specified index.
+// For each element e, call fn(e, arg)
+// and eventully break if return value of fn is different than zero
+void
+random_access_stack_iterate_from
+(
+  int start_from,
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+);
+
 
 #endif

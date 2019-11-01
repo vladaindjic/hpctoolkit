@@ -790,6 +790,7 @@ ompt_backtrace_finalize
 // interface operations
 //******************************************************************************
 
+#if 0
 void
 add_unresolved_cct_to_parent_region_if_needed
 (
@@ -821,7 +822,7 @@ add_unresolved_cct_to_parent_region_if_needed
   }
 
 }
-
+#endif
 
 cct_node_t *
 ompt_cct_cursor_finalize
@@ -857,7 +858,8 @@ ompt_cct_cursor_finalize
 #endif
     return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
   } else if (info_type == 1) {
-    return region_stack[region_depth].notification->unresolved_cct;
+    return typed_random_access_stack_get(region)(region_stack,
+        region_depth)->notification->unresolved_cct;
   }
 
   return cct_cursor;

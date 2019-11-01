@@ -65,9 +65,7 @@ __thread typed_channel_elem(region) region_freelist_channel;
 
 
 // stack for regions
-__thread region_stack_el_t region_stack[MAX_NESTING_LEVELS];
-// index of the last element
-__thread int top_index = -1;
+__thread typed_random_access_stack_struct(region) *region_stack = NULL;
 
 // number of unresolved regions
 __thread int unresolved_cnt = 0;
@@ -105,60 +103,4 @@ ompt_thread_type_get
 )
 {
   return ompt_thread_type; 
-}
-
-
-region_stack_el_t*
-top_region_stack
-(
- void
-)
-{
-  // FIXME: is invalid value for region ID
-  return (top_index) > -1 ? &region_stack[top_index] : NULL;
-}
-
-region_stack_el_t*
-pop_region_stack
-(
- void
-)
-{
-  return (top_index) > -1 ? &region_stack[top_index--] : NULL;
-}
-
-
-void
-push_region_stack
-(
- typed_stack_elem_ptr(notification) notification,
- bool took_sample, 
- bool team_master
-)
-{
-  // FIXME: potential place of segfault, when stack is full
-  top_index++;
-  region_stack[top_index].notification = notification;
-  region_stack[top_index].took_sample = took_sample;
-  region_stack[top_index].team_master = team_master;
-}
-
-
-void
-clear_region_stack
-(
- void
-)
-{
-  top_index = -1;
-}
-
-
-int
-is_empty_region_stack
-(
- void
-)
-{
-  return top_index < 0;
 }

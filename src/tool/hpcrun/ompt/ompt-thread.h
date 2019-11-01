@@ -75,11 +75,8 @@ extern __thread typed_stack_elem_ptr(notification) notification_freelist_head;
 // public freelist where all thread's can enqueue region_data to be reused
 extern __thread typed_channel_elem(region) region_freelist_channel;
 
-// stack that contais all nested parallel region
-// FIXME vi3: 128 levels are supported
-extern __thread region_stack_el_t region_stack[];
-extern  __thread int top_index;
-
+// stack that contains all active parallel regions
+extern __thread typed_random_access_stack_struct(region) *region_stack;
 
 
 // FIXME vi3: just a temp solution
@@ -106,40 +103,5 @@ ompt_thread_type_get
   void
 );
 
-
-region_stack_el_t * 
-top_region_stack
-(
- void
-);
-
-
-region_stack_el_t * 
-pop_region_stack
-(
- void
-);
-
-
-void push_region_stack
-(
- typed_stack_elem_ptr(notification) notification,
- bool took_sample,
- bool team_master
-);
-
-
-void
-clear_region_stack
-(
- void
-);
-
-
-int 
-is_empty_region_stack
-(
- void
-);
 
 #endif

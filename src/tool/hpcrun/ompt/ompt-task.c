@@ -106,20 +106,23 @@ ompt_task_begin_internal
     hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);
     typed_stack_elem_ptr(region) region_data =
       (typed_stack_elem_ptr(region)) parallel_info->ptr;
-    cct_node = region_data->call_path;
-    // FIXME vi3>>> Since the thread is going to resolve the region call path after the region finishes,
-    // region_data->call_path is equal to NULL at the moment, so if-else statement should be redundant.
+    // FIXME vi3>> Since the thread is going to resolve the region call path
+    //  after the region finishes, region_data->call_path is equal to NULL
+    //  at the moment, so commented if-else statement should be redundant.
 #if 0
+    cct_node = region_data->call_path;
     if (cct_node) {
     // set cct_node, if available
     task_data_set_cct(task_data, cct_node);
   } else {
     // otherwise, set depth of the innermost region
-    task_data_set_depth(task_data, top_index);
+    task_data_set_depth(task_data,
+        typed_random_access_stack_top_index_get(region)(region_stack));
   }
 #else
     // store depth of the innermost active region instead of cct_node, which is missing
-    task_data_set_depth(task_data, top_index);
+    task_data_set_depth(task_data,
+                        typed_random_access_stack_top_index_get(region)(region_stack));
 #endif
   }
 

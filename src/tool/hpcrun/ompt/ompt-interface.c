@@ -383,18 +383,17 @@ ompt_thread_begin
  ompt_data_t *thread_data
 )
 {
-  //printf("Thread begin... %d\n", thread_data->value);
   ompt_thread_type_set(thread_type);
   undirected_blame_thread_start(&omp_idle_blame_info);
 
-  // initialize freelist to NULL
-  // FIXME vi3>> Should I use this, or line below
-  //typed_stack_elem_ptr_set(notification, sstack)(&notification_freelist_head, 0);
+  // initialize freelist
   notification_freelist_head = NULL;
   typed_channel_init(notification)(&thread_notification_channel);
   typed_channel_init(region)(&region_freelist_channel);
+  // FIXME vi3: get the max active levels of nesting from omp
+  // initialize random access stack of active parallel regions
+  region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
   unresolved_cnt = 0;
-//  printf("Tree root begin: %p\n", td->core_profile_trace_data.epoch->csdata.tree_root);
 }
 
 
@@ -1039,3 +1038,5 @@ typed_stack_impl(notification, sstack);
 typed_stack_impl(notification, cstack);
 // implement channel of notifications
 typed_channel_impl(notification);
+// implement region stack
+typed_random_access_stack_impl(region);

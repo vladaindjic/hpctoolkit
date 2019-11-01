@@ -430,6 +430,161 @@ mpsc_channel_steal
 
 // ====================================
 
+// ==================================== Random Access Stack
+#include <stdio.h>
+#include <stdlib.h>
+#include <tool/hpcrun/memory/hpcrun-malloc.h>
+
+random_access_stack_t *
+random_access_stack_init
+(
+  size_t max_elements,
+  size_t element_size
+)
+{
+  random_access_stack_t *stack = hpcrun_malloc(sizeof(random_access_stack_t));
+  stack->array = hpcrun_malloc(max_elements * element_size);
+//  random_access_stack_t *stack = malloc(sizeof(random_access_stack_t));
+//  stack->array = malloc(max_elements * element_size);
+
+  stack->current = stack->array - element_size;
+  return stack;
+}
+
+bool
+random_access_stack_empty
+(
+  random_access_stack_t *stack
+)
+{
+  return stack->current < stack->array;
+}
+
+void *
+random_access_stack_push
+(
+  random_access_stack_t *stack,
+  size_t element_size
+)
+{
+  stack->current += element_size;
+  return stack->current;
+}
+
+void *
+random_access_stack_pop
+(
+  random_access_stack_t *stack,
+  size_t element_size
+)
+{
+  if (random_access_stack_empty(stack)) {
+    // nothing to pop
+    return NULL;
+  }
+  void *old_top = stack->current;
+  stack->current -= element_size;
+  return old_top;
+}
+
+void *
+random_access_stack_get
+(
+  random_access_stack_t *stack,
+  size_t element_size,
+  int index
+)
+{
+  // NOTE vi3: this function returns pointer to specified element.
+  // Don't care if element is invalid if e.g stack is empty.
+  return stack->array + element_size * index;
+}
+
+void *
+random_access_stack_top
+(
+  random_access_stack_t *stack
+)
+{
+  if (random_access_stack_empty(stack)) {
+    return NULL;
+  }
+  return stack->current;
+}
+
+int
+random_access_stack_top_index_get
+(
+  random_access_stack_t *stack,
+  size_t element_size
+)
+{
+  if (random_access_stack_empty(stack)) {
+    return -1;
+  }
+  // NOTE vi3: It is possible to get warning because of conversion
+  return (stack->current - stack->array) / element_size;
+}
+
+void
+random_access_stack_top_index_set
+(
+  int top_index,
+  random_access_stack_t *stack,
+  size_t element_size
+)
+{
+  if (top_index < 0) {
+    // set -1 as indicator that stack is empty
+    top_index = -1;
+  }
+  // update top element
+  stack->current = stack->array + top_index * element_size;
+}
+
+void
+random_access_stack_forall
+(
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+)
+{
+  void *e;
+  bool end;
+  for (e = stack->current; e >= stack->array; e -= element_size) {
+    end = fn(e, arg);
+    if (end)
+      break;
+  }
+#if 0
+  // It is possile to use function below with this parameters
+  int start_index = (stack->current - stack->array) / element_size
+  random_access_stack_iterate_from(start_index, stack, fn, arg, element_size);
+#endif
+}
+
+void
+random_access_stack_iterate_from
+(
+  int start_from,
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+)
+{
+  void *e;
+  bool end;
+  for (e = stack->array + start_from * element_size; e >= stack->array; e -= element_size) {
+    end = fn(e, arg);
+    if (end)
+      break;
+  }
+}
+
+// ====================================
 
 
 //*****************************************************************************
@@ -474,6 +629,25 @@ typed_channel_impl(int);
 // channel
 typed_channel_elem_ptr(int) channel;
 
+// random access stack
+typedef struct {
+  int value;
+  int other_value;
+} typed_random_access_stack_elem(int);
+
+typedef struct {
+  typed_random_access_stack_elem(int) *array;
+  typed_random_access_stack_elem(int) *current;
+} typed_random_access_stack_struct(int);
+
+// declare type
+typed_random_access_stack_declare_type(int);
+// declare api functions
+typed_random_access_stack_declare(int);
+// implement api functions
+typed_random_access_stack_impl(int);
+// pointer to stack
+typed_random_access_stack_ptr(int) random_access_stack;
 
 void
 print(typed_stack_elem(int) *e, void *arg)
@@ -530,12 +704,131 @@ test_channel
   }
 }
 
+bool
+show_fn(
+  typed_random_access_stack_elem(int) *e,
+  void *arg
+)
+{
+  printf("--- Value: %d\n", e->value);
+  return 0;
+}
+
+bool
+show_first_10_elements
+(
+  typed_random_access_stack_elem(int) *e,
+  void *arg
+)
+{
+  int *index = (int *)arg;
+  printf("--- Index: %d, Value: %d\n", (*index)++, e->value);
+  return *index > 9;
+}
+
+
+void
+test_random_access_stack
+(
+  void
+)
+{
+  printf("============= Random Access Stack Unit Test\n");
+  random_access_stack = typed_random_access_stack_init(int)(10);
+  printf("Initial>> Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+  int i;
+  for (i = 0; i < 10; i++) {
+    // first push
+    typed_random_access_stack_elem(int) *item = typed_random_access_stack_push(int)(random_access_stack);
+    // then store value
+    item->value = i;
+  }
+  printf("Pushing finished>> Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+  typed_random_access_stack_forall(int)(random_access_stack, show_fn, 0);
+
+  typed_random_access_stack_elem(int) *item = typed_random_access_stack_top(int)(random_access_stack);
+  printf("Top element: %d\n", item->value);
+
+  for(; !typed_random_access_stack_empty(int)(random_access_stack);) {
+    typed_random_access_stack_elem(int) *item = typed_random_access_stack_pop(int)(random_access_stack);
+    printf("Popped Value: %d\n", item->value);
+  }
+
+  printf("After popping>> Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+  printf("Iterate now\n");
+  typed_random_access_stack_forall(int)(random_access_stack, show_fn, 0);
+  printf("Anythig???\n");
+
+  printf("Pushing again\n");
+  for (i = 0; i < 10; i++) {
+    // first push
+    typed_random_access_stack_elem(int) *item = typed_random_access_stack_push(int)(random_access_stack);
+    // then store value
+    item->value = i;
+  }
+  printf("Pushing finished>> Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+  typed_random_access_stack_forall(int)(random_access_stack, show_fn, 0);
+
+  typed_random_access_stack_pop(int)(random_access_stack);
+  typed_random_access_stack_pop(int)(random_access_stack);
+  typed_random_access_stack_pop(int)(random_access_stack);
+  printf("Pop three times\n");
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+
+  printf("Pushing again\n");
+  for (i = 0; i < 10; i++) {
+    // first push
+    typed_random_access_stack_elem(int) *item = typed_random_access_stack_push(int)(random_access_stack);
+    // then store value
+    item->value = i + 33;
+  }
+
+  printf("Pushing finished>> Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+  printf(">>Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf(">>Top element: %p\n", typed_random_access_stack_top(int)(random_access_stack));
+  printf("\n\n\n");
+
+  typed_random_access_stack_forall(int)(random_access_stack, show_fn, 0);
+  printf("\n\n\n");
+  int index = 0;
+  typed_random_access_stack_forall(int)(random_access_stack, show_first_10_elements, &index);
+  printf("\n\n\n");
+  typed_random_access_stack_iterate_from(int)(10, random_access_stack, show_fn, 0);
+  printf("\n\n\n");
+  index = 0;
+  typed_random_access_stack_iterate_from(int)(11, random_access_stack, show_first_10_elements, &index);
+
+  printf("\n\n\n");
+  typed_random_access_stack_top_index_set(int)(6, random_access_stack);
+  printf("Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  typed_random_access_stack_forall(int)(random_access_stack, show_fn, 0);
+  typed_random_access_stack_top_index_set(int)(-10, random_access_stack);
+  printf("Top index: %d\n", typed_random_access_stack_top_index_get(int)(random_access_stack));
+  printf("Print now\n");
+  printf("Anything??? Stack is empty: %d\n", typed_random_access_stack_empty(int)(random_access_stack));
+}
 
 int main(int argc, char **argv)
 {
   test_stack();
   printf("\n\n\n");
   test_channel();
+  printf("\n\n\n");
+  test_random_access_stack();
 }
 
 #endif
