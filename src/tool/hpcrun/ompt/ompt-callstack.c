@@ -835,6 +835,19 @@ ompt_cct_cursor_finalize
 
   // Put region path under the unresolved root
   if (!ompt_eager_context_p() && ending_region) {
+    // At the end of the region, master of the team is responsible for providing region's call path.
+    // 1. It is possible that master didn't take a sample inside the region.
+    // In that case, it has more sense to put call path underneath the unresolved root,
+    // instead of putting somewhere in cct of the thread root, since the provided partial call path is
+    // just a garbage for the master thread.
+    // 2. The other, more important reason to use unresolved_root,
+    // is that the master need to provide PARTIAL call path for the region.
+    // If the call path is put underneath the pseudo cct node which is descendent of the thread root,
+    // then the call path may not be partial. Some ancestor of the pseudo cct node may be other pseudo
+    // nodes, and some of them may become later resolved.
+    // Those ancestor cct nodes (resolved or unresolved) must not be
+    // part of region's call path, because they will be used by other worker threads (of the same team)
+    // in resolving process.
     return cct->unresolved_root;
   }
 

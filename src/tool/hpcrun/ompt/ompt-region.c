@@ -175,9 +175,6 @@ ompt_parallel_end_internal
 
     // mark that current region is ending
     ending_region = region_data;
-    // implicit task end callback happened before, so top of the stack
-    // is below the region that is ending
-    typed_random_access_stack_push(region)(region_stack);
 
     typed_random_access_stack_elem(region) *stack_el = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem_ptr(notification) notification = stack_el->notification;
@@ -218,7 +215,8 @@ ompt_parallel_end_internal
       ompt_region_release(region_data);
     }
 
-    // return to outer region if any
+    // Instead of popping in ompt_implicit_task_end, master of the region
+    // will pop region here.
     typed_random_access_stack_pop(region)(region_stack);
     // mark that no region is ending
     ending_region = NULL;
@@ -339,7 +337,13 @@ ompt_implicit_task_internal_end
   if (!ompt_eager_context_p()) {
     // the only thing we could do (certainly) here is to pop element from the stack
     // pop element from the stack
-    typed_random_access_stack_pop(region)(region_stack);
+    // FIXME vi3: Is this valid approach?
+    // printf("Thread in team: %d, Parallel data: %p, Team size: %d\n", index, parallel_data, team_size);
+    if (index != 0) {
+      // Pop region from the stack, if thread is not the master of this region.
+      // Master thread will pop in ompt_parallel_end callback
+      typed_random_access_stack_pop(region)(region_stack);
+    }
     ompt_resolve_region_contexts_poll();
   }
 }
