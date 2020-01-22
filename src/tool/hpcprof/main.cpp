@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -73,6 +73,7 @@ using std::string;
 
 #include "Args.hpp"
 
+#include <lib/analysis/CallPath-CudaCFG.hpp>
 #include <lib/analysis/CallPath.hpp>
 #include <lib/analysis/Util.hpp>
 
@@ -202,8 +203,9 @@ realmain(int argc, char* const* argv)
   bool printProgress = true;
 
   Analysis::CallPath::overlayStaticStructureMain(*prof, args.agent,
-						 args.doNormalizeTy,
-                                                 printProgress);
+						 args.doNormalizeTy, printProgress);
+
+  Analysis::CallPath::transformCudaCFGMain(*prof);
   
   // -------------------------------------------------------
   // 2a. Create summary metrics for canonical CCT

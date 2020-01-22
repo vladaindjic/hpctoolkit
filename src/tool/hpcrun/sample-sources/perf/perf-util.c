@@ -9,7 +9,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -55,6 +55,7 @@
  *****************************************************************************/
 
 #include <hpcrun/cct_insert_backtrace.h>
+#include <lib/prof-lean/spinlock.h>     // hostid
 #include <lib/support-lean/OSUtil.h>     // hostid
 
 #include <include/linux_info.h>
@@ -398,6 +399,7 @@ perf_util_attr_init(
   }
 
   attr->disabled       = 1;                 /* the counter will be enabled later  */
+  attr->wakeup_events  = 1;                 /* wake up every samples */
   attr->sample_type    = sample_type;
   attr->exclude_kernel = EXCLUDE;
   attr->exclude_hv     = EXCLUDE;
