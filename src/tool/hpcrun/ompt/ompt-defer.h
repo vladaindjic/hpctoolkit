@@ -163,7 +163,7 @@ try_resolve_one_region_context
 void 
 resolve_one_region_context
 (
- typed_stack_elem_ptr(region) region_data
+  typed_stack_elem_ptr(notification) notification
 );
 
 
@@ -195,6 +195,20 @@ tmp_end_region_resolve
  typed_stack_elem_ptr(notification) notification,
  cct_node_t* prefix
 );
+
+void
+resolve_one_region_context_vi3
+(
+  typed_stack_elem_ptr(notification) notification
+);
+
+void
+msg_deferred_resolution_breakpoint
+(
+  char *msg
+);
+
+#define VI3_DEBUG 0
 
 // vi3: used to memoize the call path that corresponds to the
 // user level functions before eventual extension with

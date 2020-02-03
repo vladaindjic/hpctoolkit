@@ -139,12 +139,25 @@ merge_metrics
 }
 
 
+#if 0
 static void
 deferred_resolution_breakpoint
 (
 )
 {
   // set a breakpoint here to identify problematic cases
+  printf("I guess you did something wrong!\n");
+}
+#endif
+
+
+void
+msg_deferred_resolution_breakpoint
+(
+  char *msg
+)
+{
+  printf("********** %s\n", msg);
 }
 
 
@@ -156,6 +169,7 @@ omp_resolve
  size_t l
 )
 {
+  return;
   cct_node_t *prefix;
   thread_data_t *td = (thread_data_t *)a;
   uint64_t my_region_id = (uint64_t)hpcrun_cct_addr(cct)->ip_norm.lm_ip;
@@ -214,6 +228,7 @@ omp_resolve_and_free
  size_t l
 )
 {
+  return;
   omp_resolve(cct, a, l);
 }
 
@@ -445,7 +460,7 @@ swap_and_free
   // Notification can be freed either if the thread is the master of the region
   // or the thread did not take a sample inside the region
   if (notification && (stack_element->team_master || !stack_element->took_sample)) {
-    hpcrun_ompt_notification_free(notification);
+    //hpcrun_ompt_notification_free(notification);
   }
   // get and store new notification on the stack
   notification = help_notification_alloc(region_data);
@@ -504,7 +519,7 @@ add_region_and_ancestors_to_stack
 )
 {
   if (!region_data) {
-    deferred_resolution_breakpoint();
+    msg_deferred_resolution_breakpoint("add_region_and_ancestors_to_stack: Region data is missing\n");
     return;
   }
 
@@ -597,6 +612,24 @@ register_to_region
   unresolved_cnt++;
 }
 
+#if 0
+bool
+try_to_notify_master
+(
+  typed_stack_elem_ptr(notification) notification
+)
+{
+  typed_stack_elem_ptr(region) region_data = notification->region_data;
+  int old_value = atomic_fetch_add(&region_data->barrier_cnt, 1);
+  if (old_value < 0) {
+    // invalidate previous incrementing
+    // FIXME vi3 >>> Think this is ok
+    atomic_fetch_sub(&region_data->barrier_cnt, 1);
+  }
+  // indication that region is still active
+  return old_value >= 0;
+}
+#endif
 
 bool
 thread_take_sample
@@ -621,12 +654,27 @@ thread_take_sample
     return 1;
   }
 
+  if (!el->team_master) {
+    // Worker thread tries to register itself for the region's call path
+    typed_stack_elem_ptr(region) region_data = notification->region_data;
+    int old_value = atomic_fetch_add(&region_data->barrier_cnt, 1);
+    if (old_value < 0) {
+      // Master thread marked that this region is finished.
+      // Invalidate previous incrementing
+      atomic_fetch_sub(&region_data->barrier_cnt, 1);
+      // Skip processing this region
+      return 0;
+    }
+    register_to_region(notification);
+    // This thread finished with registering itself for region's call path
+    atomic_fetch_sub(&region_data->barrier_cnt, 1);
+  } else {
+    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
+    unresolved_cnt++;
+  }
+
   // mark that thread took sample in this region for the first time
   el->took_sample = true;
-  // worker thread register itself for the region's call path
-  if (!el->team_master) {
-    register_to_region(notification);
-  }
 
   // add pseudo cct node that corresponds to the region
   notification->unresolved_cct =
@@ -721,30 +769,35 @@ hpcrun_cct_insert_path_return_leaf_tmp
     return hpcrun_cct_insert_addr(root, hpcrun_cct_addr(path));
 }
 
-// return one if a notification was processed
-int
-try_resolve_one_region_context
+
+
+
+
+#if 0
+void
+resolve_one_region_context_vi3
 (
- void
+  typed_stack_elem_ptr(notification) notification
 )
 {
-  // Pop from private queue, if anything
-  // If nothing, steal from public queue.
-  typed_stack_elem_ptr(notification) old_head =
-    typed_channel_steal(notification)(&thread_notification_channel);
-
-  if (!old_head) return 0;
-
-  unresolved_cnt--;
-
-  // region to resolve
-  typed_stack_elem_ptr(region) region_data = old_head->region_data;
-
-  ompt_region_debug_notify_received(old_head);
+  typed_stack_elem_ptr(region) region_data = notification->region_data;
 
   // ================================== resolving part
-  cct_node_t *unresolved_cct = old_head->unresolved_cct;
+  cct_node_t *unresolved_cct = notification->unresolved_cct;
+  // this region has already been resolved
+  if (!notification->unresolved_cct) {
+    return;
+  }
+
   cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
+
+  if (atomic_fetch_add(&region_data->barrier_cnt, 0) >= 0)
+    return;
+
+  for(;;) {
+    cct_node_t *value = region_data->call_path;
+    if (value != NULL) break;
+  }
 
   if (parent_unresolved_cct == NULL || region_data->call_path == NULL) {
     deferred_resolution_breakpoint();
@@ -768,20 +821,88 @@ try_resolve_one_region_context
     } else {
       deferred_resolution_breakpoint();
     }
-    // ==================================
   }
+  // ==================================
+  // FIXME vi3 >>> notification mem leak.
+  // FIXME vi3 >>> region_data mem leak.
+
+  // invalidate unresolved_cct
+  notification->unresolved_cct = NULL;
+}
+#endif
+
+void
+resolve_one_region_context
+(
+  typed_stack_elem_ptr(notification) notification
+)
+{
+  // region to resolve
+  typed_stack_elem_ptr(region) region_data = notification->region_data;
+  cct_node_t *unresolved_cct = notification->unresolved_cct;
+  cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
+
+  if (parent_unresolved_cct == NULL) {
+    msg_deferred_resolution_breakpoint("resolve_one_region_context: Parent of unresolved_cct node is missing\n");
+  }
+  else if (region_data->call_path == NULL) {
+    printf("Region call path is missing\n");
+    msg_deferred_resolution_breakpoint("resolve_one_region_context: Region call path is missing\n");
+  } else {
+    // prefix should be put between unresolved_cct and parent_unresolved_cct
+    cct_node_t *prefix = NULL;
+    cct_node_t *region_call_path = region_data->call_path;
+
+    // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
+    prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
+
+    if (prefix == NULL) {
+      msg_deferred_resolution_breakpoint("resolve_one_region_context: Prefix is not properly inserted\n");
+    }
+
+    if (prefix != unresolved_cct) {
+      // prefix node should change the unresolved_cct
+      hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
+      // delete unresolved_cct from parent
+      hpcrun_cct_delete_self(unresolved_cct);
+    } else {
+      msg_deferred_resolution_breakpoint("resolve_one_region_context: Prefix is equal to unresolved_cct\n");
+    }
+  }
+}
+
+
+// return one if a notification was processed
+int
+try_resolve_one_region_context
+(
+ void
+)
+{
+  // Pop from private queue, if anything
+  // If nothing, steal from public queue.
+  typed_stack_elem_ptr(notification) old_head =
+    typed_channel_steal(notification)(&thread_notification_channel);
+
+  if (!old_head) return 0;
+
+  unresolved_cnt--;
+  ompt_region_debug_notify_received(old_head);
+
+  resolve_one_region_context(old_head);
 
   // free notification
-  hpcrun_ompt_notification_free(old_head);
+  //hpcrun_ompt_notification_free(old_head);
 
   // check if the notification needs to be forwarded
   typed_stack_elem_ptr(notification) next =
-    typed_stack_pop(notification, sstack)(&region_data->notification_stack);
+    typed_stack_pop(notification, sstack)(&old_head->region_data->notification_stack);
   if (next) {
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
-    hpcrun_ompt_region_free(region_data);
+    //hpcrun_ompt_region_free(region_data);
+    // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 
   return 1;
@@ -836,6 +957,30 @@ mark_remaining_unresolved_regions
   update_any_unresolved_regions(cct->unresolved_root);
 }
 
+#if 0
+bool
+resolve_if_worker
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  // This should not happen, if I understand the order of thread finalze,
+  // implicit task end and parallel end.
+  if (el->team_master) {
+    printf("*** thread_finalize ??? Why is this possible ???");
+    return 0;
+  }
+  // Thread didn't take a sample in this region and outer regions too.
+  if (!el->took_sample) {
+    return 1;
+  }
+  // resolve the region
+  resolve_one_region_context_vi3(el->notification);
+  // continue with resolving
+  return 0;
+}
+#endif
 
 void 
 ompt_resolve_region_contexts
@@ -847,6 +992,20 @@ ompt_resolve_region_contexts
 
   size_t i = 0;
   timer_start(&start_time);
+
+
+#if VI3_DEBUG == 1
+  int thread_num = hpcrun_ompt_get_thread_num(0);
+
+  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+  if (top) {
+    typed_stack_elem_ptr(region) top_reg = top->notification->region_data;
+    printf("thread_finalize >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
+        &region_stack, top_reg, top_reg->region_id, thread_num);
+  } else {
+    printf("thread_finalize >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil,THREAD_NUM: %d\n", &region_stack, thread_num);
+  }
+#endif
 
   // attempt to resolve all remaining regions
   for(;;i++) {
@@ -874,6 +1033,10 @@ ompt_resolve_region_contexts
     mark_remaining_unresolved_regions();
   }
 #endif
+
+  if (unresolved_cnt != 0) {
+    printf("*** Unresolved regions: %d\n", unresolved_cnt);
+  }
 
   if (unresolved_cnt != 0 && hpcrun_ompt_region_check()) {
     // hang to let debugger attach
@@ -996,7 +1159,7 @@ tmp_end_region_resolve
   cct_node_t *unresolved_cct = notification->unresolved_cct;
 
   if (prefix == NULL) {
-    deferred_resolution_breakpoint();
+    msg_deferred_resolution_breakpoint("tmp_end_region_resolve: Prefix is missing.\n");
     return;
   }
 
@@ -1008,6 +1171,6 @@ tmp_end_region_resolve
     // delete unresolved_cct from parent
     hpcrun_cct_delete_self(unresolved_cct);
   } else {
-    deferred_resolution_breakpoint();
+    msg_deferred_resolution_breakpoint("tmp_end_region_resolve: Prefix is equal to unresolved_cct");
   }
 }

@@ -89,16 +89,20 @@ ompt_region_acquire
  void
 );
 
+#if 0
 static void
 ompt_region_release
 (
  typed_stack_elem_ptr(region) r
 );
+#endif
 
 
 //*****************************************************************************
 // private operations
 //*****************************************************************************
+
+#define MAX_THREAD_IN_TEAM -101
 
 static typed_stack_elem_ptr(region)
 ompt_region_data_new
@@ -115,7 +119,12 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
-
+  // FIXME vi3 >>> Check if this is right.
+  atomic_exchange(&e->barrier_cnt, 0);
+  int old_value = atomic_fetch_add(&e->barrier_cnt, 0);
+  if (old_value != 0) {
+    printf("************ barrier_cnt initialization error... The old value was: %d\n", old_value);
+  }
   return e;
 }
 
@@ -168,6 +177,50 @@ ompt_parallel_end_internal
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
   if (!ompt_eager_context_p()){
+
+    typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+    typed_stack_elem(region) *top_reg = region_data;
+    if (top) {
+      top_reg = top->notification->region_data;
+    }
+
+#if VI3_DEBUG == 1
+    if (top) {
+    printf("parallel_end >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
+           &region_stack, top_reg, top_reg->region_id, 0);
+  } else {
+    printf("parallel_end >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil,THREAD_NUM: %d\n", &region_stack, 0);
+  }
+#endif
+
+    if (top_reg != region_data) {
+      // FIXME vi3 >>> check if this happen when tracing is on.
+      // If that is true, then I guess there is bug inside the runtime implementation
+      //printf("*** Parallel data contains bad value.\n");
+      region_data = top_reg;
+    }
+
+
+    // Mark that this region is finished
+    int old_value = atomic_fetch_add(&region_data->barrier_cnt, MAX_THREAD_IN_TEAM);
+    if (old_value < 0) {
+      msg_deferred_resolution_breakpoint(
+          "ompt_parallel_end_internal: barrier_cnt value was negative before spin waiting.");
+    }
+    // Spin waiting until all worker finished with registering.
+    for(;;) {
+
+      old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
+      if (old_value < MAX_THREAD_IN_TEAM) {
+        msg_deferred_resolution_breakpoint(
+            "ompt_parallel_end_internal: barrier_cnt value is under the minimum value of "
+            "the barrier in the middle of sping waitingbefore spin waiting was negative");
+      }
+      // FIXME vi3 >>> the condition should be old_value == MAX_THREAD_IN_TEAM
+      if (old_value <= MAX_THREAD_IN_TEAM)
+        break;
+    }
+
     // check if there is any thread registered that should be notified
     // that region call path is available
     typed_stack_elem_ptr(notification) to_notify =
@@ -196,6 +249,10 @@ ompt_parallel_end_internal
     if (notification->unresolved_cct) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
+      resolve_one_region_context(notification);
+      // mark that master resolved this region
+      unresolved_cnt--;
+#if 0
       cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
       cct_node_t *prefix =
         hpcrun_cct_insert_path_return_leaf(parent_cct,
@@ -204,6 +261,7 @@ ompt_parallel_end_internal
       // if combined this if branch with branch of next if
       // we will remove this line
       tmp_end_region_resolve(notification, prefix);
+#endif
     }
 
     if (to_notify){
@@ -212,7 +270,7 @@ ompt_parallel_end_internal
     } else {
       // if none, you can reuse region
       // this thread is region creator, so it could push to private stack of region channel
-      ompt_region_release(region_data);
+      //ompt_region_release(region_data);
     }
 
     // Instead of popping in ompt_implicit_task_end, master of the region
@@ -335,11 +393,31 @@ ompt_implicit_task_internal_end
 )
 {
   if (!ompt_eager_context_p()) {
-    // the only thing we could do (certainly) here is to pop element from the stack
-    // pop element from the stack
+#if VI3_DEBUG == 1
+    typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+    if (top) {
+      typed_stack_elem(region) *top_reg = top->notification->region_data;
+      printf("implicit_task_end >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
+             &region_stack, top_reg, top_reg->region_id, index);
+    } else {
+      printf("initial implicit_task_end >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil, THREAD_NUM: %d\n",
+             &region_stack, 0);
+    }
+#endif
+
     // FIXME vi3: Is this valid approach?
-    // printf("Thread in team: %d, Parallel data: %p, Team size: %d\n", index, parallel_data, team_size);
     if (index != 0) {
+#if 0
+      // Need to check if current thread took a sample in the innermost region.
+      if (!top) {
+        // Do nothing
+        return;
+      }
+      // resolve region call path
+      if (top->took_sample) {
+        //resolve_one_region_context_vi3(top->notification);
+      }
+#endif
       // Pop region from the stack, if thread is not the master of this region.
       // Master thread will pop in ompt_parallel_end callback
       typed_random_access_stack_pop(region)(region_stack);
@@ -390,7 +468,7 @@ ompt_region_alloc
   return r;
 }
 
-
+#if 0
 static typed_stack_elem_ptr(region)
 ompt_region_freelist_get
 (
@@ -412,7 +490,7 @@ ompt_region_freelist_put
   r->region_id = 0xdeadbeef;
   typed_channel_private_push(region)(&region_freelist_channel, r);
 }
-
+#endif
 
 typed_stack_elem_ptr(region)
 ompt_region_acquire
@@ -420,15 +498,18 @@ ompt_region_acquire
  void
 )
 {
+#if 0
   typed_stack_elem_ptr(region) r = ompt_region_freelist_get();
   if (r == 0) {
     r = ompt_region_alloc();
     ompt_region_debug_region_create(r);
   }
   return r;
+#endif
+  return ompt_region_alloc();
 }
 
-
+#if 0
 static void
 ompt_region_release
 (
@@ -449,8 +530,29 @@ hpcrun_ompt_region_free
   region_data->region_id = 0xdeadbead;
   typed_channel_shared_push(region)(region_data->owner_free_region_channel, region_data);
 }
+#endif
 
 
+static void
+ompt_sync
+(
+  ompt_sync_region_t kind,
+  ompt_scope_endpoint_t endpoint,
+  ompt_data_t *parallel_data,
+  ompt_data_t *task_data,
+  const void *codeptr_ra
+)
+{
+#if VI3_DEBUG == 1
+  if (kind == ompt_sync_region_barrier_implicit_last) {
+    printf("ompt_sync_region_barrier_implicit_last: Thread id = %d, \tBarrier %s\n",
+        hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
+  } else if (kind == ompt_sync_region_barrier_implicit){
+    printf("ompt_sync_region_barrier_implicit: Thread id = %d, \tBarrier %s\n",
+           hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
+  }
+#endif
+}
 
 //*****************************************************************************
 // interface operations
@@ -484,5 +586,9 @@ ompt_parallel_region_register_callbacks
 
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);
+  assert(ompt_event_may_occur(retval));
+
+  retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
+                                (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
 }

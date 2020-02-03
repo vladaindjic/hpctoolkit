@@ -74,13 +74,14 @@ ompt_parallel_region_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 );
 
-
+#if 0
 // free adds entity to freelist
 void 
 hpcrun_ompt_region_free
 (
  typed_stack_elem_ptr(region) region_data
 );
+#endif
 
 cct_node_t*
 hpcrun_cct_insert_path_return_leaf_tmp

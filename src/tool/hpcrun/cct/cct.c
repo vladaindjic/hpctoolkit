@@ -583,7 +583,13 @@ hpcrun_cct_delete_self(cct_node_t *cct)
   cct->left = NULL;
   cct->right = NULL;
   cct->parent = NULL;
-  hpcrun_cct_node_free(cct);
+  // FIXME vi3 >>> Need a better strategy for freeing cct nodes.
+  // Current implementation will free the whole subtree of cct node.
+  // The problem that can arise is that some of the descendants of
+  // root cct node is not resolved yet. In that case, someone else
+  // references that cct node. When reuse that cct node, it becomes
+  // inconsistent.
+  //hpcrun_cct_node_free(cct);
 }
 
 //
@@ -937,11 +943,13 @@ merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l)
     // if it has left and right siblings, they are going to bee added to freelist
     // and the return value is NULL (indicates that n is goint to be disconnected from previous cct_b tree)
 
+    // FIXME vi3 >>> freeing policies should be revised
+#if 0
     // add left to freelist, if needed
     hpcrun_cct_node_free(n->left);
     // add right to freelist, if needed
     hpcrun_cct_node_free(n->right);
-
+#endif
     cct_disjoint_union_cached(targ, n);
     return NULL;
   }
@@ -1051,17 +1059,23 @@ remove_node_from_freelist(){
 
 
 // allocating and free cct_node_t
+// FIXME vi3 >>> freeing policy should be revised
 cct_node_t*
 hpcrun_cct_node_alloc(){
+#if 0
   cct_node_t* cct_new = remove_node_from_freelist();
   return cct_new ? cct_new : (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
+#endif
+  return (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
 }
 
 
+#if 0
 void
 hpcrun_cct_node_free(cct_node_t *cct){
   add_node_to_freelist(cct);
 }
+#endif
 
 
 cct_node_t*

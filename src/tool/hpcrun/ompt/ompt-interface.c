@@ -939,15 +939,19 @@ hpcrun_ompt_notification_alloc
  void
 )
 {
+#if 0
   // only the current thread uses notification_freelist_head
   typed_stack_elem_ptr(notification) first =
     typed_stack_pop(notification, sstack)(&notification_freelist_head);
   return first ? first :
             (typed_stack_elem_ptr(notification))
                   hpcrun_malloc(sizeof(typed_stack_elem(notification)));
+#endif
+  return (typed_stack_elem_ptr(notification))
+      hpcrun_malloc(sizeof(typed_stack_elem(notification)));
 }
 
-
+#if 0
 void
 hpcrun_ompt_notification_free
 (
@@ -958,6 +962,7 @@ hpcrun_ompt_notification_free
   notification->unresolved_cct = NULL;
   typed_stack_push(notification, cstack)(&notification_freelist_head, notification);
 }
+#endif
 
 
 // vi3: Helper function to get region_data

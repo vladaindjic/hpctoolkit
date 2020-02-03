@@ -254,7 +254,8 @@ typedef enum ompt_sync_region_t {
   ompt_sync_region_barrier_implementation = 4,
   ompt_sync_region_taskwait               = 5,
   ompt_sync_region_taskgroup              = 6,
-  ompt_sync_region_reduction              = 7
+  ompt_sync_region_reduction              = 7,
+  ompt_sync_region_barrier_implicit_last  = 8,
 } ompt_sync_region_t;
 
 typedef enum ompt_target_data_op_t {
