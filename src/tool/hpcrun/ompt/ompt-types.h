@@ -115,7 +115,7 @@ typedef struct ompt_notification_s {
   uint64_t region_id;
   struct mpsc_channel_notification_s *notification_channel;
   // pointer to the cct pseudo node of the region that should be resolve
-  cct_node_t* unresolved_cct;
+  cct_node_t *unresolved_cct;
 } typed_stack_elem(notification);
 
 // declare pointer to previous struct
@@ -159,6 +159,14 @@ typed_channel_declare_type(notification);
 typed_channel_declare(notification);
 
 
+// tmp data struct
+typedef struct old_region_s {
+  struct old_region_s *next;
+  typed_stack_elem(region) *region;
+  typed_stack_elem(notification) *notification;
+} old_region_t;
+
+
 // ========================= Random Access Stack of active parallel regions
 // Structure that represents a single element of random access stack of active parallel regions.
 // The first field of the structure represents the pointer to the corresponding
@@ -169,6 +177,7 @@ typedef struct region_stack_el_s {
   struct ompt_notification_s *notification;
   bool took_sample;
   bool team_master;
+  old_region_t *old_region_list;
 } typed_random_access_stack_elem(region);
 // declare pointer to previous struct
 typed_random_access_stack_declare_type(region);

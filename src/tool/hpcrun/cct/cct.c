@@ -83,6 +83,7 @@
 #include <lib/prof-lean/hpcrun-fmt.h>
 #include <lib/prof-lean/spinlock.h>
 #include <hpcrun/hpcrun_return_codes.h>
+#include <tool/hpcrun/ompt/ompt-thread.h>
 
 #include "cct.h"
 #include "cct_addr.h"
@@ -844,6 +845,7 @@ hpcrun_cct_find_addr(cct_node_t* cct, cct_addr_t* addr)
 static cct_node_t*
 walkset_l_merge(cct_node_t* cct, cct_op_merge_t fn, cct_op_arg_t arg, size_t level)
 {
+#if 0
   // if node is NULL, the return NULL
   if (! cct) return NULL;
   // if left should be disconnected
@@ -854,15 +856,37 @@ walkset_l_merge(cct_node_t* cct, cct_op_merge_t fn, cct_op_arg_t arg, size_t lev
     cct->right = NULL;
   // fn is going to decide if cct should be disconnected from parent or not
   return fn(cct, arg, level);
+#else
+  if (!cct) return NULL;
+//  cct_node_t *old_left = cct->left;
+//  cct_node_t *old_right = cct->right;
+//  cct->left = NULL;
+//  cct->right = NULL;
+//  cct_node_t *ret_val = fn(cct, arg, level);
+  walkset_l_merge(cct->left, fn, arg, level);
+  walkset_l_merge(cct->right, fn, arg, level);
+  cct->left = NULL;
+  cct->right = NULL;
+  // FIXME vi3 >>> Check if this is ok
+  return fn(cct, arg, level);;
+#endif
 }
 
 void
 hpcrun_cct_walkset_merge(cct_node_t* cct, cct_op_merge_t fn, cct_op_arg_t arg)
 {
+#if 0
   if(! cct->children) return;
   // should children be disconnected
   if(! walkset_l_merge(cct->children, fn, arg, 0))
     cct->children = NULL;
+#else
+  if (!cct) return;
+  // FIXME vi3 >>> Check if this is ok
+  if(!cct->children) return;
+  // should children be disconnected
+  walkset_l_merge(cct->children, fn, arg, 0);
+#endif
 }
 
 
@@ -936,9 +960,11 @@ merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l)
     // when merge, n should stay in the same tree, because the whole tree is going to to freelist
     // that is the reason why return value is not NULL
     hpcrun_cct_merge(tmp, n, the_arg->fn, the_arg->arg);
+    // FIXME vi3 >>> Check if the previous line is enough?
+    //   Should we also merge metrics or is enough just to merge the children?
+    //   the_arg->fn(tmp, n, the_arg->arg);
     return n;
-  }
-  else{
+  } else{
     // disjoint has to happen, which means that node n is going to change tree
     // if it has left and right siblings, they are going to bee added to freelist
     // and the return value is NULL (indicates that n is goint to be disconnected from previous cct_b tree)
@@ -1106,5 +1132,5 @@ cct_node_create_from_addr_vi3
   cct_addr_t* addr
 )
 {
-  cct_node_create(addr, NULL);
+  return cct_node_create(addr, NULL);
 }

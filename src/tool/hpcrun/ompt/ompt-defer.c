@@ -446,6 +446,38 @@ help_notification_alloc
   return notification;
 }
 
+void
+cache_old_region
+(
+  typed_random_access_stack_elem(region) *el,
+  typed_stack_elem_ptr(region) region_data,
+  typed_stack_elem_ptr(notification) notification
+)
+{
+  old_region_t *new = hpcrun_malloc(sizeof(old_region_t));
+  // current head is new->next
+  new->next = el->old_region_list;
+  // store new head
+  el->old_region_list = new;
+  new->notification = notification;
+  new->region = region_data;
+}
+
+old_region_t *
+adding_region_twice
+(
+  typed_random_access_stack_elem(region) *el,
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  old_region_t *current;
+  for(current = el->old_region_list; current != NULL; current = current->next) {
+    if (current->region->region_id == region_data->region_id) {
+      return current;
+    }
+  }
+  return NULL;
+}
 
 void
 swap_and_free
@@ -457,6 +489,26 @@ swap_and_free
   typed_random_access_stack_elem(region) *stack_element =
       typed_random_access_stack_get(region)(region_stack, depth);
   typed_stack_elem_ptr(notification) notification = stack_element->notification;
+
+#if 0
+  if (notification && notification->region_data) {
+    typed_stack_elem_ptr(region) old_reg = notification->region_data;
+    int old_barrier_cnt_value = atomic_fetch_add(&old_reg->barrier_cnt, 0);
+    if (old_barrier_cnt_value >= 0) {
+      printf("Why is this region still active??? %d\n", old_barrier_cnt_value);
+    }
+  }
+#endif
+
+  old_region_t *previous_region = adding_region_twice(stack_element, region_data);
+  if (previous_region){
+    //printf("Nooo, this region again! :'(\n");
+    stack_element->notification = previous_region->notification;
+    stack_element->team_master = 0;
+    stack_element->took_sample = previous_region->notification->unresolved_cct != NULL;
+    return;
+  }
+
   // Notification can be freed either if the thread is the master of the region
   // or the thread did not take a sample inside the region
   if (notification && (stack_element->team_master || !stack_element->took_sample)) {
@@ -470,6 +522,8 @@ swap_and_free
   stack_element->team_master = 0;
   // thread hasn't taken a sample in this region yet
   stack_element->took_sample = 0;
+  // cache region
+  cache_old_region(stack_element, region_data, notification);
 }
 
 #if 1

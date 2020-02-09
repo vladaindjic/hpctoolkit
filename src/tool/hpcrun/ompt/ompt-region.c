@@ -545,11 +545,11 @@ ompt_sync
 {
 #if VI3_DEBUG == 1
   if (kind == ompt_sync_region_barrier_implicit_last) {
-    printf("ompt_sync_region_barrier_implicit_last: Thread id = %d, \tBarrier %s\n",
-        hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
+    printf("ompt_sync_region_barrier_implicit_last: parallel_data: %p, Thread id = %d, \tBarrier %s\n",
+        parallel_data, hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
   } else if (kind == ompt_sync_region_barrier_implicit){
-    printf("ompt_sync_region_barrier_implicit: Thread id = %d, \tBarrier %s\n",
-           hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
+    printf("ompt_sync_region_barrier_implicit: parallel_data: %p, Thread id = %d, \tBarrier %s\n",
+           parallel_data, hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
   }
 #endif
 }
