@@ -490,16 +490,6 @@ swap_and_free
       typed_random_access_stack_get(region)(region_stack, depth);
   typed_stack_elem_ptr(notification) notification = stack_element->notification;
 
-#if 0
-  if (notification && notification->region_data) {
-    typed_stack_elem_ptr(region) old_reg = notification->region_data;
-    int old_barrier_cnt_value = atomic_fetch_add(&old_reg->barrier_cnt, 0);
-    if (old_barrier_cnt_value >= 0) {
-      printf("Why is this region still active??? %d\n", old_barrier_cnt_value);
-    }
-  }
-#endif
-
   old_region_t *previous_region = adding_region_twice(stack_element, region_data);
   if (previous_region){
     //printf("Nooo, this region again! :'(\n");
@@ -526,7 +516,6 @@ swap_and_free
   cache_old_region(stack_element, region_data, notification);
 }
 
-#if 1
 
 bool
 add_one_region_to_stack
@@ -598,56 +587,6 @@ add_region_and_ancestors_to_stack
   typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
 }
 
-#elif
-// Old implementation
-void
-add_region_and_ancestors_to_stack
-(
- typed_stack_elem_ptr(region) region_data,
- bool team_master
-)
-{
-
-  if (!region_data) {
-    deferred_resolution_breakpoint();
-    return;
-  }
-
-  typed_stack_elem_ptr(region) current = region_data;
-  int level = 0;
-  int depth;
-
-  // Add active regions on stack starting from the innermost.
-  // Stop when one of the following conditions is satisfied:
-  // 1. all active regions are added to stack
-  // 2. encounter on region that is active and that was previously added to the stack
-  while (current) {
-    depth = current->depth;
-    // found region which was previously added to the stack
-    if (depth <= typed_random_access_stack_top_index_get(region)(region_stack)
-          && typed_random_access_stack_get(region)(region_stack,
-              depth)->notification->region_data->region_id == current->region_id) {
-      break;
-    }
-    // add corresponding notification on stack
-    swap_and_free(current);
-    // get the parent
-    current = hpcrun_ompt_get_region_data(++level);
-  }
-
-  // region_data is the new top of the stack
-  typed_random_access_stack_top_index_set(region)(region_data->depth, region_stack);
-
-  // NOTE vi3: This should be right
-  // If the stack content does not corresponds to ancestors of the region_data,
-  // then thread could only be master of the region_data, but not to its ancestors.
-
-  // Values of argument team_master says if the thread is the master of region_data
-  typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
-
-}
-#endif
-
 
 void
 register_to_region
@@ -666,24 +605,6 @@ register_to_region
   unresolved_cnt++;
 }
 
-#if 0
-bool
-try_to_notify_master
-(
-  typed_stack_elem_ptr(notification) notification
-)
-{
-  typed_stack_elem_ptr(region) region_data = notification->region_data;
-  int old_value = atomic_fetch_add(&region_data->barrier_cnt, 1);
-  if (old_value < 0) {
-    // invalidate previous incrementing
-    // FIXME vi3 >>> Think this is ok
-    atomic_fetch_sub(&region_data->barrier_cnt, 1);
-  }
-  // indication that region is still active
-  return old_value >= 0;
-}
-#endif
 
 bool
 thread_take_sample
@@ -692,20 +613,30 @@ thread_take_sample
   void *arg
 )
 {
-  cct_node_t **previous_cct_ptr = (cct_node_t **)arg;
-  // pseudo cct node of the inner region
-  cct_node_t *previous_cct = *previous_cct_ptr;
+  cct_node_t **parent_cct_ptr = (cct_node_t **)arg;
+  // pseudo cct node which corresponds to the parent region
+  cct_node_t *parent_cct = *parent_cct_ptr;
   // notification that corresponds to the active region that is being processed at the moment
   typed_stack_elem(notification) *notification = el->notification;
 
+  // FIXME vi3 >>> If we use this approach, then field took_sample is not needed
   // thread took a sample in this region before
   if (el->took_sample) {
-    // connect with children pseudo node
-    if (previous_cct) {
-      hpcrun_cct_insert_node(notification->unresolved_cct, previous_cct);
-    }
-    // Indication that processing of active regions should stop.
-    return 1;
+    // skip this region, and go to the inner one
+    goto return_label;
+  }
+
+  // Check if the address that corresponds to the region
+  // has already been inserted in parent_cct subtree.
+  cct_addr_t *region_addr = &ADDR2(UNRESOLVED,notification->region_data->region_id);
+  cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
+  if (found_cct) {
+    // Region was on the stack previously, so the thread does not need
+    // neither to insert cct nor to register itself for the region's call path.
+    // Mark that thread took a sample, store found_cct in notification and skip the region.
+    el->took_sample = true;
+    notification->unresolved_cct = found_cct;
+    goto return_label;
   }
 
   if (!el->team_master) {
@@ -717,7 +648,9 @@ thread_take_sample
       // Invalidate previous incrementing
       atomic_fetch_sub(&region_data->barrier_cnt, 1);
       // Skip processing this region
-      return 0;
+      // FIXME vi3 >>> There should not be active inner region
+      //   if this one is finished, shouldn't it?
+      goto return_label;
     }
     register_to_region(notification);
     // This thread finished with registering itself for region's call path
@@ -729,161 +662,28 @@ thread_take_sample
 
   // mark that thread took sample in this region for the first time
   el->took_sample = true;
+  // insert cct node with region_addr in the parent_cct's subtree
+  notification->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
 
-  // add pseudo cct node that corresponds to the region
-  notification->unresolved_cct =
-      cct_node_create_from_addr_vi3(&ADDR2(UNRESOLVED,
-                                           notification->region_data->region_id));
-  // connect it with pseudo node of the inner region
-  if (previous_cct) {
-    hpcrun_cct_insert_node(notification->unresolved_cct, previous_cct);
-  }
-
-  // check if the region is outermost
-  if (notification->region_data->depth == 0) {
-    // connect the pseudo node of outermost region with thread root
-    hpcrun_cct_insert_node(hpcrun_get_thread_epoch()->csdata.thread_root, notification->unresolved_cct);
-    // Indication that all active regions have been processed
-    return 1;
-  }
-
-  // set previous_cct for the outer region
-  *previous_cct_ptr = notification->unresolved_cct;
-
-  // Indication that processing of active regions should continue
-  return 0;
-
+  return_label: {
+    // store new parent_cct node for the inner region
+    *parent_cct_ptr = notification->unresolved_cct;
+    // Indication that processing of active regions should continue
+    return 0;
+  };
 }
 
 
 void
 register_to_all_regions
 (
- void
+  void
 )
 {
-  cct_node_t *previous_cct = NULL;
-  // Mark that thread took a sample in all active regions on the stack.
-  // Stop at region in which thread took a sample before.
-  // Add pseudo cct nodes for regions in which thread took a sample for the first time.
-  typed_random_access_stack_forall(region)(region_stack, thread_take_sample, &previous_cct);
-#if 0
-  // Old Implementation
-  int i;
-  for (i = typed_random_access_stack_top_index_get(region)(region_stack); i >= 0; i--) {
-    current_el = typed_random_access_stack_get(region)(region_stack, i);
-    current_notification = current_el->notification;
-    // thread took a sample in this region before
-    if (current_el->took_sample) {
-      // connect with children pseudo node
-      if (previous_cct) {
-        current_cct = current_notification->unresolved_cct;
-        hpcrun_cct_insert_node(current_cct, previous_cct);
-      }
-      // stop
-      return;
-    }
-
-    // mark that thread took sample in this region
-    current_el->took_sample = true;
-    // worker thread register itself for the region's call path
-    if (!current_el->team_master) {
-      register_to_region(current_el->notification);
-    }
-
-    // add pseudo cct node
-    current_notification->unresolved_cct =
-        cct_node_create_from_addr_vi3(&ADDR2(UNRESOLVED,
-            current_notification->region_data->region_id));
-    current_cct = current_notification->unresolved_cct;
-    // connect it with children pseudo node (previous one)
-    if (previous_cct) {
-      hpcrun_cct_insert_node(current_cct, previous_cct);
-    }
-
-    previous_cct = current_cct;
-  }
-#endif
+  cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  typed_random_access_stack_reverse_iterate_from(region)(0, region_stack, thread_take_sample, &parent_cct);
 }
 
-
-// insert a path to the root and return the path in the root
-cct_node_t*
-hpcrun_cct_insert_path_return_leaf_tmp
-(
- cct_node_t *root,
- cct_node_t *path
-)
-{
-    if (!path) return root;
-    cct_node_t *parent = hpcrun_cct_parent(path);
-    if (parent) {
-      root = hpcrun_cct_insert_path_return_leaf_tmp(root, parent);
-    }
-    return hpcrun_cct_insert_addr(root, hpcrun_cct_addr(path));
-}
-
-
-
-
-
-#if 0
-void
-resolve_one_region_context_vi3
-(
-  typed_stack_elem_ptr(notification) notification
-)
-{
-  typed_stack_elem_ptr(region) region_data = notification->region_data;
-
-  // ================================== resolving part
-  cct_node_t *unresolved_cct = notification->unresolved_cct;
-  // this region has already been resolved
-  if (!notification->unresolved_cct) {
-    return;
-  }
-
-  cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
-
-  if (atomic_fetch_add(&region_data->barrier_cnt, 0) >= 0)
-    return;
-
-  for(;;) {
-    cct_node_t *value = region_data->call_path;
-    if (value != NULL) break;
-  }
-
-  if (parent_unresolved_cct == NULL || region_data->call_path == NULL) {
-    deferred_resolution_breakpoint();
-  } else {
-    // prefix should be put between unresolved_cct and parent_unresolved_cct
-    cct_node_t *prefix = NULL;
-    cct_node_t *region_call_path = region_data->call_path;
-
-    // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
-    prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
-
-    if (prefix == NULL) {
-      deferred_resolution_breakpoint();
-    }
-
-    if (prefix != unresolved_cct) {
-      // prefix node should change the unresolved_cct
-      hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
-      // delete unresolved_cct from parent
-      hpcrun_cct_delete_self(unresolved_cct);
-    } else {
-      deferred_resolution_breakpoint();
-    }
-  }
-  // ==================================
-  // FIXME vi3 >>> notification mem leak.
-  // FIXME vi3 >>> region_data mem leak.
-
-  // invalidate unresolved_cct
-  notification->unresolved_cct = NULL;
-}
-#endif
 
 void
 resolve_one_region_context
@@ -1201,30 +1001,3 @@ print_prefix_info
 }
 
 #endif
-
-
-void
-tmp_end_region_resolve
-(
- typed_stack_elem_ptr(notification) notification,
- cct_node_t* prefix
-)
-{
-  cct_node_t *unresolved_cct = notification->unresolved_cct;
-
-  if (prefix == NULL) {
-    msg_deferred_resolution_breakpoint("tmp_end_region_resolve: Prefix is missing.\n");
-    return;
-  }
-
-  // if the prefix and unresolved_cct are already equal,
-  // no action is necessary
-  if (prefix != unresolved_cct) {
-    // prefix node should change the unresolved_cct
-    hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
-    // delete unresolved_cct from parent
-    hpcrun_cct_delete_self(unresolved_cct);
-  } else {
-    msg_deferred_resolution_breakpoint("tmp_end_region_resolve: Prefix is equal to unresolved_cct");
-  }
-}

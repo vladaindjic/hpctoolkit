@@ -603,6 +603,9 @@ mpsc_channel_steal
 #define typed_random_access_stack_iterate_from(type) \
   typed_random_access_stack_op(type, iterate_from)
 
+// reverse_iterate_from routine name for a typed random_access_stack
+#define typed_random_access_stack_reverse_iterate_from(type) \
+  typed_random_access_stack_op(type, reverse_iterate_from)
 
 // define typed wrappers for a random_access_stack type
 #define typed_random_access_stack(type, macro) \
@@ -703,6 +706,19 @@ mpsc_channel_steal
                                     sizeof(typed_random_access_stack_elem(type)));	\
   }) \
 \
+ void \
+ typed_random_access_stack_reverse_iterate_from(type) \
+ (int start_from, typed_random_access_stack_ptr(type) stack, \
+     bool (*fn)(typed_random_access_stack_elem(type) *, void *), void *arg) \
+  macro({ \
+    random_access_stack_op(reverse_iterate_from)( \
+                                    start_from, \
+                                    (random_access_stack_t *) stack, \
+                                    (random_access_stack_forall_fn_t) fn, \
+                                    arg, \
+                                    sizeof(typed_random_access_stack_elem(type)));	\
+  }) \
+
 
 
 
@@ -794,5 +810,14 @@ random_access_stack_iterate_from
   size_t element_size
 );
 
+void
+random_access_stack_reverse_iterate_from
+(
+  int start_from,
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+);
 
 #endif

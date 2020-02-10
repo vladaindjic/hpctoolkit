@@ -252,16 +252,6 @@ ompt_parallel_end_internal
       resolve_one_region_context(notification);
       // mark that master resolved this region
       unresolved_cnt--;
-#if 0
-      cct_node_t *parent_cct = hpcrun_cct_parent(notification->unresolved_cct);
-      cct_node_t *prefix =
-        hpcrun_cct_insert_path_return_leaf(parent_cct,
-          region_data->call_path);
-
-      // if combined this if branch with branch of next if
-      // we will remove this line
-      tmp_end_region_resolve(notification, prefix);
-#endif
     }
 
     if (to_notify){

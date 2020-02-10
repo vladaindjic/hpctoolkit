@@ -189,13 +189,6 @@ add_region_and_ancestors_to_stack
 );
 
 
-void 
-tmp_end_region_resolve
-(
- typed_stack_elem_ptr(notification) notification,
- cct_node_t* prefix
-);
-
 void
 resolve_one_region_context_vi3
 (

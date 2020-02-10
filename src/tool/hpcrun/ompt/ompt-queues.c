@@ -584,6 +584,25 @@ random_access_stack_iterate_from
   }
 }
 
+void
+random_access_stack_reverse_iterate_from
+(
+  int start_from,
+  random_access_stack_t *stack,
+  random_access_stack_forall_fn_t fn,
+  void *arg,
+  size_t element_size
+)
+{
+  void *e;
+  bool end;
+  for (e = stack->array + start_from * element_size; e <= stack->current; e += element_size) {
+    end = fn(e, arg);
+    if (end)
+      break;
+  }
+}
+
 // ====================================
 
 
@@ -811,6 +830,8 @@ test_random_access_stack
   printf("\n\n\n");
   index = 0;
   typed_random_access_stack_iterate_from(int)(11, random_access_stack, show_first_10_elements, &index);
+  printf("\n\n\nReverse order: \n");
+  typed_random_access_stack_reverse_iterate_from(int)(0, random_access_stack, show_fn, 0);
 
   printf("\n\n\n");
   typed_random_access_stack_top_index_set(int)(6, random_access_stack);
