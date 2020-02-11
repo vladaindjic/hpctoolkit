@@ -73,6 +73,8 @@ __thread int unresolved_cnt = 0;
 // FIXME vi3: just a temp solution
 __thread typed_stack_elem_ptr(region) ending_region = NULL;
 
+__thread int depth_last_sample_taken = -1;
+__thread uint64_t region_id_last_sample_taken = 0;
 
 
 //******************************************************************************

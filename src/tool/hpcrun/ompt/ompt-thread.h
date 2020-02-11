@@ -85,6 +85,8 @@ extern __thread typed_stack_elem_ptr(region) ending_region;
 // number of unresolved regions
 extern __thread int unresolved_cnt;
 
+extern __thread int depth_last_sample_taken;
+extern __thread uint64_t region_id_last_sample_taken;
 
 //******************************************************************************
 // interface operations 

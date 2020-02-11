@@ -673,6 +673,28 @@ thread_take_sample
   };
 }
 
+// Function that checks if the region where thread took last sample still active
+bool
+last_sample_region_active
+(
+  void
+)
+{
+  // none sample has been taken yet
+  if (depth_last_sample_taken < 0)
+    return false;
+  // top index of the stack of active regions
+  int top_index = typed_random_access_stack_top_index_get(region)(region_stack);
+  // at the time of last sample, stack was deeper, so the region cannot be active
+  if (top_index < depth_last_sample_taken) {
+    return false;
+  }
+  // If region with region_id_last_sample_taken is on stack at depth depth_last_sample_taken,
+  // then it is still active.
+  return region_id_last_sample_taken ==
+    typed_random_access_stack_get(region)
+      (region_stack, depth_last_sample_taken)->notification->region_data->region_id;
+}
 
 void
 register_to_all_regions
@@ -680,8 +702,24 @@ register_to_all_regions
   void
 )
 {
-  cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
-  typed_random_access_stack_reverse_iterate_from(region)(0, region_stack, thread_take_sample, &parent_cct);
+  // Check if the region where thread took sample last time is still active.
+  // If that is true, then we can process only region enclosed by previously mentioned region.
+  // Those enclosed regions are on stack at depth depth_last_sample_taken + 1 and deeper
+  int start_from = last_sample_region_active() ? depth_last_sample_taken + 1 : 0;
+  // Find the cct node under which cct nodes of enclosed regions are going to be inserted
+  cct_node_t *parent_cct =
+      start_from == 0
+      ? hpcrun_get_thread_epoch()->csdata.thread_root
+      : typed_random_access_stack_get(region)(region_stack, depth_last_sample_taken)->notification->unresolved_cct;
+  typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
+  // Update information about the innermost region in which thread took last sample
+  // FIXME vi3 >>> Potential problem if region's freelist is enabled
+  //  If thread is waiting on last implicit barrier, we could store
+  //  enclosing region instead of innermost
+  typed_stack_elem_ptr(region) innermost_region =
+      typed_random_access_stack_top(region)(region_stack)->notification->region_data;
+  depth_last_sample_taken = innermost_region->depth;
+  region_id_last_sample_taken = innermost_region->region_id;
 }
 
 
