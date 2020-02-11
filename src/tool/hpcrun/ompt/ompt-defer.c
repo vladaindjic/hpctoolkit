@@ -702,6 +702,10 @@ register_to_all_regions
   void
 )
 {
+  // If there is no regions on the stack, just return.
+  bool stack_if_empty = typed_random_access_stack_empty(region)(region_stack);
+  if (stack_if_empty)
+    return;
   // Check if the region where thread took sample last time is still active.
   // If that is true, then we can process only region enclosed by previously mentioned region.
   // Those enclosed regions are on stack at depth depth_last_sample_taken + 1 and deeper
