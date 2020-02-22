@@ -446,38 +446,6 @@ help_notification_alloc
   return notification;
 }
 
-void
-cache_old_region
-(
-  typed_random_access_stack_elem(region) *el,
-  typed_stack_elem_ptr(region) region_data,
-  typed_stack_elem_ptr(notification) notification
-)
-{
-  old_region_t *new = hpcrun_malloc(sizeof(old_region_t));
-  // current head is new->next
-  new->next = el->old_region_list;
-  // store new head
-  el->old_region_list = new;
-  new->notification = notification;
-  new->region = region_data;
-}
-
-old_region_t *
-adding_region_twice
-(
-  typed_random_access_stack_elem(region) *el,
-  typed_stack_elem_ptr(region) region_data
-)
-{
-  old_region_t *current;
-  for(current = el->old_region_list; current != NULL; current = current->next) {
-    if (current->region->region_id == region_data->region_id) {
-      return current;
-    }
-  }
-  return NULL;
-}
 
 void
 swap_and_free
@@ -489,15 +457,6 @@ swap_and_free
   typed_random_access_stack_elem(region) *stack_element =
       typed_random_access_stack_get(region)(region_stack, depth);
   typed_stack_elem_ptr(notification) notification = stack_element->notification;
-
-  old_region_t *previous_region = adding_region_twice(stack_element, region_data);
-  if (previous_region){
-    //printf("Nooo, this region again! :'(\n");
-    stack_element->notification = previous_region->notification;
-    stack_element->team_master = 0;
-    stack_element->took_sample = previous_region->notification->unresolved_cct != NULL;
-    return;
-  }
 
   // Notification can be freed either if the thread is the master of the region
   // or the thread did not take a sample inside the region
@@ -513,7 +472,6 @@ swap_and_free
   // thread hasn't taken a sample in this region yet
   stack_element->took_sample = 0;
   // cache region
-  cache_old_region(stack_element, region_data, notification);
 }
 
 
@@ -640,21 +598,7 @@ thread_take_sample
   }
 
   if (!el->team_master) {
-    // Worker thread tries to register itself for the region's call path
-    typed_stack_elem_ptr(region) region_data = notification->region_data;
-    int old_value = atomic_fetch_add(&region_data->barrier_cnt, 1);
-    if (old_value < 0) {
-      // Master thread marked that this region is finished.
-      // Invalidate previous incrementing
-      atomic_fetch_sub(&region_data->barrier_cnt, 1);
-      // Skip processing this region
-      // FIXME vi3 >>> There should not be active inner region
-      //   if this one is finished, shouldn't it?
-      goto return_label;
-    }
     register_to_region(notification);
-    // This thread finished with registering itself for region's call path
-    atomic_fetch_sub(&region_data->barrier_cnt, 1);
   } else {
     // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
     unresolved_cnt++;
@@ -668,33 +612,21 @@ thread_take_sample
   return_label: {
     // store new parent_cct node for the inner region
     *parent_cct_ptr = notification->unresolved_cct;
+
+    // If region is marked as last to register (see function register_to_all_regions),
+    // then stop processing regions here.
+    if (vi3_forced_diff) {
+      if (el->notification->region_data->depth >= vi3_last_to_register) {
+        // Indication that processing of active regions should stop.
+        return 1;
+      }
+    }
+
     // Indication that processing of active regions should continue
     return 0;
   };
 }
 
-// Function that checks if the region where thread took last sample still active
-bool
-last_sample_region_active
-(
-  void
-)
-{
-  // none sample has been taken yet
-  if (depth_last_sample_taken < 0)
-    return false;
-  // top index of the stack of active regions
-  int top_index = typed_random_access_stack_top_index_get(region)(region_stack);
-  // at the time of last sample, stack was deeper, so the region cannot be active
-  if (top_index < depth_last_sample_taken) {
-    return false;
-  }
-  // If region with region_id_last_sample_taken is on stack at depth depth_last_sample_taken,
-  // then it is still active.
-  return region_id_last_sample_taken ==
-    typed_random_access_stack_get(region)
-      (region_stack, depth_last_sample_taken)->notification->region_data->region_id;
-}
 
 void
 register_to_all_regions
@@ -703,27 +635,71 @@ register_to_all_regions
 )
 {
   // If there is no regions on the stack, just return.
+  // Thread should be executing sequential code.
   bool stack_if_empty = typed_random_access_stack_empty(region)(region_stack);
   if (stack_if_empty)
     return;
-  // Check if the region where thread took sample last time is still active.
-  // If that is true, then we can process only region enclosed by previously mentioned region.
-  // Those enclosed regions are on stack at depth depth_last_sample_taken + 1 and deeper
-  int start_from = last_sample_region_active() ? depth_last_sample_taken + 1 : 0;
-  // Find the cct node under which cct nodes of enclosed regions are going to be inserted
-  cct_node_t *parent_cct =
-      start_from == 0
-      ? hpcrun_get_thread_epoch()->csdata.thread_root
-      : typed_random_access_stack_get(region)(region_stack, depth_last_sample_taken)->notification->unresolved_cct;
-  typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
-  // Update information about the innermost region in which thread took last sample
-  // FIXME vi3 >>> Potential problem if region's freelist is enabled
-  //  If thread is waiting on last implicit barrier, we could store
-  //  enclosing region instead of innermost
-  typed_stack_elem_ptr(region) innermost_region =
-      typed_random_access_stack_top(region)(region_stack)->notification->region_data;
-  depth_last_sample_taken = innermost_region->depth;
-  region_id_last_sample_taken = innermost_region->region_id;
+
+  // Check if the innermost parallel_data is available
+  typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+  if (!inner) {
+    // Innermost parallel_data is unavailable
+    // Ex worker should be waiting on the last implicit barrier for more work.
+    // It cannot be guaranteed that any of the region on the stack is still active,
+    // so avoid registering for any of theirs call paths.
+    vi3_forced_null = true;
+    return;
+  }
+
+  // check if the innermost region_data on the stack is equal to region_data
+  // provided by runtime at the level 0
+  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *top_reg = top->notification->region_data;
+  if (top_reg != inner) {
+    // mark that runtime changed innermost region data before ompt_implicit_task_end/parallel_end
+    vi3_forced_diff = true;
+
+    if (top_reg->depth < inner->depth) {
+      // Worker thread tries to create new parallel region in which it is going to be the master.
+      // Thread should mark that it took sample in all regions that are currently presented the stack.
+      // Just to be sure, we will memoize the innermost region's depth as the last element
+      // on the stack that thread_take_sample function will process later.
+      vi3_last_to_register = top_reg->depth;
+    } else if (top_reg->depth > inner->depth) {
+      // Ex master thread has recently finished the region.
+      // Thread should mark that it took sample in all regions on the stack
+      // except the one on the top of the stack (top_reg), which has been recently finished.
+      // The last region that function thread_take_sample will process is
+      // at index inner->depth on the stack.
+      vi3_last_to_register = inner->depth;
+
+      // This is just for debugging purposes.
+      // It should be expected that inner is still on the stack at index inner->depth.
+      if (typed_random_access_stack_get(region)(region_stack,
+          inner->depth)->notification->region_data != inner) {
+        // this happened once
+        // FIXME vi3 >>> See why this happens
+        msg_deferred_resolution_breakpoint(
+            "register_to_all_regions >>> Shallower stack no handled properly\n");
+      }
+    } else {
+      // Some example of the frames found in debugger
+      // __ompt_implicit_task_end / sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_worker
+      // __kmp_launch_thread
+      // It seems like that this case is similiar to case
+      // when innermost parallel_data is unavailable.
+      return;
+    }
+
+  }
+  // Mark that thread took sample in regions presented on the stack, eventually
+  // avoid regions which depths are greater that vi3_last_to_register.
+  // Always start processing from the outermost region.
+  // Initial parent_cct is thread_root
+  cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  typed_random_access_stack_reverse_iterate_from(region)(0, region_stack, thread_take_sample, &parent_cct);
 }
 
 

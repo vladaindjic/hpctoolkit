@@ -76,6 +76,12 @@ __thread typed_stack_elem_ptr(region) ending_region = NULL;
 __thread int depth_last_sample_taken = -1;
 __thread uint64_t region_id_last_sample_taken = 0;
 
+__thread bool waiting_on_last_implicit_barrier = false;
+__thread bool innermost_parallel_data_avail = false;
+__thread bool vi3_forced_null = false;
+__thread bool vi3_forced_diff = false;
+__thread int vi3_last_to_register = -1;
+__thread bool vi3_idle_collapsed = false;
 
 //******************************************************************************
 // private variables 

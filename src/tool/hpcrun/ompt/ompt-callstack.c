@@ -250,6 +250,9 @@ set_frame
  ompt_placeholder_t *ph
 )
 {
+  if (ph == (&ompt_placeholders.ompt_idle_state)) {
+    vi3_idle_collapsed = true;
+  }
   f->cursor.pc_unnorm = ph->pc;
   f->ip_norm = ph->pc_norm;
   f->the_function = ph->pc_norm;
@@ -263,7 +266,9 @@ collapse_callstack
  ompt_placeholder_t *placeholder
 )
 {
-
+  if (placeholder == (&ompt_placeholders.ompt_idle_state)) {
+    vi3_idle_collapsed = true;
+  }
   set_frame(bt->last, placeholder);
   bt->begin = bt->last;
   bt->bottom_frame_elided = false;
@@ -282,6 +287,7 @@ ompt_elide_runtime_frame(
 )
 {
 
+  vi3_idle_collapsed = false;
   nested_regions_before_explicit_task = 0;
   frame_t **bt_outer = &bt->last;
   frame_t **bt_inner = &bt->begin;
@@ -824,6 +830,305 @@ add_unresolved_cct_to_parent_region_if_needed
 }
 #endif
 
+// For debugging purposes
+cct_node_t *
+check_and_return_non_null
+(
+  cct_node_t *to_return,
+  cct_node_t *default_value,
+  int line_of_code
+)
+{
+  if (!default_value) {
+    assert(0);
+  }
+
+  if (!to_return) {
+    printf("***************** Why this happens: ompt-callstack.c:%d\n", line_of_code);
+    return default_value;
+  }
+
+  return to_return;
+}
+
+
+// For debugging purposes
+void
+vi3_unexpected
+(
+  void
+)
+{
+
+}
+
+
+// For debugging purposes
+void
+check_shallower_stack
+(
+  typed_stack_elem(region) *top_reg,
+  typed_stack_elem(region) *inner
+)
+{
+  // master took a sample immediately after regions has been finished, but before parallel end
+  // suppose it is safe to mark that region is still active and to mark that thread took sample here
+  // ASSERT:
+  // 1) inner is on the stack at the propper posiotion
+  // 2) thread is the master of the top_reg
+
+  if (!top_reg) {
+    printf("shallower_stack >>> TOP_REG is missing\n");
+    vi3_unexpected();
+    return;
+  }
+
+  if (!inner) {
+    printf("shallower_stack >>> INNER is missing\n");
+    vi3_unexpected();
+    return;
+  }
+
+  int top_depth = top_reg->depth;
+  int inner_depth = inner->depth;
+
+  if (top_depth <= inner_depth) {
+    vi3_unexpected();
+    printf("shallower_stack >>> This is bad\n");
+  }
+
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_get(region)(region_stack, top_depth);
+
+  if (!top_el->team_master) {
+    vi3_unexpected();
+    printf("shallower_stack >>> Thread is not master in top_reg\n");
+  }
+
+  typed_random_access_stack_elem(region) *inner_el =
+      typed_random_access_stack_get(region)(region_stack, inner_depth);
+
+  if (inner_el->notification->region_data != inner) {
+    vi3_unexpected();
+    printf("shallower_stack >>> Inner is not on the stack\n");
+  }
+
+  // check barrier_cnt for top_reg and inner
+  int old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  if (old_count_top < 0) {
+    vi3_unexpected();
+    printf("shallower_stack >>> TOP_REG marked as finished\n");
+  }
+
+  int old_count_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  if (old_count_inner < 0) {
+    vi3_unexpected();
+    printf("shallower_stack >>> INNER marked as finished\n");
+  }
+}
+
+
+// For debugging purposes
+void
+check_same_depth_stack
+(
+  typed_stack_elem(region) *top_reg,
+  typed_stack_elem(region) *inner
+)
+{
+  // Worker thread took sample immediately after region has been finished.
+  // Most likely inside implicit_task_end or at the end of the last implicit barrier.
+  if (!top_reg) {
+    printf("same_depth_stack >>> TOP_REG is missing\n");
+    vi3_unexpected();
+    return;
+  }
+
+  if (!inner) {
+    printf("same_depth_stack >>> INNER is missing\n");
+    vi3_unexpected();
+    return;
+  }
+
+  int top_depth = top_reg->depth;
+  int inner_depth = inner->depth;
+
+  if (top_depth != inner_depth) {
+    vi3_unexpected();
+    printf("same_depth_stack >>> This is bad\n");
+  }
+
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_get(region)(region_stack, top_depth);
+
+  if (top_el->team_master) {
+    vi3_unexpected();
+    printf("same_depth_stack >>> Thread is master\n");
+  }
+
+  // check barrier_cnt for top_reg and inner
+  int old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  if (old_count_top >= 0) {
+    vi3_unexpected();
+    printf("same_depth_stack >>> TOP_REG still active\n");
+  }
+
+  int old_count_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  if (old_count_inner < 0) {
+    vi3_unexpected();
+    printf("same_depth_stack >>> INNER marked as finished\n");
+  }
+}
+
+
+// For debugging purposes
+void
+check_deeper_stack
+(
+  typed_stack_elem(region) *top_reg,
+  typed_stack_elem(region) *inner
+)
+{
+  // Worker thread took sample immediately after region has been finished.
+  // Most likely inside implicit_task_end or at the end of the last implicit barrier.
+  if (!top_reg) {
+    vi3_unexpected();
+    printf("deeper_stack >>> TOP_REG is missing\n");
+    return;
+  }
+
+  if (!inner) {
+    vi3_unexpected();
+    printf("deeper_stack >>> INNER is missing\n");
+    return;
+  }
+
+  int top_depth = top_reg->depth;
+  int inner_depth = inner->depth;
+
+  if (top_depth >= inner_depth) {
+    vi3_unexpected();
+    printf("deeper_stack >>> This is bad\n");
+  }
+
+#if 0
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_get(region)(region_stack, top_depth);
+
+  if (top_el->team_master) {
+    printf("deeper_stack >>> Thread is master\n");
+  }
+#endif
+
+  int inner_thread_num = hpcrun_ompt_get_thread_num(0);
+  if (inner_thread_num != 0) {
+    // happen
+    // Thread can be worker
+    //vi3_unexpected();
+    //printf("deeper_stack >>> Thread is worker\n");
+  }
+
+  // check barrier_cnt for top_reg and inner
+  int old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  if (old_count_top < 0) {
+    vi3_unexpected();
+    printf("deeper_stack >>> TOP_REG marked as finished\n");
+  }
+
+  int old_count_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  if (old_count_inner < 0) {
+    vi3_unexpected();
+    printf("deeper_stack >>> INNER marked as finished\n");
+  }
+}
+
+
+// For debugging purposes
+void
+check_inner_unavailable
+(
+  typed_stack_elem(region) *top_reg,
+  typed_stack_elem(region) *inner
+)
+{
+  // Worker thread is waiting on last implicit barrier.
+  // It is not the member of any team.
+  if (!top_reg) {
+    // didn't happen
+    vi3_unexpected();
+    printf("inner_unavailable >>> TOP_REG is missing\n");
+    return;
+  }
+
+  if (inner) {
+    //vi3_unexpected();
+    // happened
+    // This can happen. In the middle of processing sample, parallel data becomes available
+    //printf("inner_unavailable >>> INNER is available\n");
+
+    if (!waiting_on_last_implicit_barrier) {
+      // didn't happen
+      vi3_unexpected();
+      printf("inner_unavailable >>> INNER available >>> thread not on barrier\n");
+    }
+
+    int old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+    if (old_count_top >= 0) {
+      // didn't happen
+      vi3_unexpected();
+      printf("inner_unavailable >>> INNER available >>> TOP_REG active\n");
+    }
+  }
+
+  if (!waiting_on_last_implicit_barrier) {
+    // didn't happen
+    vi3_unexpected();
+    printf("inner_unavailable >>> Thread is not waiting on last implicit barrier\n");
+  }
+
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+
+  if (top_el->team_master) {
+    // didn't happen
+    vi3_unexpected();
+    printf("inner_unavailable >>> Thread is master\n");
+  }
+
+  // check barrier_cnt for top_reg
+  int old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  if (old_count_top >= 0) {
+    // happened
+    //vi3_unexpected();
+    //printf("inner_unavailable >>> TOP_REG still active\n");
+
+    // In the middle of sample processing, master marked that top_reg is finished,
+    // while inner and outer became available.
+    if (!waiting_on_last_implicit_barrier) {
+      // didn't happen
+      vi3_unexpected();
+      printf("inner_unavailable >>> TOP_REG active >>> thread not on barrier\n");
+    }
+
+    typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+    typed_stack_elem(region) *outer = hpcrun_ompt_get_region_data(1);
+    if (inner) {
+      // happened
+      // here, top_reg is marked as finished
+      //old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+      //printf("inner_unavailable >>> TOP_REG active >>> inner is available: %d\n", old_count_top);
+    }
+
+    if (outer) {
+      // happened
+      // here, top_reg is marked as finished
+      //old_count_top = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+      //printf("inner_unavailable >>> TOP_REG active >>> outer is available: %d\n", old_count_top);
+    }
+  }
+}
+
+
 cct_node_t *
 ompt_cct_cursor_finalize
 (
@@ -848,12 +1153,76 @@ ompt_cct_cursor_finalize
     // Those ancestor cct nodes (resolved or unresolved) must not be
     // part of region's call path, because they will be used by other worker threads (of the same team)
     // in resolving process.
-    return cct->unresolved_root;
+    return check_and_return_non_null(cct->unresolved_root, cct_cursor, 877);
   }
 
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+  if (!ompt_eager_context_p()) {
+
+    typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+    typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+    typed_stack_elem(region) *top_reg = NULL;
+    if (top && top->notification ) {
+      top_reg = top->notification->region_data;
+    }
+
+    if (vi3_idle_collapsed) {
+      // the whole callstack has been collapsed to idle
+      vi3_forced_null = false;
+      vi3_forced_diff = false;
+      return check_and_return_non_null(cct_cursor, cct_cursor, 859);
+    }
+
+    if (vi3_forced_null) {
+      // parallel_data is unavailable
+      // callstack should be collapsed to idle (previous if)
+      // should net ended here
+      vi3_unexpected();
+      printf("ompt_cct_cursor_finalize >>> Callstack should be collapsed to idle\n");
+      vi3_forced_null = false;
+      if (!vi3_idle_collapsed) {
+        vi3_unexpected();
+        printf("ompt_cct_cursor_finalize >>> This may represent a problem\n");
+      }
+      check_inner_unavailable(top_reg, inner);
+      return check_and_return_non_null(cct_cursor, cct_cursor, 859);
+    }
+
+    if (vi3_forced_diff) {
+      vi3_forced_diff = false;
+
+      if (info_type == 2) {
+        // If info_type is 2, then task_data doesn't contain any info about corresponding region.
+        // Put everything under thread_root (cct_cursor).
+        return check_and_return_non_null(cct_cursor, cct_cursor, 859);
+      }
+
+      if (top_reg) {
+        if (top_reg->depth < inner->depth) {
+          // NOTE: See register_to_all_regions function
+          check_deeper_stack(top_reg, inner);
+          return check_and_return_non_null(typed_random_access_stack_get(region)
+                 (region_stack, vi3_last_to_register)->notification->unresolved_cct, cct_cursor, 1200);
+        } else if (top_reg->depth == inner->depth) {
+          // This should never happen
+          vi3_unexpected();
+          // This is for debug purposes
+          printf("ompt_cct_cursor_finalize >>> What to do with same_depth stack?\n");
+          check_same_depth_stack(top_reg, inner);
+          return check_and_return_non_null(cct->partial_unw_root, cct_cursor, 859);
+        } else {
+          // NOTE: See register_to_all_regions function
+          // This is for debug purposes
+          check_shallower_stack(top_reg, inner);
+          return check_and_return_non_null(typed_random_access_stack_get(region)
+                 (region_stack, vi3_last_to_register)->notification->unresolved_cct, cct_cursor, 1200);
+        }
+      }
+    }
+  }
 
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already
@@ -869,13 +1238,13 @@ ompt_cct_cursor_finalize
       root = hpcrun_get_thread_epoch()->csdata.tree_root;
     }
 #endif
-    return hpcrun_cct_insert_path_return_leaf(root, omp_task_context);
+    return check_and_return_non_null(hpcrun_cct_insert_path_return_leaf(root, omp_task_context), cct_cursor, 919);
   } else if (info_type == 1) {
-    return typed_random_access_stack_get(region)(region_stack,
-        region_depth)->notification->unresolved_cct;
+    return check_and_return_non_null(typed_random_access_stack_get(region)(
+        region_stack, region_depth)->notification->unresolved_cct, cct_cursor, 901);
   }
 
-  return cct_cursor;
+  return check_and_return_non_null(cct_cursor, cct_cursor, 904);
 }
 
 

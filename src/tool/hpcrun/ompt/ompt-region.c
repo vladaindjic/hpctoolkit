@@ -163,6 +163,10 @@ ompt_parallel_begin_internal
        ompt_parallel_begin_context(region_id, 
 				   flags & ompt_parallel_invoker_program);
   }
+#if VI3_DEBUG == 1
+  printf("parallel_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
+         &region_stack, region_data, region_data->region_id, 0);
+#endif
 }
 
 
@@ -217,8 +221,13 @@ ompt_parallel_end_internal
             "the barrier in the middle of sping waitingbefore spin waiting was negative");
       }
       // FIXME vi3 >>> the condition should be old_value == MAX_THREAD_IN_TEAM
-      if (old_value <= MAX_THREAD_IN_TEAM)
-        break;
+      if (old_value <= MAX_THREAD_IN_TEAM) {
+        if (old_value == MAX_THREAD_IN_TEAM) {
+          break;
+        } else {
+          printf("UNDER THE LIMIT: %d\n", old_value);
+        }
+      }
     }
 
     // check if there is any thread registered that should be notified
@@ -370,6 +379,11 @@ ompt_implicit_task_internal_begin
     task_data_set_depth(task_data,
         typed_random_access_stack_top_index_get(region)(region_stack));
   }
+
+#if VI3_DEBUG == 1
+  printf("implicit_task_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
+         &region_stack, region_data, region_data->region_id, hpcrun_ompt_get_thread_num(0));
+#endif
 }
 
 
@@ -535,13 +549,22 @@ ompt_sync
 {
 #if VI3_DEBUG == 1
   if (kind == ompt_sync_region_barrier_implicit_last) {
-    printf("ompt_sync_region_barrier_implicit_last: parallel_data: %p, Thread id = %d, \tBarrier %s\n",
-        parallel_data, hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
+    printf("ompt_sync_region_barrier_implicit_last: region_stack: %p, reg_id: %lx, Thread id = %d, \tBarrier %s\n",
+        &region_stack, parallel_data ? ((typed_stack_elem_ptr(region))parallel_data->ptr)->region_id : 0,
+        hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
   } else if (kind == ompt_sync_region_barrier_implicit){
     printf("ompt_sync_region_barrier_implicit: parallel_data: %p, Thread id = %d, \tBarrier %s\n",
            parallel_data, hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
   }
 #endif
+
+  // mark that thread is (not) waiting om last implicit barrier
+  // at the end of the innermost parallel region
+  if (kind == ompt_sync_region_barrier_implicit_last) {
+    if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
+    else if (endpoint == ompt_scope_end) waiting_on_last_implicit_barrier = false;
+    else assert(0);
+  }
 }
 
 //*****************************************************************************
