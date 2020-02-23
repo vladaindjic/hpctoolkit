@@ -79,6 +79,7 @@
 #include "ompt-placeholders.h"
 #include "ompt-thread.h"
 #include "ompt-region.h"
+#include "ompt-task.h"
 
 
 
@@ -558,7 +559,19 @@ register_to_region
 
   // register thread to region's wait free queue
   typed_stack_next_set(notification, cstack)(notification, 0);
+
+  int old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
+  if (old_value < 0) {
+    printf("register_to_region >>> To late to try registering. Old value: %d\n", old_value);
+  }
+
   typed_stack_push(notification, cstack)(&region_data->notification_stack, notification);
+
+  old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
+  if (old_value < 0) {
+    printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
+  }
+
   // increment the number of unresolved regions
   unresolved_cnt++;
 }
@@ -678,9 +691,30 @@ register_to_all_regions
       if (typed_random_access_stack_get(region)(region_stack,
           inner->depth)->notification->region_data != inner) {
         // this happened once
-        // FIXME vi3 >>> See why this happens
-        msg_deferred_resolution_breakpoint(
-            "register_to_all_regions >>> Shallower stack no handled properly\n");
+        // call stack
+        // __ompt_implicit_task_end
+        // __kmp_fork_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // task_data = {value = 0x0, ptr = 0x0}
+        // info_type = 2 (call path of sample will be put under thread root => see ompt_cct_cursor_finalize)
+        // omp_task_context = NULL
+        // region_depth = -1
+
+        // just for debug purposes
+        cct_node_t *omp_task_context = NULL;
+        int region_depth = -1;
+        int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+        if (info_type != 2) {
+          printf(">>> INFO_TYPE: %d, TASK_CONTEXT: %p, REGION_DEPTH: %d\n",
+              info_type, omp_task_context, region_depth);
+          msg_deferred_resolution_breakpoint(
+              "register_to_all_regions >>> INNER is not on the stack.\n");
+        }
+        // It seems like the thread was worker in region that was finished.
+        // Now it is waiting for work.
+        // I guess that safest thing to do is to skip registering.
+        return;
       }
     } else {
       // Some example of the frames found in debugger
@@ -694,6 +728,17 @@ register_to_all_regions
     }
 
   }
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  if (info_type == 2) {
+    // task_data does not contain any useful information (task_data = {0x0}
+    // Thread cannot connect sample with any regions on the stack.
+    // skip registering
+    return;
+  }
+
   // Mark that thread took sample in regions presented on the stack, eventually
   // avoid regions which depths are greater that vi3_last_to_register.
   // Always start processing from the outermost region.
