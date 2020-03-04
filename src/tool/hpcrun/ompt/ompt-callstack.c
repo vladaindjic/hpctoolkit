@@ -862,7 +862,7 @@ vi3_unexpected
 
 }
 
-
+#if 0
 // For debugging purposes
 void
 check_shallower_stack
@@ -1127,7 +1127,7 @@ check_inner_unavailable
     }
   }
 }
-
+#endif
 
 cct_node_t *
 ompt_cct_cursor_finalize
@@ -1159,6 +1159,9 @@ ompt_cct_cursor_finalize
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+#if 0
+  // NOTE vi3: code that contains a lot of useful debug information about edge cases
 
   if (!ompt_eager_context_p()) {
 
@@ -1223,6 +1226,7 @@ ompt_cct_cursor_finalize
       }
     }
   }
+#endif
 
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already

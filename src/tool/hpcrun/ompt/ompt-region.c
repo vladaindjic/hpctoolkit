@@ -396,6 +396,9 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
+
+  waiting_on_last_implicit_barrier = false;
+
   if (!ompt_eager_context_p()) {
 #if VI3_DEBUG == 1
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
@@ -562,8 +565,8 @@ ompt_sync
   // at the end of the innermost parallel region
   if (kind == ompt_sync_region_barrier_implicit_last) {
     if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
-    else if (endpoint == ompt_scope_end) waiting_on_last_implicit_barrier = false;
-    else assert(0);
+    //else if (endpoint == ompt_scope_end) waiting_on_last_implicit_barrier = false;
+    //else assert(0);
   }
 }
 

@@ -649,9 +649,11 @@ register_to_all_regions
 {
   // If there is no regions on the stack, just return.
   // Thread should be executing sequential code.
-  bool stack_if_empty = typed_random_access_stack_empty(region)(region_stack);
-  if (stack_if_empty)
+  bool stack_is_empty = typed_random_access_stack_empty(region)(region_stack);
+  if (stack_is_empty)
     return;
+#if 0
+  // NOTE vi3: The code that explain a lot of edge cases
 
   // Check if the innermost parallel_data is available
   typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
@@ -737,6 +739,38 @@ register_to_all_regions
     // Thread cannot connect sample with any regions on the stack.
     // skip registering
     return;
+  }
+#endif
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  if (info_type == 2) {
+    // task_data does not contain any useful information (task_data = {0x0}
+    // Thread cannot connect sample with any regions on the stack.
+    // skip registering
+    // NOTE: For more clarification about edge cases, check commented code above
+    return;
+  }
+
+  typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+  // If task_data contains useful information, then parallel data at level 0 must be available
+  // This code is for debug purposes only
+  if (!inner) {
+    msg_deferred_resolution_breakpoint("Task data available, but parallel data isn't");
+    return;
+  }
+
+  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *top_reg = top->notification->region_data;
+  if (top_reg->depth > inner->depth) {
+    // Region at the top of the stack (top_reg) is deeper than
+    // the region provided by the runtime (inner).
+    // That means that top_reg is probably finished, but corresponding
+    // end callback (implicit_task_end/parallel_end) has not been called yet.
+    // This means that thread should avoid registering for the top_reg's call path
+    // (and potentially all regions which depths are greater than inner->depth)
+    vi3_last_to_register = inner->depth;
   }
 
   // Mark that thread took sample in regions presented on the stack, eventually
