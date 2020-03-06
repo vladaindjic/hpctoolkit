@@ -641,6 +641,62 @@ thread_take_sample
 }
 
 
+bool
+least_common_ancestor
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  int *level_ptr = (int *) arg;
+  int level = *level_ptr;
+
+  typed_stack_elem(region) *runtime_reg = hpcrun_ompt_get_region_data(level);
+  typed_stack_elem(region) *stack_reg = el->notification->region_data;
+
+  if (!runtime_reg) {
+    // FIXME vi3 >>> debug this case
+    goto return_label;
+  }
+
+  if (stack_reg->depth > runtime_reg->depth) {
+    // stack_reg is probably not active, so skip it
+    return 0;
+  } else if (stack_reg->depth < runtime_reg->depth) {
+    // there are fewer regions on the stack than in runtime
+    // try to find corresponding
+    level = runtime_reg->depth - stack_reg->depth;
+    runtime_reg = hpcrun_ompt_get_region_data(level);
+  }
+
+  if (!runtime_reg) {
+    goto return_label;
+  }
+
+  // NOTE: debugging only
+  if (stack_reg->depth != runtime_reg->depth) {
+    msg_deferred_resolution_breakpoint("Depths of stack_reg and runtime_reg are different\n");
+  }
+
+  // NOTE: debugging only
+  if (stack_reg != runtime_reg) {
+    msg_deferred_resolution_breakpoint("Stack_reg and runtime_reg are different\n");
+  }
+
+  // thread has already taken sample inside this region
+  if (el->notification->unresolved_cct) {
+    // least common ancestor is found
+    return 1;
+  }
+
+  return_label:
+  // continue processing outer regions that are present on stack
+  *level_ptr = level + 1;
+
+  return 0;
+}
+
+
 void
 register_to_all_regions
 (
@@ -775,10 +831,29 @@ register_to_all_regions
 
   // Mark that thread took sample in regions presented on the stack, eventually
   // avoid regions which depths are greater that vi3_last_to_register.
-  // Always start processing from the outermost region.
-  // Initial parent_cct is thread_root
+  // Initial idea was to process all regions present on the stack.
+  // To save some time, it is possible to find the region in which thread
+  // has already taken sample and process only nested regions.
+  // In order to find that region, apply least_common_ancestor function
+  // on each region present on the stack
+
+  int level = 0;
+  typed_random_access_stack_elem(region) *lca = typed_random_access_stack_forall(region)
+      (region_stack, least_common_ancestor, &level);
+  // If aforementioned region (least common ancestor, lca_reg shorter) exists,
+  // then use its corresponding unresolved cct node
+  // as parent_cct and process regions which depths are >= lca->depth + 1.
+  // Otherwise, process all regions present on the stack and use
+  // thread_root as initial parent_cct.
+
+  int start_from = 0;
   cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
-  typed_random_access_stack_reverse_iterate_from(region)(0, region_stack, thread_take_sample, &parent_cct);
+  if (lca) {
+    typed_stack_elem(region) *lca_reg = lca->notification->region_data;
+    start_from = lca_reg->depth + 1;
+    parent_cct = lca->notification->unresolved_cct;
+  }
+  typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
 }
 
 

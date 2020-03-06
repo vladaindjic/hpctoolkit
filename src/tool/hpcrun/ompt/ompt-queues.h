@@ -681,16 +681,18 @@ mpsc_channel_steal
         sizeof(typed_random_access_stack_elem(type))); \
   }) \
 \
- void \
+ typed_random_access_stack_elem(type) * \
  typed_random_access_stack_forall(type) \
  (typed_random_access_stack_ptr(type) stack, \
      bool (*fn)(typed_random_access_stack_elem(type) *, void *), void *arg) \
   macro({ \
-    random_access_stack_op(forall)( \
-                                    (random_access_stack_t *) stack, \
-                                    (random_access_stack_forall_fn_t) fn, \
-                                    arg, \
-                                    sizeof(typed_random_access_stack_elem(type)));	\
+    typed_random_access_stack_elem(type) *e = (typed_random_access_stack_elem(type) *) \
+                                    random_access_stack_op(forall)( \
+                                      (random_access_stack_t *) stack, \
+                                      (random_access_stack_forall_fn_t) fn, \
+                                      arg, \
+                                      sizeof(typed_random_access_stack_elem(type)));	\
+    return e; \
   }) \
 \
  void \
@@ -786,9 +788,12 @@ random_access_stack_top_index_set
   size_t element_size
 );
 
-// iterate over each element e in the stack, call fn(e, arg)
-// and eventully break if return value of fn is different than zero
-void
+// Iterates over each element e present on the stack, calls fn(e, arg)
+// and eventually stops iteration if found element for which
+// call off n(e, args) returns true.
+// In that case, random_access_stack_forall returns e,
+// otherwise, returns NULL.
+void *
 random_access_stack_forall
 (
   random_access_stack_t *stack,

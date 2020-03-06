@@ -542,7 +542,7 @@ random_access_stack_top_index_set
   stack->current = stack->array + top_index * element_size;
 }
 
-void
+void *
 random_access_stack_forall
 (
   random_access_stack_t *stack,
@@ -556,8 +556,9 @@ random_access_stack_forall
   for (e = stack->current; e >= stack->array; e -= element_size) {
     end = fn(e, arg);
     if (end)
-      break;
+      return e;
   }
+  return NULL;
 #if 0
   // It is possile to use function below with this parameters
   int start_index = (stack->current - stack->array) / element_size
