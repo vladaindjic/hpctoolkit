@@ -83,6 +83,7 @@ __thread bool vi3_forced_diff = false;
 __thread int vi3_last_to_register = -1;
 __thread bool vi3_idle_collapsed = false;
 
+__thread cct_node_t *idle_root;
 //******************************************************************************
 // private variables 
 //******************************************************************************

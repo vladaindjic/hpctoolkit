@@ -628,11 +628,9 @@ thread_take_sample
 
     // If region is marked as last to register (see function register_to_all_regions),
     // then stop processing regions here.
-    if (vi3_forced_diff) {
-      if (el->notification->region_data->depth >= vi3_last_to_register) {
-        // Indication that processing of active regions should stop.
-        return 1;
-      }
+    if (el->notification->region_data->depth >= vi3_last_to_register) {
+      // Indication that processing of active regions should stop.
+      return 1;
     }
 
     // Indication that processing of active regions should continue
@@ -816,7 +814,8 @@ register_to_all_regions
     msg_deferred_resolution_breakpoint("Task data available, but parallel data isn't");
     return;
   }
-
+  vi3_last_to_register =
+    typed_random_access_stack_top_index_get(region)(region_stack);
   typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
   typed_stack_elem(region) *top_reg = top->notification->region_data;
   if (top_reg->depth > inner->depth) {
@@ -854,6 +853,13 @@ register_to_all_regions
     parent_cct = lca->notification->unresolved_cct;
   }
   typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
+
+  typed_random_access_stack_elem(region) *idle_owner_el =
+    typed_random_access_stack_get(region)(region_stack, vi3_last_to_register);
+  cct_node_t *idle_owner_cct = idle_owner_el->notification->unresolved_cct;
+  typed_stack_elem(region) *idle_owner_reg =
+    idle_owner_el->notification->region_data;
+  resolve_idle_samples(idle_owner_cct, idle_owner_reg);
 }
 
 
@@ -932,6 +938,55 @@ try_resolve_one_region_context
   }
 
   return 1;
+}
+
+void
+resolve_idle_samples
+(
+  cct_node_t *cct_parent,
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  // check if there were idle samples
+  cct_node_t *cct_unr_idle = hpcrun_cct_find_addr(idle_root,
+    &ADDR2(IDLE_UNRESOLVED, region_data->region_id));
+  if (cct_unr_idle) {
+#if 0
+    if (cct_parent != hpcrun_get_thread_epoch()->csdata.thread_root) {
+      printf("Idle attribute to region. \n");
+    }
+#endif
+    // merge samples to cct_parent
+    hpcrun_cct_merge(cct_parent, cct_unr_idle, merge_metrics, NULL);
+    // remove cct_unr_idle placeholder (indication that idle samples
+    // are attributed/resolved properly)
+    hpcrun_cct_delete_self(cct_unr_idle);
+  }
+}
+
+void
+attribute_idle_samples_to_program_root
+(
+  void
+)
+{
+  // maybe thread is executing sequential code
+  if (typed_random_access_stack_empty(region)(region_stack)) {
+    return;
+  }
+
+  typed_random_access_stack_elem(region) *top =
+    typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *top_reg = NULL;
+  if (top && top->notification && top->notification->region_data) {
+    top_reg = top->notification->region_data;
+    // attribute idle samples (which corresponds to top_reg) to program_root
+    resolve_idle_samples(hpcrun_get_thread_epoch()->csdata.thread_root,
+                         top_reg);
+  } else {
+    // FIXME vi3 >>> debug if this happens;
+  }
+
 }
 
 
@@ -1032,6 +1087,12 @@ ompt_resolve_region_contexts
     printf("thread_finalize >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil,THREAD_NUM: %d\n", &region_stack, thread_num);
   }
 #endif
+  // try to attribute remaining idle samples to program_root
+  if (!typed_random_access_stack_empty(region)(region_stack)) {
+    attribute_idle_samples_to_program_root();
+  } else {
+    // FIXME vi3 >>> debug if this can happen
+  }
 
   // attempt to resolve all remaining regions
   for(;;i++) {

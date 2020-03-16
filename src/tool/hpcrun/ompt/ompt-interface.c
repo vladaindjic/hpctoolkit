@@ -69,6 +69,7 @@
 #include <hpcrun/sample-sources/blame-shift/undirected.h>
 #include <hpcrun/sample-sources/sample-filters.h>
 #include <hpcrun/thread_data.h>
+#include <tool/hpcrun/unresolved.h>
 
 #include "ompt-callstack.h"
 #include "ompt-defer.h"
@@ -394,6 +395,9 @@ ompt_thread_begin
   // initialize random access stack of active parallel regions
   region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
   unresolved_cnt = 0;
+  // create cct node which is used as a placeholder for idle samples
+  // FIXME vi3 >>> maybe do this only if !ompt_eager_context_p
+  idle_root = hpcrun_cct_top_new(IDLE_UNRESOLVED_ROOT, 0);
 }
 
 

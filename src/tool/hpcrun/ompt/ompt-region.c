@@ -182,6 +182,8 @@ ompt_parallel_end_internal
 
   if (!ompt_eager_context_p()){
 
+    attribute_idle_samples_to_program_root();
+
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem(region) *top_reg = region_data;
     if (top) {
@@ -386,6 +388,7 @@ ompt_implicit_task_internal_begin
 #endif
 }
 
+#include "ompt-defer.h"
 
 static void
 ompt_implicit_task_internal_end
@@ -425,6 +428,7 @@ ompt_implicit_task_internal_end
         //resolve_one_region_context_vi3(top->notification);
       }
 #endif
+      attribute_idle_samples_to_program_root();
       // Pop region from the stack, if thread is not the master of this region.
       // Master thread will pop in ompt_parallel_end callback
       typed_random_access_stack_pop(region)(region_stack);

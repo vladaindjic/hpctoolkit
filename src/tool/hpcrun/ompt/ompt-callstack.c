@@ -1130,6 +1130,26 @@ check_inner_unavailable
 #endif
 
 cct_node_t *
+process_idle_sample
+(
+  cct_node_t *cct_cursor
+)
+{
+  if (typed_random_access_stack_empty(region)(region_stack)) {
+    // thread is not executing parallel code
+    // FIXME debug this to check if not initial master thread can finish here
+    return cct_cursor;
+  }
+
+  typed_random_access_stack_elem(region) *top =
+    typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *top_reg = top->notification->region_data;
+  // insert placeholder for idle samples which may belong to top_reg
+  return hpcrun_cct_insert_addr(idle_root,
+    &ADDR2(IDLE_UNRESOLVED, top_reg->region_id));
+}
+
+cct_node_t *
 ompt_cct_cursor_finalize
 (
  cct_bundle_t *cct, 
@@ -1246,6 +1266,10 @@ ompt_cct_cursor_finalize
   } else if (info_type == 1) {
     return check_and_return_non_null(typed_random_access_stack_get(region)(
         region_stack, region_depth)->notification->unresolved_cct, cct_cursor, 901);
+  } else {
+    // lets assume that thread is idle-ing
+    if (!ompt_eager_context_p())
+      return process_idle_sample(cct_cursor);
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);

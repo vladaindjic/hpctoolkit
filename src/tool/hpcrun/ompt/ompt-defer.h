@@ -201,6 +201,19 @@ msg_deferred_resolution_breakpoint
   char *msg
 );
 
+void
+resolve_idle_samples
+(
+  cct_node_t *cct_parent,
+  typed_stack_elem_ptr(region) region_data
+);
+
+void
+attribute_idle_samples_to_program_root
+(
+  void
+);
+
 #define VI3_DEBUG 0
 
 // vi3: used to memoize the call path that corresponds to the

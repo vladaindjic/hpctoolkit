@@ -2,6 +2,8 @@
 #define UNRESOLVED_H
 #define UNRESOLVED_ROOT -50
 #define UNRESOLVED -100
+#define IDLE_UNRESOLVED_ROOT -150
+#define IDLE_UNRESOLVED -200
 
 #include <hpcrun/thread_data.h>
 #include <cct/cct_bundle.h>
