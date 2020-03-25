@@ -926,6 +926,12 @@ register_to_all_regions
                                                          region_stack,
                                                          thread_take_sample,
                                                          &parent_cct);
+  // NOTE vi3 >>> I put this function call inside ompt_cct_cursor_finalize function
+  //   since I'm still not sure why/how thread_data can change its value while
+  //   our tool is in the middle of sample processing.
+      // If any idle samples have been previously taken inside this region,
+      // attribute them to it.
+      // attr_idleness2region_at(vi3_last_to_register);
 }
 
 
@@ -1004,6 +1010,78 @@ try_resolve_one_region_context
   }
 
   return 1;
+}
+
+bool
+any_idle_samples_remained
+(
+  void
+)
+{
+  return local_idle_placeholder != NULL;
+}
+
+
+void
+attr_idleness2_cct_node
+(
+  cct_node_t *cct_node
+)
+{
+#if 1
+  if (!cct_node) {
+    printf("<<<ompt-defer.c:1027>>> Missing cct_node\n");
+    return;
+  }
+
+  // merge children of local_idle_placeholder to cct_node
+  hpcrun_cct_merge(cct_node, local_idle_placeholder, merge_metrics, NULL);
+  // Remove and invalidate local_idle_placeholder as indication that idle samples
+  // have been attributed to the proper position.
+  hpcrun_cct_delete_self(local_idle_placeholder);
+  local_idle_placeholder = NULL;
+#endif
+}
+
+
+void
+attr_idleness2outermost_ctx
+(
+  void
+)
+{
+  // This check may be put inside attr_idleness2_cct_node,
+  // but if it returns false, we may lose cycles to get thread_root.
+  // There are ome idle samples which should be attributed
+  // to the outermost context (thread_root).
+  if (any_idle_samples_remained()) {
+    attr_idleness2_cct_node(hpcrun_get_thread_epoch()->csdata.thread_root);
+  }
+}
+
+
+void
+attr_idleness2region_at
+(
+  int depth
+)
+{
+  // This check may be put inside attr_idleness2_cct_node,
+  // but if it returns false, we may lose cycles to get
+  // region on the stack at "depth".
+  // There are some idle samples which should be attributed
+  // to region on the stack at "depth".
+  if (any_idle_samples_remained()) {
+    // NOTE vi3: Happened in nestedtasks.c.
+    // FIXME move boiler plate code to separate function
+    typed_random_access_stack_elem(region) *el =
+        typed_random_access_stack_get(region)(region_stack, depth);
+    if (el && el->notification && el->notification->unresolved_cct) {
+      attr_idleness2_cct_node(el->notification->unresolved_cct);
+    } else {
+      printf("<<<ompt-defer.c:1074>>>Some information is missing.\n");
+    }
+  }
 }
 
 
@@ -1086,6 +1164,10 @@ ompt_resolve_region_contexts
  int is_process
 )
 {
+  // If any idle samples remained from the previous parallel region,
+  // attribute them to the outermost context
+  attr_idleness2outermost_ctx();
+
   struct timespec start_time;
 
   size_t i = 0;

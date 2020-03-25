@@ -97,6 +97,8 @@ extern __thread bool vi3_forced_null;
 extern __thread bool vi3_forced_diff;
 extern __thread int vi3_last_to_register;
 extern __thread bool vi3_idle_collapsed;
+// place where all idle samples will be put before resolving
+extern __thread cct_node_t *local_idle_placeholder;
 //******************************************************************************
 // interface operations 
 //******************************************************************************

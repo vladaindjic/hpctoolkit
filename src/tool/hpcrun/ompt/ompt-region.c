@@ -381,6 +381,9 @@ ompt_implicit_task_internal_begin
     // mark that thread has finished waiting on the last implicit barrier
     // of the previous region
     waiting_on_last_implicit_barrier = false;
+    // If any idle samples remained from the previous parallel region,
+    // attribute them to the outermost context
+    attr_idleness2outermost_ctx();
   }
 
 #if VI3_DEBUG == 1

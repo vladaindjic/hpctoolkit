@@ -1479,8 +1479,7 @@ plug_and_play
 cct_node_t *
 handle_idle_sample
 (
-    cct_bundle_t *cct,
-    cct_node_t *cct_cursor
+  cct_node_t *cct_cursor
 )
 {
   if (typed_random_access_stack_empty(region)(region_stack)) {
@@ -1489,7 +1488,12 @@ handle_idle_sample
     return cct_cursor;
   }
 
-  return cct->partial_unw_root;
+  if (!local_idle_placeholder) {
+    // create placeholder if needed
+    local_idle_placeholder = hpcrun_cct_top_new(UNRESOLVED, 0);
+  }
+  // return local idle placeholder
+  return local_idle_placeholder;
 }
 
 
@@ -1760,6 +1764,14 @@ ompt_cct_cursor_finalize
       //check_top_reg_and_inner("ompt-callstack.c:1286");
     }
 #endif
+    // just debug
+    if (vi3_last_to_register != region_depth) {
+      printf("<<<ompt-callstack.c:1769>>> vi3_last_to_register: %d, region_dept: %d\n",
+             vi3_last_to_register, region_depth);
+    }
+    // If any idle samples have been previously taken inside this region,
+    // attribute them to it.
+    attr_idleness2region_at(vi3_last_to_register);
     return check_and_return_non_null(typed_random_access_stack_get(region)(
         region_stack, region_depth)->notification->unresolved_cct, cct_cursor, 901);
   } else {
@@ -1891,6 +1903,14 @@ ompt_cct_cursor_finalize
       // FIXME vi3 >>> It is possible that thread_data change value
       //  while sample is being process by the tool?
       register_to_all_regions();
+
+      // just debug
+      int top_index = typed_random_access_stack_top_index_get(region)(region_stack);
+      if (vi3_last_to_register != top_index){
+        printf("<<<ompt-callstac.c:1907>>> vi3_last_to_register: %d, top_index: %d\n",
+            vi3_last_to_register, top_index);
+      }
+
       // Since thread still hasn't reached the last implicit barrier,
       // region at the top of the stack (top_reg) is still active,
       // so the sample will be attributed to it's unresolved cct.
@@ -1898,12 +1918,15 @@ ompt_cct_cursor_finalize
       typed_random_access_stack_elem(region) *top =
           typed_random_access_stack_top(region)(region_stack);
       if (top && top->notification && top->notification->unresolved_cct) {
+        // If any idle samples have been previously taken inside this region,
+        // attribute them to it.
+        attr_idleness2region_at(vi3_last_to_register);
         return check_and_return_non_null(
             hpcrun_cct_insert_path_return_leaf(
                 top->notification->unresolved_cct, omp_task_context),
-            cct_cursor, 1881);
+            cct_cursor, 1921);
       } else {
-        printf("<<<ompt-callstack.c:1886>>> This should never happen. Top_reg must be present. %dn",
+        printf("<<<ompt-callstack.c:1923>>> This should never happen. Top_reg must be present. %dn",
             vi3_last_to_register);
       }
     }
@@ -1913,7 +1936,7 @@ ompt_cct_cursor_finalize
     // that any of the region present on the is still active.
     // This sample can be consider as idle or runtime overhead and
     // put either to thread local placeholder or to the outermost context.
-    return check_and_return_non_null(handle_idle_sample(cct, cct_cursor),
+    return check_and_return_non_null(handle_idle_sample(cct_cursor),
         cct_cursor, 1912);
   }
 

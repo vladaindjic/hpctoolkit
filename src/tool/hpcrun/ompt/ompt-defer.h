@@ -201,6 +201,18 @@ msg_deferred_resolution_breakpoint
   char *msg
 );
 
+void
+attr_idleness2outermost_ctx
+(
+  void
+);
+
+void
+attr_idleness2region_at
+(
+  int depth
+);
+
 #define VI3_DEBUG 0
 
 // vi3: used to memoize the call path that corresponds to the
