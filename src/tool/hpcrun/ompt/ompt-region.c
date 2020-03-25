@@ -378,6 +378,9 @@ ompt_implicit_task_internal_begin
     add_region_and_ancestors_to_stack(region_data, index==0);
     task_data_set_depth(task_data,
         typed_random_access_stack_top_index_get(region)(region_stack));
+    // mark that thread has finished waiting on the last implicit barrier
+    // of the previous region
+    waiting_on_last_implicit_barrier = false;
   }
 
 #if VI3_DEBUG == 1
@@ -396,8 +399,6 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
-
-  waiting_on_last_implicit_barrier = false;
 
   if (!ompt_eager_context_p()) {
 #if VI3_DEBUG == 1
@@ -564,9 +565,8 @@ ompt_sync
   // mark that thread is (not) waiting om last implicit barrier
   // at the end of the innermost parallel region
   if (kind == ompt_sync_region_barrier_implicit_last) {
+    // thread starts waiting on the last implicit barrier
     if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
-    //else if (endpoint == ompt_scope_end) waiting_on_last_implicit_barrier = false;
-    //else assert(0);
   }
 }
 

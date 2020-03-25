@@ -76,7 +76,10 @@ __thread typed_stack_elem_ptr(region) ending_region = NULL;
 __thread int depth_last_sample_taken = -1;
 __thread uint64_t region_id_last_sample_taken = 0;
 
-__thread bool waiting_on_last_implicit_barrier = false;
+// maybe this variable should be renamed
+// The idea is to mark that thread does nothing
+// until it reaches begin of the parallel region (implicit_task_begin callback)
+__thread bool waiting_on_last_implicit_barrier = true;
 __thread bool innermost_parallel_data_avail = false;
 __thread bool vi3_forced_null = false;
 __thread bool vi3_forced_diff = false;

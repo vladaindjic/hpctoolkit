@@ -1127,7 +1127,371 @@ check_inner_unavailable
     }
   }
 }
+
+typedef void (*handle_exception_fn)(void);
+
+void
+thread_should_create_new_region
+(
+  void
+)
+{
+  // what happens with parallel_data and stack
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = top->notification->region_data;
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+#if 0
+  if (!(top_reg->depth != region_depth || top_reg->depth >= inner->depth || info_type != 1)) {
+    printf("As expected :)\n");
+  }
 #endif
+
+  if (top_reg->depth != region_depth || top_reg->depth >= inner->depth || info_type != 1) {
+    printf(":( :( :( Thread should be creating new region, "
+           "so thread_data should contain top_reg->depth, "
+           "and top_reg->depth < inner->depth\n");
+  }
+
+}
+
+
+void
+check_top_reg_and_inner
+(
+  char *called_from,
+  handle_exception_fn fn
+)
+{
+  // what happens with parallel_data and stack
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = NULL;
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+
+  if (top && top->notification) {
+    top_reg = top->notification->region_data;
+    if (top_reg != inner) {
+      printf("<<< %s >>> Top region is not equal to innermost region, info_type: %d\n",
+             called_from, info_type);
+      // further processing
+      if (fn) fn();
+    }
+  } else {
+    printf("<<< %s >>> Top region is missing\n", called_from);
+  }
+}
+
+void
+regions_should_be_actvie
+(
+  void
+)
+{
+  // what happens with parallel_data and stack
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = NULL;
+
+  int old_top_reg = 3333;
+  int old_inner = 3333;
+
+  if (top && top->notification) {
+    top_reg = top->notification->region_data;
+    old_top_reg = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  }
+
+  if (inner) {
+    old_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  }
+
+  if (old_top_reg != 0) {
+    printf("regions_should_be_active >>> top_reg is not active: %d\n", old_top_reg);
+  }
+
+  if (old_inner != 0) {
+    printf("regions_should_be_active >>> inner is not active: %d\n", old_inner);
+  }
+
+  check_top_reg_and_inner("ompt-callstack.c:1224 (regions_should_be_active)", NULL);
+
+}
+
+
+void
+check_what_thread_data_contains
+(
+  char *called_from,
+  handle_exception_fn contains_region_depth_fn,
+  handle_exception_fn contains_null_fn
+)
+{
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  if (info_type == 1) {
+    if (contains_region_depth_fn)
+      contains_region_depth_fn();
+  } else if (info_type == 2){
+    if (contains_null_fn)
+      contains_null_fn();
+  } else {
+    printf("This should not happen: info_type: %d, region_depth: %d, omp_task_context: %p\n",
+        info_type, region_depth, omp_task_context);
+  }
+
+}
+
+
+void
+are_top_reg_and_inner_actve
+(
+  void
+)
+{
+  // what happens with parallel_data and stack
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = NULL;
+
+  if (top && top->notification) {
+    top_reg = top->notification->region_data;
+    if (top_reg) {
+      int old_top_reg = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+      if (old_top_reg < 0) {
+        printf("TOP REGION IS NOT ACTIVE: %d\n", old_top_reg);
+      } else {
+//        printf("t: %d\n", old_top_reg);
+      }
+    } else {
+      printf("TOP_REG MISSING: ompt-defer.c:820\n");
+    }
+  } else {
+    printf("TOP_REG MISSING: ompt-defer.c:823\n");
+  }
+
+  if (inner) {
+    int old_inner = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+    if (old_inner < 0) {
+      printf("INNER IS NOT ACTIVE: %d\n", old_inner);
+    } else {
+//      printf("i: %d\n", old_inner);
+    }
+  } else {
+    printf("INNER MISSING: ompt-defer.c:832\n");
+  }
+}
+
+void
+waiting_on_barrier_thread_data_contains_sth
+(
+  void
+)
+{
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = NULL;
+
+  int old_top_reg = 3333;
+  int old_inner = 3333;
+
+  if (top && top->notification) {
+    top_reg = top->notification->region_data;
+    old_top_reg = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  }
+
+  if (inner) {
+    old_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  }
+
+  if (old_top_reg != 0) {
+    printf("regions_should_be_active >>> top_reg is not active: %d\n", old_top_reg);
+  }
+
+  if (old_inner != 0) {
+    printf("regions_should_be_active >>> inner is not active: %d\n", old_inner);
+  }
+
+  // =======================
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+  typed_random_access_stack_elem(region) *el =
+      typed_random_access_stack_get(region)(region_stack, region_depth);
+  typed_stack_elem(region) *reg = NULL;
+  if (el && el->notification) {
+    reg = el->notification->region_data;
+  }
+
+  if (!reg) {
+    printf("ompt-callstack.c:1349 >>> Something is wrong");
+    return;
+  }
+
+  int old = atomic_fetch_add(&reg->barrier_cnt, 0);
+  if (old != 0) {
+    printf("ompt-callstack.c:1355 >>> Region at depth: %d is not active: %d\n", region_depth, old);
+  }
+
+  if (vi3_idle_collapsed) {
+    printf("ompt-callstack.c:1359 >>> Thread should not being idling: %d\n", vi3_idle_collapsed);
+  }
+
+
+  if (top_reg->depth > region_depth) {
+    //printf("greater: tr: %d, r:%d\n", top_reg->depth, region_depth);
+    if (top_reg != inner) {
+      //printf("this can happen too: tr: %d, r:%d, i:%d\n", top_reg->depth, region_depth, inner->depth);
+      if (reg != inner) {
+        printf("Problem\n");
+      }
+    }
+  } else if (top_reg->depth == region_depth) {
+    //printf("equal: tr: %d, r:%d\n", top_reg->depth, region_depth);
+    if (top_reg != inner) {
+      //printf("this can happen too: tr: %d, r:%d, i:%d\n", top_reg->depth, region_depth, inner->depth);
+      if (inner->depth <= top_reg->depth) {
+        printf("Cannot happen\n");
+      }
+      if (reg != top_reg) {
+        printf("Problem\n");
+      }
+    } else {
+      //printf("regular\n");
+    }
+  } else {
+    printf("less: tr: %d, r:%d\n", top_reg->depth, region_depth);
+  }
+
+
+}
+
+
+void
+waiting_on_barrier_thread_data_contains_null
+(
+  void
+)
+{
+  typed_random_access_stack_elem(region) *top =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *inner =
+      hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *top_reg = NULL;
+
+  int old_top_reg = 3333;
+  int old_inner = 3333;
+
+  if (top && top->notification) {
+    top_reg = top->notification->region_data;
+    old_top_reg = atomic_fetch_add(&top_reg->barrier_cnt, 0);
+  }
+
+  if (inner) {
+    old_inner = atomic_fetch_add(&inner->barrier_cnt, 0);
+  }
+
+  if (old_top_reg != 0) {
+    //printf("regions_should_be_active >>> top_reg is not active: %d\n", old_top_reg);
+  } else {
+    //printf("top_reg active\n");
+  }
+
+  if (old_inner != 0) {
+    //printf("regions_should_be_active >>> inner is not active: %d\n", old_inner);
+  } else {
+    //printf("inner active\n");
+  }
+
+  ompt_state_t state = check_state();
+
+  if (!vi3_idle_collapsed) {
+    // statse = 0x1, 0x13, 0x101
+    //printf("Not idling: %d, state: %x\n", vi3_idle_collapsed, state);
+  }
+
+  if (old_top_reg == 0 && old_inner == 0) {
+    if (top_reg != inner) {
+      //printf("top_reg != inner. state: %x\n", state);
+      if (!vi3_idle_collapsed) {
+        printf("How to handle this??? %d\n", vi3_idle_collapsed);
+      }
+    }
+    //printf("both active, idling: %d\n", vi3_idle_collapsed);
+  }
+
+  if (top_reg == inner) {
+    //printf("equal: %d, %d\n", old_top_reg, old_inner);
+  }
+
+
+}
+
+
+void
+plug_and_play
+(
+  void
+)
+{
+  if (!waiting_on_last_implicit_barrier) {
+    // If top_reg != inner => thread is creating new region
+    //    thread_data contains top_reg->depth
+    //    top_reg->depth < inner->depth
+    //check_top_reg_and_inner("ompt-defer.c:727", thread_should_create_new_region);
+
+    // thread_data contains NULL
+    // a) immediately after implicit_task_end
+    // b) just before last implicit barrier
+    check_what_thread_data_contains("ompt-defer.c:791", NULL, regions_should_be_actvie);
+
+    // check if regions are active (they should be)
+    //are_top_reg_and_inner_actve();
+  } else {
+    //printf("Waiting\n");
+    check_what_thread_data_contains("ompt-callstac.c:1323",
+        waiting_on_barrier_thread_data_contains_sth,
+        waiting_on_barrier_thread_data_contains_null);
+  }
+}
+#endif
+
+cct_node_t *
+handle_idle_sample
+(
+    cct_bundle_t *cct,
+    cct_node_t *cct_cursor
+)
+{
+  if (typed_random_access_stack_empty(region)(region_stack)) {
+    // No regions are present on the stack
+    // It can be assumed that thread is executing the sequential code.
+    return cct_cursor;
+  }
+
+  return cct->partial_unw_root;
+}
+
 
 cct_node_t *
 ompt_cct_cursor_finalize
@@ -1162,6 +1526,8 @@ ompt_cct_cursor_finalize
 
 #if 0
   // NOTE vi3: code that contains a lot of useful debug information about edge cases
+
+  plug_and_play();
 
   if (!ompt_eager_context_p()) {
 
@@ -1244,8 +1610,311 @@ ompt_cct_cursor_finalize
 #endif
     return check_and_return_non_null(hpcrun_cct_insert_path_return_leaf(root, omp_task_context), cct_cursor, 919);
   } else if (info_type == 1) {
+#if 0
+    if (waiting_on_last_implicit_barrier) {
+      ompt_state_t state = check_state();
+      //printf("State is: %x\n", state);
+      typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+      typed_stack_elem(region) *top_reg = NULL;
+      typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+      if (top && top->notification) {
+        top_reg = top->notification->region_data;
+        if (top_reg != inner) {
+
+          if (top_reg->depth > inner->depth) {
+            // region_depth == inner->depth && top->master (condition should be true)
+            if (inner->depth != region_depth || !top->team_master) {
+              printf("<ompt-callstack.c:1282> Unexpected.\n");
+            }
+
+            // NOTE vi3: master of top_reg is finishing top_reg
+
+            // case 1:
+            // __kmp_get_global_thread_id
+            // __ompt_get_task_info_object
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // ...
+
+            // case 2:
+            // __kmp_release_ticket_lock
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // ...
+
+            // case 3:
+            // pthread_getspecific
+            // hpcrun_get_thread_specific
+            // hpcrun_safe_enter
+            // ompt_parallel_end
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // ...
+
+            // case 4:
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // ...
+
+
+          } else if (top_reg->depth < inner->depth) {
+            // top_reg->depth == region_depth
+
+            if (top_reg->depth != region_depth) {
+              printf("<ompt-callstack.c:1317> Unexpected");
+            }
+
+            // NOTE vi3: thread is creating new region
+
+            if (top->team_master) {
+              // NOTE vi3: master thread is creating new parallel region
+
+              // case 1:
+              // __memset_sse2
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+              // case 2:
+              // __kmp_release_ticket_lock
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+              // case 3:
+              // __kmp_get_global_thread_id
+              // __ompt_get_team_info
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+
+            } else {
+
+              // NOTE vi3: worker thread is creating new parallel region
+
+              // case 1:
+              // __memset_sse2
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+              // case 2:
+              // pthread_mutex_lock
+              // __kmp_lock_suspend_mx
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+              // case 3:
+              // __kmp_init_implicit_task
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+              // case 4:
+              // __memset_sse2
+              // __kmp_initialize_info
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // ...
+
+            }
+
+          } else {
+            // this never happen
+            printf("<ompt-callstack.c:1390> Unexpected... top_reg: %d, reg: %d, inner: %d, master: %d\n",
+                   top_reg->depth, region_depth, inner->depth, top->team_master);
+          }
+
+        } else {
+
+          // case 1:
+          // __kmp_wait_4_ptr
+          // __kmp_acquire_ticket_lock
+          // __kmp_join_call
+          // __kmp_api_GOMP_parallel_40_alias
+
+          // case 2:
+          // sched_yield
+          // __kmp_wait_4_ptr
+          // __kmp_acquire_ticket_lock
+          // __kmp_join_call
+          // __kmp_api_GOMP_parallel_40_alias
+
+
+        }
+      } else {
+        printf("<ompt-callstack.c:1398> >>> Top reg is missing\n");
+      }
+      //check_top_reg_and_inner("ompt-callstack.c:1286");
+    }
+#endif
     return check_and_return_non_null(typed_random_access_stack_get(region)(
         region_stack, region_depth)->notification->unresolved_cct, cct_cursor, 901);
+  } else {
+#if 0
+    if (!ompt_eager_context_p()) {
+      if (!waiting_on_last_implicit_barrier) {
+        // region should be still active at this point
+        check_top_reg_and_inner("ompt-callstack.c:1294", NULL);
+        // check if there is some other state then ones previously found
+        ompt_state_t state = check_state();
+        if (state != ompt_state_overhead && state != ompt_state_work_parallel) {
+          printf("Unexpected state: %x\n", state);
+        }
+#if 0
+        if (vi3_idle_collapsed) {
+          //printf("Idling: %d, %d\n", vi3_idle_collapsed, state);
+          if (state == ompt_state_overhead) {
+            // case 1:
+            // __kmp_join_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 2:
+            // __tls_get_addr
+            // ompt_sync (scope = begin)
+            // __kmp_join_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 3:
+            // ompt_sync (scope = uknown)
+            // __kmp_join_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+            check_top_reg_and_inner("ompt-callstack.c:1298");
+          } else if (state == ompt_state_work_parallel) {
+            // case 1:
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+            // case 2:
+            // __kmp_GOMP_microtask_wrapper
+            // __kmp_invoke_microtask
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+            // case 3:
+            // __kmp_GOMP_microtask_wrapper
+            // __kmp_invoke_microtask
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+            // case 4:
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e.__omp_fn.1
+            // __kmp_GOMP_microtask_wrapper
+            // __kmp_invoke_microtask
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+            // case 5:
+            // __kmp_finish_implicit_task
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 6:
+            // __kmp_invoke_microtask
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 7:
+            // __kmp_run_after_invoked_task
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+            // case 8:
+            // __kmp_invoke_microtask
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            check_top_reg_and_inner("ompt-callstack.c:1298");
+          } else {
+            printf("Other state: %d\n", ompt_state_work_parallel);
+          }
+        } else {
+          // state = 257 = 0x101   ompt_state_overhead  = 0x101,
+          // stack frame
+          // case 1:
+          // __kmp_run_after_invoked_task
+          // __kmp_invoke_task
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          // case 2:
+          // __kmp_join_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+
+          // case 3:
+          // __kmp_finish_implicit_task
+          // __kmp_invoke_task_func
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          // what happens with parallel_data and stack
+          check_top_reg_and_inner("ompt-callstack.c:1322");
+        }
+#endif
+      }
+
+    }
+#endif
+    if (!waiting_on_last_implicit_barrier) {
+      // FIXME vi3 >>> It is possible that thread_data change value
+      //  while sample is being process by the tool?
+      register_to_all_regions();
+      // Since thread still hasn't reached the last implicit barrier,
+      // region at the top of the stack (top_reg) is still active,
+      // so the sample will be attributed to it's unresolved cct.
+      // TODO FIXME vi3 >> put this boiler plate code in separate function
+      typed_random_access_stack_elem(region) *top =
+          typed_random_access_stack_top(region)(region_stack);
+      if (top && top->notification && top->notification->unresolved_cct) {
+        return check_and_return_non_null(
+            hpcrun_cct_insert_path_return_leaf(
+                top->notification->unresolved_cct, omp_task_context),
+            cct_cursor, 1881);
+      } else {
+        printf("<<<ompt-callstack.c:1886>>> This should never happen. Top_reg must be present. %dn",
+            vi3_last_to_register);
+      }
+    }
+
+    // Thread has reached the last implicit barrier and thread_data
+    // does not contain anything useful, so thread cannot guarantee
+    // that any of the region present on the is still active.
+    // This sample can be consider as idle or runtime overhead and
+    // put either to thread local placeholder or to the outermost context.
+    return check_and_return_non_null(handle_idle_sample(cct, cct_cursor),
+        cct_cursor, 1912);
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);

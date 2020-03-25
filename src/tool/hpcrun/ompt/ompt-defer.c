@@ -623,18 +623,15 @@ thread_take_sample
   notification->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
 
   return_label: {
+    // If region is marked as the last to register (see function register_to_all_regions),
+    // then stop further processing.
+    if (el->notification->region_data->depth >= vi3_last_to_register) {
+      // Indication that processing of active regions should stop.
+      return 1;
+    }
+    // continue processing descendants
     // store new parent_cct node for the inner region
     *parent_cct_ptr = notification->unresolved_cct;
-
-    // If region is marked as last to register (see function register_to_all_regions),
-    // then stop processing regions here.
-    if (vi3_forced_diff) {
-      if (el->notification->region_data->depth >= vi3_last_to_register) {
-        // Indication that processing of active regions should stop.
-        return 1;
-      }
-    }
-
     // Indication that processing of active regions should continue
     return 0;
   };
@@ -703,6 +700,7 @@ register_to_all_regions
   void
 )
 {
+#if 0
   // If there is no regions on the stack, just return.
   // Thread should be executing sequential code.
   bool stack_is_empty = typed_random_access_stack_empty(region)(region_stack);
@@ -819,6 +817,7 @@ register_to_all_regions
 
   typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
   typed_stack_elem(region) *top_reg = top->notification->region_data;
+  vi3_last_to_register = top_reg->depth;
   if (top_reg->depth > inner->depth) {
     // Region at the top of the stack (top_reg) is deeper than
     // the region provided by the runtime (inner).
@@ -854,6 +853,79 @@ register_to_all_regions
     parent_cct = lca->notification->unresolved_cct;
   }
   typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
+#endif
+  // invalidate value
+  vi3_last_to_register = -1;
+  // If there is no regions on the stack, just return.
+  // Thread should be executing sequential code.
+  bool stack_is_empty = typed_random_access_stack_empty(region)(region_stack);
+  if (stack_is_empty)
+    return;
+
+  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *top_reg = top->notification->region_data;
+  // assume that thread will register for all regions present on stack
+  vi3_last_to_register = top_reg->depth;
+
+  // check if thread_data is available and contains any useful information
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  if (info_type == 1) {
+    // thread_data contains depth of the region to which sample should be attributed.
+    // This region will be the last region for which call path thread is going to register.
+    // Eventually, deeper regions will be skipped during registration process.
+    // (NOTE by registration vi3 means "thread registers itself for region's call path")
+    vi3_last_to_register = region_depth;
+  } else if (info_type == 2) {
+    // thread_data contains null
+    if (waiting_on_last_implicit_barrier) {
+      // Thread has reached the last implicit barrier of the innermost region.
+      // It cannot guarantee that innermost region or any of its ancestor
+      // are still active. Safe thing to do is to skip registration process
+      // and attribute the sample to the thread local (idle) placeholder.
+      return;
+    }
+    // Thread still hasn't reached the last implicit barrier,
+    // so the sample will be attributed to region on the top of the stack (top_reg)
+    // Thread is going to register itself for call paths of all regions present on the stack.
+  } else {
+    // This should never happen since !ompt_eager_context_p() is true.
+    assert(0);
+  }
+
+  // Mark that thread took sample in regions presented on the stack, eventually
+  // avoid regions which depths are greater than vi3_last_to_register.
+  // Initial idea was to process all regions present on the stack.
+  // To save some time, it is possible to find the region in which thread
+  // has already taken sample and process only nested regions.
+  // In order to find that region, apply least_common_ancestor function
+  // on each region present on the stack
+
+  int level = 0;
+  typed_random_access_stack_elem(region) *lca =
+      typed_random_access_stack_forall(region)(region_stack,
+                                               least_common_ancestor,
+                                               &level);
+
+  // If aforementioned region (least common ancestor, lca_reg shorter) exists,
+  // then use its corresponding unresolved cct node
+  // as parent_cct and process regions which depths are >= lca->depth + 1.
+  // Otherwise, process all regions present on the stack and use
+  // thread_root as initial parent_cct.
+
+  int start_from = 0;
+  cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  if (lca) {
+    typed_stack_elem(region) *lca_reg = lca->notification->region_data;
+    start_from = lca_reg->depth + 1;
+    parent_cct = lca->notification->unresolved_cct;
+  }
+
+  typed_random_access_stack_reverse_iterate_from(region)(start_from,
+                                                         region_stack,
+                                                         thread_take_sample,
+                                                         &parent_cct);
 }
 
 
