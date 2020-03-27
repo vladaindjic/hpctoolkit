@@ -240,6 +240,20 @@ hpcrun_ompt_get_parent_region_data
 );
 
 
+typed_stack_elem_ptr(region)
+hpcrun_ompt_get_top_region_on_stack
+(
+  void
+);
+
+
+cct_node_t *
+hpcrun_ompt_get_top_unresolved_cct_on_stack
+(
+  void
+);
+
+
 ompt_set_result_t 
 ompt_set_callback_internal
 (

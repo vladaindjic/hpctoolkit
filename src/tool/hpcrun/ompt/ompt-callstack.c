@@ -286,6 +286,9 @@ ompt_elide_runtime_frame(
   int isSync
 )
 {
+  // invalidate omp_task_context of previous sample
+  // FIXME vi3 >>> It should be ok to do this.
+  TD_GET(omp_task_context) = 0;
 
   vi3_idle_collapsed = false;
   nested_regions_before_explicit_task = 0;
@@ -780,12 +783,23 @@ ompt_backtrace_finalize
   uint64_t region_id = TD_GET(region_id);
 
   ompt_elide_runtime_frame(bt, region_id, isSync);
+#if 0
+  // Old code
   // If backtrace is collapsed and if worker thread in team is waiting
   // on explicit barrier, it (worker threads) also needs to register
   // itself for the call path of all active regions.
   bool wait_on_exp_barr = check_state() == ompt_state_wait_barrier_explicit;
   if(!isSync && !ompt_eager_context_p()
              && (!bt->collapsed || wait_on_exp_barr)){
+    register_to_all_regions();
+  }
+#endif
+
+  // FIXME vi3 >>> I think it is ok that thread tries to register itself
+  //  for regions' call paths.
+  //  Note: see  register_to_all_regions and ompt_cct_cursor_finalize functions
+  //    for more information.
+  if(!isSync && !ompt_eager_context_p()) {
     register_to_all_regions();
   }
 }
@@ -1763,12 +1777,12 @@ ompt_cct_cursor_finalize
       }
       //check_top_reg_and_inner("ompt-callstack.c:1286");
     }
-#endif
     // just debug
     if (vi3_last_to_register != region_depth) {
       printf("<<<ompt-callstack.c:1769>>> vi3_last_to_register: %d, region_dept: %d\n",
              vi3_last_to_register, region_depth);
     }
+#endif
     // If any idle samples have been previously taken inside this region,
     // attribute them to it.
     attr_idleness2region_at(vi3_last_to_register);
@@ -1899,45 +1913,26 @@ ompt_cct_cursor_finalize
 
     }
 #endif
-    if (!waiting_on_last_implicit_barrier) {
-      // FIXME vi3 >>> It is possible that thread_data change value
-      //  while sample is being process by the tool?
-      register_to_all_regions();
-
-      // just debug
-      int top_index = typed_random_access_stack_top_index_get(region)(region_stack);
-      if (vi3_last_to_register != top_index){
-        printf("<<<ompt-callstac.c:1907>>> vi3_last_to_register: %d, top_index: %d\n",
-            vi3_last_to_register, top_index);
-      }
-
-      // Since thread still hasn't reached the last implicit barrier,
-      // region at the top of the stack (top_reg) is still active,
-      // so the sample will be attributed to it's unresolved cct.
-      // TODO FIXME vi3 >> put this boiler plate code in separate function
-      typed_random_access_stack_elem(region) *top =
-          typed_random_access_stack_top(region)(region_stack);
-      if (top && top->notification && top->notification->unresolved_cct) {
+    if (!ompt_eager_context_p()) {
+      if (!waiting_on_last_implicit_barrier) {
+        // Since thread still hasn't reached the last implicit barrier,
+        // region at the top of the stack (top_reg) is still active.
         // If any idle samples have been previously taken inside this region,
         // attribute them to it.
         attr_idleness2region_at(vi3_last_to_register);
+        // Attribute sample to unresolved cct that corresponds to the top_reg
         return check_and_return_non_null(
-            hpcrun_cct_insert_path_return_leaf(
-                top->notification->unresolved_cct, omp_task_context),
-            cct_cursor, 1921);
-      } else {
-        printf("<<<ompt-callstack.c:1923>>> This should never happen. Top_reg must be present. %dn",
-            vi3_last_to_register);
+            hpcrun_ompt_get_top_unresolved_cct_on_stack(), cct_cursor, 1926);
       }
-    }
 
-    // Thread has reached the last implicit barrier and thread_data
-    // does not contain anything useful, so thread cannot guarantee
-    // that any of the region present on the is still active.
-    // This sample can be consider as idle or runtime overhead and
-    // put either to thread local placeholder or to the outermost context.
-    return check_and_return_non_null(handle_idle_sample(cct_cursor),
-        cct_cursor, 1912);
+      // Thread has reached the last implicit barrier and thread_data
+      // does not contain anything useful, so thread cannot guarantee
+      // that any of the region present on the is still active.
+      // This sample can be consider as idle or runtime overhead and
+      // put either to thread local placeholder or to the outermost context.
+      return check_and_return_non_null(handle_idle_sample(cct_cursor),
+                                       cct_cursor, 1936);
+    }
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);
