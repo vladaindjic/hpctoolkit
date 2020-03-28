@@ -1009,10 +1009,7 @@ hpcrun_ompt_get_top_region_on_stack
 {
   typed_random_access_stack_elem(region) *top =
       typed_random_access_stack_top(region)(region_stack);
-  if (top && top->notification) {
-    return top->notification->region_data;
-  }
-  return NULL;
+  return top ? top->region_data : NULL;
 }
 
 
@@ -1025,10 +1022,7 @@ hpcrun_ompt_get_top_unresolved_cct_on_stack
   // TODO FIXME vi3 >> put this boiler plate code in separate function
   typed_random_access_stack_elem(region) *top =
       typed_random_access_stack_top(region)(region_stack);
-  if (top && top->notification && top->notification->unresolved_cct) {
-    return top->notification->unresolved_cct;
-  }
-  return NULL;
+  return top ? top->unresolved_cct : NULL;
 }
 
 

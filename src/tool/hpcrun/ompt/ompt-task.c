@@ -97,7 +97,8 @@ ompt_task_begin_internal
 
     hpcrun_metricVal_t zero_metric_incr_metricVal;
     zero_metric_incr_metricVal.i = 0;
-    cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal, 1, 1, NULL).sample_node;
+    cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal,
+        1, 1, NULL).sample_node;
     // store cct_node in task_data
     task_data_set_cct(task_data, cct_node);
   } else {

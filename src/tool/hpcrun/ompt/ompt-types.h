@@ -96,6 +96,7 @@ typedef struct ompt_region_data_s {
   cct_node_t *call_path;
   // depth of the region, starts from zero
   int depth;
+  // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
   // barrier counter which indicates if region is active
@@ -111,11 +112,9 @@ typedef struct ompt_notification_s {
   // used in stack and channel implementation, inherited from s_element_t
   s_element_ptr_t next;
   struct ompt_region_data_s *region_data;
-  // region id
-  uint64_t region_id;
-  struct mpsc_channel_notification_s *notification_channel;
-  // pointer to the cct pseudo node of the region that should be resolve
+  // pseudo cct node which corresponds to the region that should be resolve
   cct_node_t *unresolved_cct;
+  struct mpsc_channel_notification_s *notification_channel;
 } typed_stack_elem(notification);
 
 // declare pointer to previous struct
@@ -174,8 +173,12 @@ typedef struct old_region_s {
 // took sample in the region and also if the
 // thread is the master of that region.
 typedef struct region_stack_el_s {
-  struct ompt_notification_s *notification;
+  // region at depth equal to index on the stack
+  typed_stack_elem_ptr(region) region_data;
+  // placeholder that keeps call paths of samples attributed to region_data
+  cct_node_t *unresolved_cct;
   bool took_sample;
+  // should be safe to remove this
   bool team_master;
   old_region_t *old_region_list;
 } typed_random_access_stack_elem(region);

@@ -185,7 +185,7 @@ ompt_parallel_end_internal
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem(region) *top_reg = region_data;
     if (top) {
-      top_reg = top->notification->region_data;
+      top_reg = top->region_data;
     }
 
 #if VI3_DEBUG == 1
@@ -197,14 +197,18 @@ ompt_parallel_end_internal
   }
 #endif
 
+#if 1
+    // This may indicate that runtime contains bug.
     if (top_reg != region_data) {
       // FIXME vi3 >>> check if this happen when tracing is on.
       // If that is true, then I guess there is bug inside the runtime implementation
       //printf("*** Parallel data contains bad value.\n");
       region_data = top_reg;
     }
+#endif
 
-
+#if 1
+    // Debug only
     // Mark that this region is finished
     int old_value = atomic_fetch_add(&region_data->barrier_cnt, MAX_THREAD_IN_TEAM);
     if (old_value < 0) {
@@ -229,7 +233,7 @@ ompt_parallel_end_internal
         }
       }
     }
-
+#endif
     // check if there is any thread registered that should be notified
     // that region call path is available
     typed_stack_elem_ptr(notification) to_notify =
@@ -239,7 +243,6 @@ ompt_parallel_end_internal
     ending_region = region_data;
 
     typed_random_access_stack_elem(region) *stack_el = typed_random_access_stack_top(region)(region_stack);
-    typed_stack_elem_ptr(notification) notification = stack_el->notification;
 
     // NOTE: These two conditions should be equal:
     // 1. notification->unresolved_cct != NULL
@@ -248,17 +251,17 @@ ompt_parallel_end_internal
     // Region call path is missing.
     // Some thread from the team took a sample in the region.
     if (!region_data->call_path &&
-          (notification->unresolved_cct || to_notify)) {
+          (stack_el->unresolved_cct || to_notify)) {
       // the region has not been provided before, so we will do that now
       region_data->call_path = ompt_region_context_eager(region_data->region_id, ompt_scope_end,
                                flags & ompt_parallel_invoker_program);
     }
 
     // If master took a sample in this region, it needs to resolve its call path.
-    if (notification->unresolved_cct) {
+    if (stack_el->unresolved_cct) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
-      resolve_one_region_context(notification);
+      resolve_one_region_context(region_data, stack_el->unresolved_cct);
       // mark that master resolved this region
       unresolved_cnt--;
     }

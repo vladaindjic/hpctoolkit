@@ -434,16 +434,14 @@ hpcrun_region_lookup
 typed_stack_elem_ptr(notification)
 help_notification_alloc
 (
- typed_stack_elem_ptr(region) region_data
+  typed_stack_elem_ptr(region) region_data,
+  cct_node_t *unresolved_cct
 )
 {
   typed_stack_elem_ptr(notification) notification = hpcrun_ompt_notification_alloc();
   notification->region_data = region_data;
-  notification->region_id = region_data->region_id;
+  notification->unresolved_cct = unresolved_cct;
   notification->notification_channel = &thread_notification_channel;
-  // reset unresolved_cct for the new notification
-  notification->unresolved_cct = NULL;
-
   return notification;
 }
 
@@ -457,16 +455,10 @@ swap_and_free
   int depth = region_data->depth;
   typed_random_access_stack_elem(region) *stack_element =
       typed_random_access_stack_get(region)(region_stack, depth);
-  typed_stack_elem_ptr(notification) notification = stack_element->notification;
-
-  // Notification can be freed either if the thread is the master of the region
-  // or the thread did not take a sample inside the region
-  if (notification && (stack_element->team_master || !stack_element->took_sample)) {
-    //hpcrun_ompt_notification_free(notification);
-  }
-  // get and store new notification on the stack
-  notification = help_notification_alloc(region_data);
-  stack_element->notification = notification;
+  // store region data at corresponding position on the stack.
+  stack_element->region_data = region_data;
+  // invalidate previous value unresolved_cct
+  stack_element->unresolved_cct = NULL;
   // invalidate value of team_master,
   // will be set in function add_region_and_ancestors_to_stack
   stack_element->team_master = 0;
@@ -490,20 +482,21 @@ add_one_region_to_stack
 
   // Check if region was previously added on the stack.
   if (region_data->depth <= typed_random_access_stack_top_index_get(region)(region_stack)
-      && region_data->region_id == el->notification->region_id) {
-    // el->notification->region_data represents the region that is
+      && region_data->region_id == el->region_data->region_id) {
+    // el->region_data represents the region that is
     // at this moment on the stack of active regions
     // (el is element of stack that is being processed at the moment).
-    // If it's (el->notification->region_data) id is equal to id of
+    // If it's (el->region_data) id is equal to id of
     // "region (region_data) at the region_level",
     // stop further processing of stack elements.
     // Stack is updated properly.
     return 1;
   }
 
-  // If previous condition fails, the stack is outdated and we need
-  // to update region which is contained in el variable, by calling below function,
-  // which will add corresponding notification on stack.
+  // If previous condition fails, the stack (el) is outdated and we need
+  // to update region that is contained in el variable.
+  // We'll do that by calling below function, which will add currently
+  // active region at depth equal to stack index of el.
   swap_and_free(region_data);
 
   // update region level (one region above)
@@ -550,23 +543,29 @@ add_region_and_ancestors_to_stack
 void
 register_to_region
 (
- typed_stack_elem_ptr(notification) notification
+  typed_stack_elem_ptr(region) region_data,
+  cct_node_t *unresolved_cct
 )
 {
-  typed_stack_elem_ptr(region) region_data = notification->region_data;
+  // get new notification
+  typed_stack_elem_ptr(notification) notification =
+      help_notification_alloc(region_data, unresolved_cct);
 
   ompt_region_debug_notify_needed(notification);
 
   // register thread to region's wait free queue
   typed_stack_next_set(notification, cstack)(notification, 0);
 
+  // debug information
   int old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
     printf("register_to_region >>> To late to try registering. Old value: %d\n", old_value);
   }
 
-  typed_stack_push(notification, cstack)(&region_data->notification_stack, notification);
+  typed_stack_push(notification, cstack)(&region_data->notification_stack,
+                                         notification);
 
+  // debug information
   old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
@@ -587,8 +586,6 @@ thread_take_sample
   cct_node_t **parent_cct_ptr = (cct_node_t **)arg;
   // pseudo cct node which corresponds to the parent region
   cct_node_t *parent_cct = *parent_cct_ptr;
-  // notification that corresponds to the active region that is being processed at the moment
-  typed_stack_elem(notification) *notification = el->notification;
 
   // FIXME vi3 >>> If we use this approach, then field took_sample is not needed
   // thread took a sample in this region before
@@ -599,39 +596,41 @@ thread_take_sample
 
   // Check if the address that corresponds to the region
   // has already been inserted in parent_cct subtree.
-  cct_addr_t *region_addr = &ADDR2(UNRESOLVED,notification->region_data->region_id);
+  // This means that thread took sample in this region before.
+  cct_addr_t *region_addr = &ADDR2(UNRESOLVED,el->region_data->region_id);
   cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
   if (found_cct) {
     // Region was on the stack previously, so the thread does not need
     // neither to insert cct nor to register itself for the region's call path.
-    // Mark that thread took a sample, store found_cct in notification and skip the region.
+    // Mark that thread took a sample, store found_cct in el and skip the region.
     el->took_sample = true;
-    notification->unresolved_cct = found_cct;
+    el->unresolved_cct = found_cct;
     goto return_label;
-  }
-
-  if (!el->team_master) {
-    register_to_region(notification);
-  } else {
-    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
-    unresolved_cnt++;
   }
 
   // mark that thread took sample in this region for the first time
   el->took_sample = true;
   // insert cct node with region_addr in the parent_cct's subtree
-  notification->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
+  el->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
+
+  if (!el->team_master) {
+    // Worker thread should register for the region's call path
+    register_to_region(el->region_data, el->unresolved_cct);
+  } else {
+    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
+    unresolved_cnt++;
+  }
 
   return_label: {
     // If region is marked as the last to register (see function register_to_all_regions),
     // then stop further processing.
-    if (el->notification->region_data->depth >= vi3_last_to_register) {
+    if (el->region_data->depth >= vi3_last_to_register) {
       // Indication that processing of active regions should stop.
       return 1;
     }
     // continue processing descendants
     // store new parent_cct node for the inner region
-    *parent_cct_ptr = notification->unresolved_cct;
+    *parent_cct_ptr = el->unresolved_cct;
     // Indication that processing of active regions should continue
     return 0;
   };
@@ -649,7 +648,7 @@ least_common_ancestor
   int level = *level_ptr;
 
   typed_stack_elem(region) *runtime_reg = hpcrun_ompt_get_region_data(level);
-  typed_stack_elem(region) *stack_reg = el->notification->region_data;
+  typed_stack_elem(region) *stack_reg = el->region_data;
 
   if (!runtime_reg) {
     // FIXME vi3 >>> debug this case
@@ -681,7 +680,7 @@ least_common_ancestor
   }
 
   // thread has already taken sample inside this region
-  if (el->notification->unresolved_cct) {
+  if (el->unresolved_cct) {
     // least common ancestor is found
     return 1;
   }
@@ -862,15 +861,15 @@ register_to_all_regions
   if (stack_is_empty)
     return;
 
-  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
-  typed_stack_elem(region) *top_reg = top->notification->region_data;
+  typed_stack_elem(region) *top_reg = hpcrun_ompt_get_top_region_on_stack();
   // assume that thread will register for all regions present on stack
   vi3_last_to_register = top_reg->depth;
 
   // check if thread_data is available and contains any useful information
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
-  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+      &omp_task_context, &region_depth);
   if (info_type == 1) {
     // thread_data contains depth of the region to which sample should be attributed.
     // This region will be the last region for which call path thread is going to register.
@@ -917,9 +916,9 @@ register_to_all_regions
   int start_from = 0;
   cct_node_t *parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
   if (lca) {
-    typed_stack_elem(region) *lca_reg = lca->notification->region_data;
+    typed_stack_elem(region) *lca_reg = lca->region_data;
     start_from = lca_reg->depth + 1;
-    parent_cct = lca->notification->unresolved_cct;
+    parent_cct = lca->unresolved_cct;
   }
 
   typed_random_access_stack_reverse_iterate_from(region)(start_from,
@@ -938,12 +937,11 @@ register_to_all_regions
 void
 resolve_one_region_context
 (
-  typed_stack_elem_ptr(notification) notification
+  typed_stack_elem_ptr(region) region_data,
+  cct_node_t *unresolved_cct
 )
 {
   // region to resolve
-  typed_stack_elem_ptr(region) region_data = notification->region_data;
-  cct_node_t *unresolved_cct = notification->unresolved_cct;
   cct_node_t *parent_unresolved_cct = hpcrun_cct_parent(unresolved_cct);
 
   if (parent_unresolved_cct == NULL) {
@@ -993,7 +991,7 @@ try_resolve_one_region_context
   unresolved_cnt--;
   ompt_region_debug_notify_received(old_head);
 
-  resolve_one_region_context(old_head);
+  resolve_one_region_context(old_head->region_data, old_head->unresolved_cct);
 
   // free notification
   //hpcrun_ompt_notification_free(old_head);
@@ -1018,6 +1016,7 @@ any_idle_samples_remained
   void
 )
 {
+  // check if there is some non-attributed (unresolved) idle sample
   return local_idle_placeholder != NULL;
 }
 
@@ -1050,10 +1049,11 @@ attr_idleness2outermost_ctx
   void
 )
 {
-  // This check may be put inside attr_idleness2_cct_node,
-  // but if it returns false, we may lose cycles to get thread_root.
-  // There are ome idle samples which should be attributed
-  // to the outermost context (thread_root).
+  // This if may be put inside attr_idleness2_cct_node.
+  // The problem that may occur is that thread asks for thread_root
+  // and then finds that there is no idle samples under idle placeholder.
+  // In that case, thread just lost cycles getting information about
+  // thread_root that won't use.
   if (any_idle_samples_remained()) {
     attr_idleness2_cct_node(hpcrun_get_thread_epoch()->csdata.thread_root);
   }
@@ -1066,21 +1066,15 @@ attr_idleness2region_at
   int depth
 )
 {
-  // This check may be put inside attr_idleness2_cct_node,
-  // but if it returns false, we may lose cycles to get
-  // region on the stack at "depth".
-  // There are some idle samples which should be attributed
-  // to region on the stack at "depth".
+  // This if may be put inside attr_idleness2_cct_node.
+  // The problem that may occur is that thread asks for unresolved_cct
+  // which corresponds to the region present on the top of the stack
+  // and then finds that there is no idle samples under idle placeholder.
+  // In that case, thread just lost cycles getting information about
+  // unresolved_cct that won't use.
   if (any_idle_samples_remained()) {
     // NOTE vi3: Happened in nestedtasks.c.
-    // FIXME move boiler plate code to separate function
-    typed_random_access_stack_elem(region) *el =
-        typed_random_access_stack_get(region)(region_stack, depth);
-    if (el && el->notification && el->notification->unresolved_cct) {
-      attr_idleness2_cct_node(el->notification->unresolved_cct);
-    } else {
-      printf("<<<ompt-defer.c:1074>>>Some information is missing.\n");
-    }
+    attr_idleness2_cct_node(hpcrun_ompt_get_top_unresolved_cct_on_stack());
   }
 }
 
@@ -1245,6 +1239,7 @@ ompt_resolve_region_contexts_poll
 
 
 #if 1
+// It seems it's not used anywhere.
 cct_node_t *
 top_cct
 (

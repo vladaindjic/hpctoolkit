@@ -1626,7 +1626,9 @@ ompt_cct_cursor_finalize
       root = hpcrun_get_thread_epoch()->csdata.tree_root;
     }
 #endif
-    return check_and_return_non_null(hpcrun_cct_insert_path_return_leaf(root, omp_task_context), cct_cursor, 919);
+    return check_and_return_non_null(
+        hpcrun_cct_insert_path_return_leaf(root, omp_task_context),
+        cct_cursor, 919);
   } else if (info_type == 1) {
 #if 0
     if (waiting_on_last_implicit_barrier) {
@@ -1787,7 +1789,7 @@ ompt_cct_cursor_finalize
     // attribute them to it.
     attr_idleness2region_at(vi3_last_to_register);
     return check_and_return_non_null(typed_random_access_stack_get(region)(
-        region_stack, region_depth)->notification->unresolved_cct, cct_cursor, 901);
+        region_stack, region_depth)->unresolved_cct, cct_cursor, 901);
   } else {
 #if 0
     if (!ompt_eager_context_p()) {
