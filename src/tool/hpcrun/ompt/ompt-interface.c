@@ -939,30 +939,39 @@ hpcrun_ompt_notification_alloc
  void
 )
 {
-#if 0
-  // only the current thread uses notification_freelist_head
+#if FREELISTS_ENABLED
+  // vi3 debug
+  notification_used++;
+  // only the current thread uses notification_freelist_head (thread_safe)
+  // try to pop notification from the freelist
   typed_stack_elem_ptr(notification) first =
     typed_stack_pop(notification, sstack)(&notification_freelist_head);
+  // allocate new notification if there's not any to reuse
   return first ? first :
             (typed_stack_elem_ptr(notification))
                   hpcrun_malloc(sizeof(typed_stack_elem(notification)));
-#endif
+#else
   return (typed_stack_elem_ptr(notification))
       hpcrun_malloc(sizeof(typed_stack_elem(notification)));
+#endif
 }
 
-#if 0
 void
 hpcrun_ompt_notification_free
 (
  typed_stack_elem_ptr(notification) notification
 )
 {
-  // reset unresolved_cct when freeing notification
-  notification->unresolved_cct = NULL;
-  typed_stack_push(notification, cstack)(&notification_freelist_head, notification);
-}
+#if FREELISTS_ENABLED
+  // invalidate values of notification's fields
+  memset(notification, 0, sizeof(typed_stack_elem(notification)));
+  // add notification to the freelist
+  typed_stack_push(notification, cstack)(&notification_freelist_head,
+                                         notification);
+  // vi3 debug
+  notification_used--;
 #endif
+}
 
 
 // vi3: Helper function to get region_data

@@ -193,6 +193,6 @@ typedef struct {
 typed_random_access_stack_declare(region);
 
 // FIXME vi3: ompt_data_t freelist manipulation
-
+#define FREELISTS_ENABLED 1
 #endif
 

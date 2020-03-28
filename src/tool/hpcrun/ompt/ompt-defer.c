@@ -993,9 +993,6 @@ try_resolve_one_region_context
 
   resolve_one_region_context(old_head->region_data, old_head->unresolved_cct);
 
-  // free notification
-  //hpcrun_ompt_notification_free(old_head);
-
   // check if the notification needs to be forwarded
   typed_stack_elem_ptr(notification) next =
     typed_stack_pop(notification, sstack)(&old_head->region_data->notification_stack);
@@ -1006,6 +1003,9 @@ try_resolve_one_region_context
     //hpcrun_ompt_region_free(region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
+
+  // free notification
+  hpcrun_ompt_notification_free(old_head);
 
   return 1;
 }
@@ -1211,6 +1211,12 @@ ompt_resolve_region_contexts
   if (unresolved_cnt != 0) {
     printf("*** Unresolved regions: %d\n", unresolved_cnt);
   }
+
+#if FREELISTS_ENABLED
+  if (notification_used != 0) {
+    printf("*** Mem leak notifications: %ld\n", notification_used);
+  }
+#endif
 
   if (unresolved_cnt != 0 && hpcrun_ompt_region_check()) {
     // hang to let debugger attach

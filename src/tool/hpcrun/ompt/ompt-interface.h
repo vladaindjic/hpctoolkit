@@ -201,14 +201,12 @@ hpcrun_ompt_notification_alloc
  void
 );
 
-#if 0
 // free adds entity to freelist
 void 
 hpcrun_ompt_notification_free
 (
  typed_stack_elem_ptr(notification) notification
 );
-#endif
 
 //-----------------------------------------------------------------------------
 // allocate and free thread's regions
