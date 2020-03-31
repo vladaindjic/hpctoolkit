@@ -89,13 +89,12 @@ ompt_region_acquire
  void
 );
 
-#if 0
+
 static void
 ompt_region_release
 (
  typed_stack_elem_ptr(region) r
 );
-#endif
 
 
 //*****************************************************************************
@@ -272,7 +271,7 @@ ompt_parallel_end_internal
     } else {
       // if none, you can reuse region
       // this thread is region creator, so it could push to private stack of region channel
-      //ompt_region_release(region_data);
+      ompt_region_release(region_data);
     }
 
     // Instead of popping in ompt_implicit_task_end, master of the region
@@ -482,7 +481,7 @@ ompt_region_alloc
   return r;
 }
 
-#if 0
+
 static typed_stack_elem_ptr(region)
 ompt_region_freelist_get
 (
@@ -501,10 +500,18 @@ ompt_region_freelist_put
  typed_stack_elem_ptr(region) r
 )
 {
+#if FREELISTS_DEBUG
+  // just debug
+  int old = atomic_fetch_add(&r->barrier_cnt, 0);
+  if (old >= 0) {
+    printf("ompt_region_release >>> Region should be inactive: %d.\n", old);
+  }
+  atomic_fetch_sub(&r->owner_free_region_channel->region_used, 1);
+#endif
   r->region_id = 0xdeadbeef;
   typed_channel_private_push(region)(&region_freelist_channel, r);
 }
-#endif
+
 
 typed_stack_elem_ptr(region)
 ompt_region_acquire
@@ -512,18 +519,25 @@ ompt_region_acquire
  void
 )
 {
-#if 0
+#if FREELISTS_ENABLED
   typed_stack_elem_ptr(region) r = ompt_region_freelist_get();
   if (r == 0) {
     r = ompt_region_alloc();
     ompt_region_debug_region_create(r);
   }
-  return r;
+#if FREELISTS_DEBUG
+  r->owner_free_region_channel = &region_freelist_channel;
+  atomic_fetch_add(&r->owner_free_region_channel->region_used, 1);
 #endif
+  // invalidate previous content of all region_data's fields
+  memset(r, 0, sizeof(typed_stack_elem(region)));
+  return r;
+#else
   return ompt_region_alloc();
+#endif
 }
 
-#if 0
+
 static void
 ompt_region_release
 (
@@ -532,19 +546,6 @@ ompt_region_release
 {
   ompt_region_freelist_put(r);
 }
-
-void
-hpcrun_ompt_region_free
-(
- typed_stack_elem_ptr(region) region_data
-)
-{
-  // reset call_path when freeing the region
-  region_data->call_path = NULL;
-  region_data->region_id = 0xdeadbead;
-  typed_channel_shared_push(region)(region_data->owner_free_region_channel, region_data);
-}
-#endif
 
 
 static void

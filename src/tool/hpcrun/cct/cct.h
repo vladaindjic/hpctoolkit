@@ -298,9 +298,7 @@ extern void hpcrun_cct_merge(cct_node_t* cct_a, cct_node_t* cct_b,
 extern __thread cct_node_t* cct_node_freelist_head;
 
 cct_node_t* hpcrun_cct_node_alloc();
-#if 0
 void hpcrun_cct_node_free(cct_node_t *cct);
-#endif
 // remove Children from cct
 void cct_remove_my_subtree(cct_node_t* cct);
 

@@ -101,7 +101,9 @@ extern __thread bool vi3_idle_collapsed;
 extern __thread cct_node_t *local_idle_placeholder;
 
 #if FREELISTS_ENABLED
+#if FREELISTS_DEBUG
 extern __thread long notification_used;
+#endif
 #endif
 //******************************************************************************
 // interface operations 

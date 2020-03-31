@@ -394,6 +394,9 @@ ompt_thread_begin
   // initialize random access stack of active parallel regions
   region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
   unresolved_cnt = 0;
+#if FREELISTS_DEBUG
+  atomic_exchange(&region_freelist_channel.region_used, 0);
+#endif
 }
 
 
@@ -940,21 +943,27 @@ hpcrun_ompt_notification_alloc
 )
 {
 #if FREELISTS_ENABLED
+#if FREELISTS_DEBUG
   // vi3 debug
   notification_used++;
+#endif
   // only the current thread uses notification_freelist_head (thread_safe)
   // try to pop notification from the freelist
   typed_stack_elem_ptr(notification) first =
     typed_stack_pop(notification, sstack)(&notification_freelist_head);
-  // allocate new notification if there's not any to reuse
-  return first ? first :
-            (typed_stack_elem_ptr(notification))
-                  hpcrun_malloc(sizeof(typed_stack_elem(notification)));
+  // allocate new notification if there's no any to reuse
+  first = first ? first :
+      (typed_stack_elem_ptr(notification))
+          hpcrun_malloc(sizeof(typed_stack_elem(notification)));
+  // invalidate values of notification's fields
+  memset(first, 0, sizeof(typed_stack_elem(notification)));
+  return first;
 #else
   return (typed_stack_elem_ptr(notification))
       hpcrun_malloc(sizeof(typed_stack_elem(notification)));
 #endif
 }
+
 
 void
 hpcrun_ompt_notification_free
@@ -963,13 +972,34 @@ hpcrun_ompt_notification_free
 )
 {
 #if FREELISTS_ENABLED
-  // invalidate values of notification's fields
-  memset(notification, 0, sizeof(typed_stack_elem(notification)));
-  // add notification to the freelist
   typed_stack_push(notification, cstack)(&notification_freelist_head,
                                          notification);
+#if FREELISTS_DEBUG
   // vi3 debug
   notification_used--;
+#endif
+#endif
+}
+
+
+void
+hpcrun_ompt_region_free
+(
+  typed_stack_elem_ptr(region) region_data
+)
+{
+#if FREELISTS_ENABLED
+#if FREELISTS_DEBUG
+  // just debug
+  int old = atomic_fetch_add(&region_data->barrier_cnt, 0);
+  if (old >= 0) {
+    printf("hpcrun_ompt_region_free >>> Region should be inactive: %d.\n", old);
+  }
+  atomic_fetch_sub(&region_data->owner_free_region_channel->region_used, 1);
+#endif
+  region_data->region_id = 0xdeadbead;
+  typed_channel_shared_push(region)(region_data->owner_free_region_channel,
+                                    region_data);
 #endif
 }
 

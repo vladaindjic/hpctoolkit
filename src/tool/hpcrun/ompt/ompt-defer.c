@@ -1000,7 +1000,7 @@ try_resolve_one_region_context
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
-    //hpcrun_ompt_region_free(region_data);
+    hpcrun_ompt_region_free(old_head->region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 
@@ -1213,9 +1213,16 @@ ompt_resolve_region_contexts
   }
 
 #if FREELISTS_ENABLED
+#if FREELISTS_DEBUG
   if (notification_used != 0) {
     printf("*** Mem leak notifications: %ld\n", notification_used);
   }
+
+  long region_used_val = atomic_fetch_add(&region_freelist_channel.region_used, 0);
+  if (region_used_val != 0) {
+    printf("*** Mem leak regions: %ld\n", region_used_val);
+  }
+#endif
 #endif
 
   if (unresolved_cnt != 0 && hpcrun_ompt_region_check()) {

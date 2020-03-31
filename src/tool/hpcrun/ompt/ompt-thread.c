@@ -88,7 +88,7 @@ __thread bool vi3_idle_collapsed = false;
 __thread cct_node_t *local_idle_placeholder = NULL;
 
 #if FREELISTS_ENABLED
-extern __thread long notification_used = 0;
+__thread long notification_used = 0;
 #endif
 //******************************************************************************
 // private variables 

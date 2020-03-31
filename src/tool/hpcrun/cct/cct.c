@@ -581,16 +581,13 @@ void
 hpcrun_cct_delete_self(cct_node_t *cct)
 {
   hpcrun_cct_delete_addr(cct->parent, &cct->addr);
-  cct->left = NULL;
-  cct->right = NULL;
-  cct->parent = NULL;
   // FIXME vi3 >>> Need a better strategy for freeing cct nodes.
   // Current implementation will free the whole subtree of cct node.
   // The problem that can arise is that some of the descendants of
   // root cct node is not resolved yet. In that case, someone else
   // references that cct node. When reuse that cct node, it becomes
   // inconsistent.
-  //hpcrun_cct_node_free(cct);
+  hpcrun_cct_node_free(cct);
 }
 
 //
@@ -935,7 +932,9 @@ hpcrun_cct_merge(cct_node_t* cct_a, cct_node_t* cct_b,
     // whole cct->children splay tree is used as kids of cct_a,
     // enough to disconnect children from cct_b (that's why hpcrun_cct_walkset is called)
     hpcrun_cct_walkset(cct_b, attach_to_a, (cct_op_arg_t) cct_a);
-    cct_b->children = NULL;
+    //cct_b->children = NULL;
+    // FIXME vi3 >>> Should we also merge cct_b to cct_a (exclusive metrics)?
+    //  merge(cct_a, cct_b, arg);
   }
   else {
     mjarg_t local = (mjarg_t) {.targ = cct_a, .fn = merge, .arg = arg};
@@ -960,9 +959,12 @@ merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l)
     // when merge, n should stay in the same tree, because the whole tree is going to to freelist
     // that is the reason why return value is not NULL
     hpcrun_cct_merge(tmp, n, the_arg->fn, the_arg->arg);
-    // FIXME vi3 >>> Check if the previous line is enough?
-    //   Should we also merge metrics or is enough just to merge the children?
-    //   the_arg->fn(tmp, n, the_arg->arg);
+    // FIXME vi3 >>> Should we also merge n to targ (exclusive metrics)?
+    //  merge_op_t merge_fn = the_arg->fn;
+    //  merge_op_arg_t merge_arg = the_arg->arg;
+    //  merge_fn(targ, n, merge_arg);
+    // Since we merged the whole subtree of n, n can be freed.
+    hpcrun_cct_node_free(n);
     return n;
   } else{
     // disjoint has to happen, which means that node n is going to change tree
@@ -1060,7 +1062,7 @@ add_node_to_freelist(cct_node_t* cct){
   }
 }
 
-// vi3: remove root of first tree in the freelist
+// vi3: remove head of the freelist
 cct_node_t*
 remove_node_from_freelist(){
   cct_node_t* first_root = cct_node_freelist_head;
@@ -1069,7 +1071,8 @@ remove_node_from_freelist(){
   }
   // new head is free_root's next (parent pointer is used for now)
   cct_node_freelist_head = first_root->parent;
-
+#if 0
+  // Old code which assume freetree
   cct_node_t* children = first_root->children;
   cct_node_t* left = first_root->left;
   cct_node_t* right = first_root->right;
@@ -1077,7 +1080,7 @@ remove_node_from_freelist(){
   add_node_to_freelist(children);
   add_node_to_freelist(left);
   add_node_to_freelist(right);
-
+#endif
   return first_root;
 
   // FIXME: seg fault happened once and i cannot reproduce it anymore
@@ -1091,17 +1094,19 @@ hpcrun_cct_node_alloc(){
 #if 0
   cct_node_t* cct_new = remove_node_from_freelist();
   return cct_new ? cct_new : (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
-#endif
+#else
   return (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
+#endif
 }
 
 
-#if 0
 void
 hpcrun_cct_node_free(cct_node_t *cct){
+  // Invalidating cntent of cct_node_t struct is done in
+  // function cct_node_create
+  // memset(cct, 0, sizeof(cct_node_t));
   add_node_to_freelist(cct);
 }
-#endif
 
 
 cct_node_t*

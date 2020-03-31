@@ -192,7 +192,7 @@ ompt_task_full_context_p
 );
 
 //-----------------------------------------------------------------------------
-// allocate and free notifications
+// allocate and free notifications/regions
 //-----------------------------------------------------------------------------
 
 typed_stack_elem_ptr(notification)
@@ -206,6 +206,13 @@ void
 hpcrun_ompt_notification_free
 (
  typed_stack_elem_ptr(notification) notification
+);
+
+// free adds entity to freelist
+void
+hpcrun_ompt_region_free
+(
+  typed_stack_elem_ptr(region) region_data
 );
 
 //-----------------------------------------------------------------------------

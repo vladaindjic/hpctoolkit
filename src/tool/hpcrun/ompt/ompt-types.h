@@ -77,6 +77,10 @@
 // type declarations 
 //******************************************************************************
 
+#define FREELISTS_ENABLED 1
+#define FREELISTS_DEBUG FREELISTS_ENABLED && 1
+
+
 struct ompt_region_data_s;
 struct ompt_notification_s;
 struct mpsc_channel_region_s;
@@ -136,10 +140,13 @@ typed_stack_declare(notification, cstack);
 
 
 // ============ multi-producer single-consumer channels of regions
-// struct that represents single element of channel of regions
+// struct that represents channel of region_data structure
 typedef struct mpsc_channel_region_s {
   typed_stack_elem_ptr(region) shared;
   typed_stack_elem_ptr(region) private;
+#if FREELISTS_DEBUG
+  _Atomic(long) region_used;
+#endif
 } typed_channel_elem(region);
 // declare pointer to previous struct
 typed_channel_declare_type(region);
@@ -147,7 +154,7 @@ typed_channel_declare_type(region);
 typed_channel_declare(region);
 
 // ============ multi-producer single-consumer channels of notifications
-// struct that represents single element of channel of notifications
+// struct that represents channel of notification structure
 typedef struct mpsc_channel_notification_s {
   typed_stack_elem_ptr(notification) shared;
   typed_stack_elem_ptr(notification) private;
@@ -193,6 +200,5 @@ typedef struct {
 typed_random_access_stack_declare(region);
 
 // FIXME vi3: ompt_data_t freelist manipulation
-#define FREELISTS_ENABLED 1
 #endif
 
