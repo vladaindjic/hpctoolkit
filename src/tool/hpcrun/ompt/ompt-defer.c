@@ -676,6 +676,7 @@ least_common_ancestor
 
   // NOTE: debugging only
   if (stack_reg != runtime_reg) {
+    // FIXME vi3 >>> for-nested-regions.c after adding waiting for region_used to be zero
     msg_deferred_resolution_breakpoint("Stack_reg and runtime_reg are different\n");
   }
 
@@ -1217,11 +1218,30 @@ ompt_resolve_region_contexts
   if (notification_used != 0) {
     printf("*** Mem leak notifications: %ld\n", notification_used);
   }
-
+#if FREELISTS_DEBUG_WAIT_FOR_REGIONS
+  // Need to wait for other workers to resolve remaining regions' call paths.
+  // After that, all region_data should be free.
+  struct timespec start_time_reg;
+  size_t ri = 0;
+  timer_start(&start_time_reg);
+  long region_used_val;
+  for(;;ri++) {
+    region_used_val = atomic_fetch_add(&region_freelist_channel.region_used, 0);
+    if (region_used_val <= 0) {
+      if (region_used_val < 0) {
+        printf("*** Mem leak regions >>> problem with waiting: %ld\n", region_used_val);
+      }
+      break;
+    }
+    // Same as in previous for(;;) loop
+    if (timer_elapsed(&start_time_reg) > 3.0) break;
+  }
+#else
   long region_used_val = atomic_fetch_add(&region_freelist_channel.region_used, 0);
-  if (region_used_val != 0) {
+  if (region_used_val != 0 ) {
     printf("*** Mem leak regions: %ld\n", region_used_val);
   }
+#endif
 #endif
 #endif
 
