@@ -559,6 +559,7 @@ register_to_region
   // debug information
   int old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
+    // FIXME seems it may happened
     printf("register_to_region >>> To late to try registering. Old value: %d\n", old_value);
   }
 
@@ -568,6 +569,7 @@ register_to_region
   // debug information
   old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
+    // FIXME seems it may happened
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
 

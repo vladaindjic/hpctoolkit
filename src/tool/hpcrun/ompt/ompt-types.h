@@ -81,6 +81,7 @@
 #define FREELISTS_DEBUG FREELISTS_ENABLED && 1
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1
 
+#define DEBUG_OMPT_PARALLEL_END_REGION_MULTIPLE_TIMES 0
 
 struct ompt_region_data_s;
 struct ompt_notification_s;

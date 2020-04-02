@@ -180,7 +180,14 @@ ompt_parallel_end_internal
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
   if (!ompt_eager_context_p()){
-
+    // Used innermost region memoized inside ompt_implicit_task_end.
+    // The reason for this is that runtime may pass the same region
+    // multiple times to the ompt_parallel_end.
+    // On the other hand, some regions are never passed.
+    // which may cause that registered threads never get notifications
+    // that regions's call paths are provided and ready to be resolved.
+    region_data = memo_inner_reg;
+#if DEBUG_OMPT_PARALLEL_END_REGION_MULTIPLE_TIMES
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem(region) *top_reg = region_data;
     if (top) {
@@ -196,12 +203,31 @@ ompt_parallel_end_internal
   }
 #endif
 
-#if 1
     // This may indicate that runtime contains bug.
     if (top_reg != region_data) {
+
+      if (top_reg != memo_inner_reg) {
+        printf("Memoized region is different.\n");
+      }
+
       // FIXME vi3 >>> check if this happen when tracing is on.
       // If that is true, then I guess there is bug inside the runtime implementation
-      //printf("*** Parallel data contains bad value.\n");
+       printf("*** Parallel data contains bad value. %d %d %p %p\n",
+           top_reg->depth, region_data->depth, top_reg->owner_free_region_channel,
+           region_data->owner_free_region_channel);
+
+      if (top_reg->owner_free_region_channel != region_data->owner_free_region_channel) {
+        //printf("Not my team\n");
+      }
+
+
+      typed_stack_elem(region) *new_inner = hpcrun_ompt_get_region_data(0);
+      typed_stack_elem(region) *exp_reg =
+          typed_random_access_stack_get(region)(region_stack, new_inner->depth)->region_data;
+      if (exp_reg != new_inner) {
+        printf("Problem on outer level: %d\n", exp_reg->depth);
+      }
+
       region_data = top_reg;
     }
 #endif
@@ -434,6 +460,10 @@ ompt_implicit_task_internal_end
       // Pop region from the stack, if thread is not the master of this region.
       // Master thread will pop in ompt_parallel_end callback
       typed_random_access_stack_pop(region)(region_stack);
+    } else {
+      // memoize innermost region which will be used inside
+      // ompt_parallel_end callback
+      memo_inner_reg = hpcrun_ompt_get_region_data(0);
     }
     ompt_resolve_region_contexts_poll();
   }
@@ -573,7 +603,16 @@ ompt_sync
   // at the end of the innermost parallel region
   if (kind == ompt_sync_region_barrier_implicit_last) {
     // thread starts waiting on the last implicit barrier
-    if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
+    if (endpoint == ompt_scope_begin) {
+      waiting_on_last_implicit_barrier = true;
+
+      typed_stack_elem(region) *top_reg = hpcrun_ompt_get_top_region_on_stack();
+      typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
+      if (top_reg != inner) {
+        printf(">>> Waiting at the barrier... Problem\n");
+      }
+
+    };
   }
 }
 

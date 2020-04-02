@@ -105,6 +105,9 @@ extern __thread cct_node_t *local_idle_placeholder;
 extern __thread long notification_used;
 #endif
 #endif
+// master thread memoizes innermost region inside ompt_implicit_task_end
+// which will be used inside ompt_parallel_end
+extern __thread typed_stack_elem_ptr(region) memo_inner_reg;
 //******************************************************************************
 // interface operations 
 //******************************************************************************
