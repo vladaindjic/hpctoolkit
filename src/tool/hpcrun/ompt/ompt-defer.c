@@ -734,8 +734,13 @@ lca_el_fn
   //return_label:
   // update arguments
   args->level = level + 1;
+#if KEEP_PARENT_REGION_RELATIONSHIP
+  // In order to prevent NULL values get from hpcrun_ompt_get_region_data,
+  // use parent as next region to process.
+  args->region_data = typed_stack_next_get(region, sstack)(reg);
+#else
   args->region_data = hpcrun_ompt_get_region_data(args->level);
-
+#endif
   // indicator to continue processing stack element
   return 0;
 }
@@ -743,10 +748,18 @@ lca_el_fn
 // return value:
 // false - no active parallel regions (sequential code)
 // true - thread is inside parallel region
+// td_region_depth - region_depth stored at TD(omp_task_context)
+// Possible values:
+// -1   - thread not waiting on the barrier, but some edge case found in
+//        ompt_elide_runtime_frame function. The sample should be attributed
+//        to the innermost region
+// >= 0 - depth of the region to which sample should be attributed.
+//        Ignore all regions deeper than td_region_depth
 bool
 least_common_ancestor
 (
-  typed_random_access_stack_elem(region) **lca
+  typed_random_access_stack_elem(region) **lca,
+  int td_region_depth
 )
 {
   typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
@@ -756,6 +769,18 @@ least_common_ancestor
     *lca = NULL;
     return false;
   }
+
+  if (td_region_depth >= 0) {
+    // skip regions deeper than td_region_depth
+    while(innermost_reg->depth > td_region_depth)
+      // skip me by using my parent
+      innermost_reg = typed_stack_next_get(region, sstack)(innermost_reg);
+  } else {
+    if (td_region_depth != -1) {
+      printf("Some invalid value: %d.\n", td_region_depth);
+    }
+  }
+
 
   // update top of the stack
   typed_random_access_stack_top_index_set(region)(innermost_reg->depth, region_stack);
@@ -1494,7 +1519,7 @@ register_to_all_regions
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
-  if (!least_common_ancestor(&lca)) {
+  if (!least_common_ancestor(&lca, region_depth)) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
     return;

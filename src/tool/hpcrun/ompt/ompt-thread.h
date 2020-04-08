@@ -105,13 +105,14 @@ extern __thread cct_node_t *local_idle_placeholder;
 extern __thread long notification_used;
 #endif
 #endif
-// master thread memoizes innermost region inside ompt_implicit_task_end
-// which will be used inside ompt_parallel_end
-extern __thread typed_stack_elem_ptr(region) memo_inner_reg;
 
 #if THREAD_MASTER_CHECK == 1
 extern __thread uint64_t my_upper_bits;
 extern __thread uint64_t upper_bits_mask;
+#endif
+
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+extern __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack;
 #endif
 //******************************************************************************
 // interface operations 

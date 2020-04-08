@@ -401,6 +401,11 @@ ompt_thread_begin
 #if THREAD_MASTER_CHECK == 1
   my_upper_bits = hpcrun_ompt_get_unique_id() & upper_bits_mask;
 #endif
+
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX
+  runtime_master_region_stack =
+      typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
+#endif
 }
 
 
@@ -955,7 +960,6 @@ hpcrun_ompt_notification_alloc
   // try to pop notification from the freelist
   typed_stack_elem_ptr(notification) first =
     typed_stack_pop(notification, sstack)(&notification_freelist_head);
-  //printf("Not: %p, %p\n", first, &region_freelist_channel);
   // allocate new notification if there's no any to reuse
   first = first ? first :
       (typed_stack_elem_ptr(notification))
@@ -1001,6 +1005,11 @@ hpcrun_ompt_region_free
     printf("hpcrun_ompt_region_free >>> Region should be inactive: %d.\n", old);
   }
   atomic_fetch_sub(&region_data->owner_free_region_channel->region_used, 1);
+#endif
+#if KEEP_PARENT_REGION_RELATIONSHIP
+  // disconnect from parent, otherwise the whole parent-child chain
+  // will be added to freelist
+  typed_stack_next_set(region, sstack)(region_data, 0);
 #endif
   region_data->region_id = 0xdeadbead;
   typed_channel_shared_push(region)(region_data->owner_free_region_channel,
@@ -1099,17 +1108,8 @@ get_corresponding_stack_element_if_any
   // in el. Otherwise, return NULL as indication that thread didn't take sample
   // in region_data, so there's no stack element which corresponds to
   // region_data.
-  if (el->region_data != region_data) {
-    printf("Potencijalni problem :(\n");
-  }
-
   typed_random_access_stack_elem(region) *top_el =
       typed_random_access_stack_top(region)(region_stack);
-
-  if (top_el->region_data != region_data) {
-    printf("A ovo, jebe li te??? \n");
-  }
-
 
   return el->region_data == region_data ? el : NULL;
 }
@@ -1161,3 +1161,7 @@ typed_stack_impl(notification, cstack);
 typed_channel_impl(notification);
 // implement region stack
 typed_random_access_stack_impl(region);
+
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX
+typed_random_access_stack_impl(runtime_region);
+#endif

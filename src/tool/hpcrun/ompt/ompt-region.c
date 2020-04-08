@@ -157,6 +157,20 @@ ompt_parallel_begin_internal
     region_data->depth = parent_region->depth + 1;
   }
 
+#if KEEP_PARENT_REGION_RELATIONSHIP
+  // don't need for concurrency
+  // memoized parent_region
+  typed_stack_next_set(region, sstack)(region_data, parent_region);
+#endif
+
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+  // FIXME vi3 >>> Any good reason why I implemented push operation like this?
+  // Push new region in which thread is master.
+  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
+      typed_random_access_stack_push(runtime_region)(runtime_master_region_stack);
+  runtime_top_el->region_data = region_data;
+#endif
+
   if (ompt_eager_context_p()) {
      region_data->call_path =
        ompt_parallel_begin_context(region_id, 
@@ -179,60 +193,19 @@ ompt_parallel_end_internal
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
-  if (!ompt_eager_context_p()){
-    // Used innermost region memoized inside ompt_implicit_task_end.
-    // The reason for this is that runtime may pass the same region
-    // multiple times to the ompt_parallel_end.
-    // On the other hand, some regions are never passed.
-    // which may cause that registered threads never get notifications
-    // that regions's call paths are provided and ready to be resolved.
-    // FIXME vi3 >>> it seems we need stack of memoized regions.
-    //region_data = memo_inner_reg;
-#if DEBUG_OMPT_PARALLEL_END_REGION_MULTIPLE_TIMES
-    typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
-    typed_stack_elem(region) *top_reg = region_data;
-    if (top) {
-      top_reg = top->region_data;
-    }
-
-#if VI3_DEBUG == 1
-    if (top) {
-    printf("parallel_end >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
-           &region_stack, top_reg, top_reg->region_id, 0);
-  } else {
-    printf("parallel_end >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil,THREAD_NUM: %d\n", &region_stack, 0);
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+  // Pop the innermost region in which thread is the master.
+  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
+      typed_random_access_stack_pop(runtime_region)(runtime_master_region_stack);
+  typed_stack_elem(region) *runtime_master_region = runtime_top_el->region_data;
+  if (runtime_master_region != region_data) {
+    // FIXME vi3 >>> runtime tries to end region_data another time
+    //  Use the value we provided for now.
+    region_data = runtime_master_region;
   }
 #endif
 
-    // This may indicate that runtime contains bug.
-    if (top_reg != region_data) {
-
-      if (top_reg != memo_inner_reg) {
-        printf("Memoized region is different.\n");
-      }
-
-      // FIXME vi3 >>> check if this happen when tracing is on.
-      // If that is true, then I guess there is bug inside the runtime implementation
-       printf("*** Parallel data contains bad value. %d %d %p %p\n",
-           top_reg->depth, region_data->depth, top_reg->owner_free_region_channel,
-           region_data->owner_free_region_channel);
-
-      if (top_reg->owner_free_region_channel != region_data->owner_free_region_channel) {
-        //printf("Not my team\n");
-      }
-
-
-      typed_stack_elem(region) *new_inner = hpcrun_ompt_get_region_data(0);
-      typed_stack_elem(region) *exp_reg =
-          typed_random_access_stack_get(region)(region_stack, new_inner->depth)->region_data;
-      if (exp_reg != new_inner) {
-        printf("Problem on outer level: %d\n", exp_reg->depth);
-      }
-
-      region_data = top_reg;
-    }
-#endif
-
+  if (!ompt_eager_context_p()){
 #if 1
     // Debug only
     // Mark that this region is finished
@@ -272,10 +245,6 @@ ompt_parallel_end_internal
     //  compare region_id e.g
     typed_random_access_stack_elem(region) *stack_el =
         get_corresponding_stack_element_if_any(region_data);
-
-    if (!stack_el) {
-      printf("Ma sve je ok\n");
-    }
 
     // NOTE: These two conditions should be equal:
     // 1. notification->unresolved_cct != NULL
@@ -451,6 +420,8 @@ ompt_implicit_task_internal_end
 {
 
   if (!ompt_eager_context_p()) {
+    // try to resolve some regions, if any
+    ompt_resolve_region_contexts_poll();
 #if VI3_DEBUG == 1
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     if (top) {
@@ -463,9 +434,8 @@ ompt_implicit_task_internal_end
     }
 #endif
 
-    // FIXME vi3: Is this valid approach?
-    if (index != 0) {
 #if 0
+    if (index != 0) {
       // Need to check if current thread took a sample in the innermost region.
       if (!top) {
         // Do nothing
@@ -475,19 +445,12 @@ ompt_implicit_task_internal_end
       if (top->took_sample) {
         //resolve_one_region_context_vi3(top->notification);
       }
-#endif
-
-#if 0
+      // =========================================== A bit newer version
       // Pop region from the stack, if thread is not the master of this region.
       // Master thread will pop in ompt_parallel_end callback
       typed_random_access_stack_pop(region)(region_stack);
-#endif
-    } else {
-      // memoize innermost region which will be used inside
-      // ompt_parallel_end callback
-      memo_inner_reg = hpcrun_ompt_get_region_data(0);
     }
-    ompt_resolve_region_contexts_poll();
+#endif
   }
 }
 
@@ -559,6 +522,11 @@ ompt_region_freelist_put
     printf("ompt_region_release >>> Region should be inactive: %d.\n", old);
   }
   atomic_fetch_sub(&r->owner_free_region_channel->region_used, 1);
+#endif
+#if KEEP_PARENT_REGION_RELATIONSHIP
+  // disconnect from parent, otherwise the whole parent-child chain
+  // will be added to freelist
+  typed_stack_next_set(region, sstack)(r, 0);
 #endif
   r->region_id = 0xdeadbeef;
   typed_channel_private_push(region)(&region_freelist_channel, r);

@@ -90,13 +90,14 @@ __thread cct_node_t *local_idle_placeholder = NULL;
 #if FREELISTS_ENABLED
 __thread long notification_used = 0;
 #endif
-// master thread memoizes innermost region inside ompt_implicit_task_end
-// which will be used inside ompt_parallel_end
-__thread typed_stack_elem_ptr(region) memo_inner_reg = NULL;
 
 #if THREAD_MASTER_CHECK == 1
 __thread uint64_t my_upper_bits = 0;
 __thread uint64_t upper_bits_mask = 0xFFFF000000000000;
+#endif
+
+#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+__thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack = NULL;
 #endif
 //******************************************************************************
 // private variables 
