@@ -186,7 +186,8 @@ ompt_parallel_end_internal
     // On the other hand, some regions are never passed.
     // which may cause that registered threads never get notifications
     // that regions's call paths are provided and ready to be resolved.
-    region_data = memo_inner_reg;
+    // FIXME vi3 >>> it seems we need stack of memoized regions.
+    //region_data = memo_inner_reg;
 #if DEBUG_OMPT_PARALLEL_END_REGION_MULTIPLE_TIMES
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     typed_stack_elem(region) *top_reg = region_data;
@@ -267,7 +268,14 @@ ompt_parallel_end_internal
     // mark that current region is ending
     ending_region = region_data;
 
-    typed_random_access_stack_elem(region) *stack_el = typed_random_access_stack_top(region)(region_stack);
+    // FIXME vi3: need better way to decide whether you took sample or not
+    //  compare region_id e.g
+    typed_random_access_stack_elem(region) *stack_el =
+        get_corresponding_stack_element_if_any(region_data);
+
+    if (!stack_el) {
+      printf("Ma sve je ok\n");
+    }
 
     // NOTE: These two conditions should be equal:
     // 1. notification->unresolved_cct != NULL
@@ -276,19 +284,25 @@ ompt_parallel_end_internal
     // Region call path is missing.
     // Some thread from the team took a sample in the region.
     if (!region_data->call_path &&
-          (stack_el->unresolved_cct || to_notify)) {
+          (stack_el || to_notify)) {
       // the region has not been provided before, so we will do that now
       region_data->call_path = ompt_region_context_eager(region_data->region_id, ompt_scope_end,
                                flags & ompt_parallel_invoker_program);
     }
 
     // If master took a sample in this region, it needs to resolve its call path.
-    if (stack_el->unresolved_cct) {
+    if (stack_el) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
       resolve_one_region_context(region_data, stack_el->unresolved_cct);
       // mark that master resolved this region
       unresolved_cnt--;
+      // Since we never do real push and pop operations, it is possible that
+      // this region_data will be reused by new region at the same depth.
+      // In that case, thread could think that it already register for
+      // the new region.
+      // Invalidating value of stack_el->region_data will prevent this.
+      stack_el->region_data = NULL;
     }
 
     if (to_notify){
@@ -299,10 +313,11 @@ ompt_parallel_end_internal
       // this thread is region creator, so it could push to private stack of region channel
       ompt_region_release(region_data);
     }
-
+#if 1
     // Instead of popping in ompt_implicit_task_end, master of the region
     // will pop region here.
     typed_random_access_stack_pop(region)(region_stack);
+#endif
     // mark that no region is ending
     ending_region = NULL;
   }
@@ -403,9 +418,13 @@ ompt_implicit_task_internal_begin
   }
 
   if (!ompt_eager_context_p()) {
+#if 0
     add_region_and_ancestors_to_stack(region_data, index==0);
     task_data_set_depth(task_data,
         typed_random_access_stack_top_index_get(region)(region_stack));
+#endif
+    // connect task_data with region_data
+    task_data_set_depth(task_data, region_data->depth);
     // mark that thread has finished waiting on the last implicit barrier
     // of the previous region
     waiting_on_last_implicit_barrier = false;
@@ -457,9 +476,12 @@ ompt_implicit_task_internal_end
         //resolve_one_region_context_vi3(top->notification);
       }
 #endif
+
+#if 0
       // Pop region from the stack, if thread is not the master of this region.
       // Master thread will pop in ompt_parallel_end callback
       typed_random_access_stack_pop(region)(region_stack);
+#endif
     } else {
       // memoize innermost region which will be used inside
       // ompt_parallel_end callback
@@ -603,16 +625,7 @@ ompt_sync
   // at the end of the innermost parallel region
   if (kind == ompt_sync_region_barrier_implicit_last) {
     // thread starts waiting on the last implicit barrier
-    if (endpoint == ompt_scope_begin) {
-      waiting_on_last_implicit_barrier = true;
-
-      typed_stack_elem(region) *top_reg = hpcrun_ompt_get_top_region_on_stack();
-      typed_stack_elem(region) *inner = hpcrun_ompt_get_region_data(0);
-      if (top_reg != inner) {
-        printf(">>> Waiting at the barrier... Problem\n");
-      }
-
-    };
+    if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
   }
 }
 

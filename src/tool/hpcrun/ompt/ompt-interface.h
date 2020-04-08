@@ -208,28 +208,29 @@ hpcrun_ompt_notification_free
  typed_stack_elem_ptr(notification) notification
 );
 
-// free adds entity to freelist
+
+//-----------------------------------------------------------------------------
+// allocate and free regions (region_data)
+//-----------------------------------------------------------------------------
+
+
 void
 hpcrun_ompt_region_free
 (
   typed_stack_elem_ptr(region) region_data
 );
 
-//-----------------------------------------------------------------------------
-// allocate and free thread's regions
-//-----------------------------------------------------------------------------
-
-
-typed_stack_elem_ptr(region)
-hpcrun_ompt_get_region_data
-(
- int ancestor_level
-);
-
 
 //-----------------------------------------------------------------------------
 // access to region data
 //-----------------------------------------------------------------------------
+
+typed_stack_elem_ptr(region)
+hpcrun_ompt_get_region_data
+(
+  int ancestor_level
+);
+
 
 typed_stack_elem_ptr(region)
 hpcrun_ompt_get_current_region_data
@@ -245,6 +246,12 @@ hpcrun_ompt_get_parent_region_data
 );
 
 
+bool
+hpcrun_ompt_is_thread_region_owner
+(
+  typed_stack_elem(region) *region_data
+);
+
 typed_stack_elem_ptr(region)
 hpcrun_ompt_get_top_region_on_stack
 (
@@ -256,6 +263,13 @@ cct_node_t *
 hpcrun_ompt_get_top_unresolved_cct_on_stack
 (
   void
+);
+
+
+typed_random_access_stack_elem(region) *
+get_corresponding_stack_element_if_any
+(
+  typed_stack_elem_ptr(region) region_data
 );
 
 

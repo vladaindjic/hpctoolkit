@@ -93,6 +93,11 @@ __thread long notification_used = 0;
 // master thread memoizes innermost region inside ompt_implicit_task_end
 // which will be used inside ompt_parallel_end
 __thread typed_stack_elem_ptr(region) memo_inner_reg = NULL;
+
+#if THREAD_MASTER_CHECK == 1
+__thread uint64_t my_upper_bits = 0;
+__thread uint64_t upper_bits_mask = 0xFFFF000000000000;
+#endif
 //******************************************************************************
 // private variables 
 //******************************************************************************

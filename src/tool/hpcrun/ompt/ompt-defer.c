@@ -464,7 +464,6 @@ swap_and_free
   stack_element->team_master = 0;
   // thread hasn't taken a sample in this region yet
   stack_element->took_sample = 0;
-  // cache region
 }
 
 
@@ -626,10 +625,11 @@ thread_take_sample
   return_label: {
     // If region is marked as the last to register (see function register_to_all_regions),
     // then stop further processing.
+    // FIXME vi3 >>> this should be removed.
     if (el->region_data->depth >= vi3_last_to_register) {
       // Indication that processing of active regions should stop.
       return 1;
-    }
+     }
     // continue processing descendants
     // store new parent_cct node for the inner region
     *parent_cct_ptr = el->unresolved_cct;
@@ -638,7 +638,7 @@ thread_take_sample
   };
 }
 
-
+#if 0
 bool
 least_common_ancestor
 (
@@ -693,6 +693,86 @@ least_common_ancestor
   *level_ptr = level + 1;
 
   return 0;
+}
+#endif
+
+
+typedef struct lca_args_s {
+  int level;
+  typed_stack_elem(region) *region_data;
+} lca_args_t;
+
+
+bool
+lca_el_fn
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  lca_args_t *args = (lca_args_t *)arg;
+  int level = args->level;
+  typed_stack_elem(region) *reg = args->region_data;
+  // The sample was previously taken in this region
+  if (el->region_data) {
+    // If the region has not been change since the last sample was taken,
+    // then the least common ancestor is found,
+    if (el->region_data->region_id == reg->region_id) {
+      // indicator to stop processing stack elements
+      return 1;
+    }
+  }
+  // update stack element
+  // store region
+  el->region_data = reg;
+  // check if thread is the master (owner) of the reg
+  el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
+  // invalidate previous values
+  el->unresolved_cct = NULL;
+  el->took_sample = false;
+
+  //return_label:
+  // update arguments
+  args->level = level + 1;
+  args->region_data = hpcrun_ompt_get_region_data(args->level);
+
+  // indicator to continue processing stack element
+  return 0;
+}
+
+// return value:
+// false - no active parallel regions (sequential code)
+// true - thread is inside parallel region
+bool
+least_common_ancestor
+(
+  typed_random_access_stack_elem(region) **lca
+)
+{
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+  if (!innermost_reg) {
+    // There is no parallel region active.
+    // Thread should be executing sequential code.
+    *lca = NULL;
+    return false;
+  }
+
+  // update top of the stack
+  typed_random_access_stack_top_index_set(region)(innermost_reg->depth, region_stack);
+  // update the last region that should be checked during registration process
+  vi3_last_to_register = innermost_reg->depth;
+
+  // update stack of active regions and try to find region in which
+  // thread took previous sample
+  lca_args_t args;
+  // Assume that thread is not worker
+  args.level = 0;
+  args.region_data = innermost_reg;
+  *lca = typed_random_access_stack_forall(region)(region_stack,
+                                                  lca_el_fn,
+                                                  &args);
+  // thread is inside parallel region
+  return true;
 }
 
 
@@ -856,6 +936,8 @@ register_to_all_regions
   }
   typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
 #endif
+
+#if 0
   // invalidate value
   vi3_last_to_register = -1;
   // If there is no regions on the stack, just return.
@@ -928,6 +1010,525 @@ register_to_all_regions
                                                          region_stack,
                                                          thread_take_sample,
                                                          &parent_cct);
+#endif
+
+#if 0
+  // Used to provide some debug information
+
+  // invalidate value
+  vi3_last_to_register = -1;
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                           &omp_task_context, &region_depth);
+
+  cct_node_t *inner_task_cct = NULL;
+  int inner_reg_depth = -1;
+  int inner_info_type = -1;
+
+  cct_node_t *outer_task_cct = NULL;
+  int outer_reg_depth = -1;
+  int outer_info_type = -1;
+
+  ompt_data_t *inner_task_data = hpcrun_ompt_get_task_data(0);
+  ompt_data_t *outer_task_data = hpcrun_ompt_get_task_data(1);
+
+  typed_stack_elem(region) *inner_reg = hpcrun_ompt_get_region_data(0);
+  typed_stack_elem(region) *outer_reg = hpcrun_ompt_get_region_data(1);
+
+  if (!inner_task_data) {
+    //printf("No inner task data\n");
+    // vi3_last_to_register should be -1
+    // waiting_on_last_implicit_barrier should be true
+    // inner_reg and outer_reg should be NULL
+
+    if (!waiting_on_last_implicit_barrier) {
+      // never happened
+      printf("Thread should be waiting: %d\n", waiting_on_last_implicit_barrier);
+    }
+
+    if (vi3_last_to_register != -1) {
+      // never happened
+      printf("vi3_last_to_register (%d) should be -1\n", vi3_last_to_register);
+    }
+
+    if (inner_reg) {
+      // printf("inner_reg exists: %d\n", inner_reg->depth);
+      // inner_reg exists not finished
+      // vi3_idle_collapsed
+
+      if (!vi3_idle_collapsed) {
+        // never happened
+        printf("Stack not collapsed, inner_reg exists\n");
+      }
+
+      int old_inner_reg = atomic_fetch_add(&inner_reg->barrier_cnt, 0);
+      if (old_inner_reg != 0) {
+        // never hapenned
+        printf("inner_outer_reg finished: %d\n", old_inner_reg);
+      }
+
+      // case 0:
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+      // case 1:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+    }
+
+    if (outer_reg) {
+      // This makes sense to debug if put return in if (inner_reg) {return;}
+      // We care about case when inner_reg is NULL and outer_reg isn't.
+      // outer_reg exists not finished
+      // can happen when inner_reg does not exists.
+      if (!inner_reg) {
+        // here, inner_reg is null
+        //printf("outer_reg exists: %d, inner_reg: %p\n", outer_reg->depth, inner_reg);
+        //inner_reg = hpcrun_ompt_get_region_data(0);
+        // here inner_reg has value
+        // assume also that inner_task_data has value
+        //printf("check again outer_reg exists: %d, inner_reg: %p\n", outer_reg->depth, inner_reg);
+      }
+
+      // no inner_task_data and outer_task_data
+      // no inner_reg
+      // outer_reg still not finished
+      // vi3_idle_collapsed = true
+      // vi3_last_to_register = -1
+      // I tried to call hpcrun_ompt_get_region_data(0) and get active region
+      // hpcrun_ompt_get_task_data(0) also returns task_data {0x0}
+      // Is it possible that region_data and task_data became available
+      // in the meantime?
+
+
+      // case 0
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+
+
+      if (!vi3_idle_collapsed) {
+        // never happened
+        printf("Stack not collapsed, inner_reg exists\n");
+      }
+
+      int old_outer_reg = atomic_fetch_add(&outer_reg->barrier_cnt, 0);
+      if (old_outer_reg != 0) {
+        // never happened
+        printf("old_outer_reg finished: %d\n", old_outer_reg);
+      }
+
+    }
+
+    if (outer_task_data) {
+
+      // FIXME vi3
+      // happened once (0x5)
+      // inner_task_data is null
+      //printf("before: Why outer_task_data exists: %p, %p\n", outer_task_data->ptr, inner_task_data);
+      //inner_task_data = hpcrun_ompt_get_task_data(0);
+      // not inner_task_data became available
+      //printf("after: Why outer_task_data exists: %p, %p\n", outer_task_data->ptr, inner_task_data);;
+      // both inner_reg and outer_reg exists and are active
+      // vi3_last_to_register = -1
+      // info_type = 2
+      // hpcrun_ompt_get_task_data(0) = {0x0} (it became available in the meantime)
+      //
+
+      // case 0
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+
+    }
+
+    return;
+  }
+
+  if (!outer_task_data) {
+    // printf("No outer task data\n");
+    // There is inner task data, but not outer task data.
+    // waiting on last implicit barrier
+    // inner_data->value = 0x7 | inner_data->value = 0x0
+    // vi3_last_to_register = -1
+    // inner_reg = outer_reg = NULL
+
+    // case 0:
+    // sched_yield
+    // __kmp_fork_barrier
+    // __kmp_launch_thread
+    // __kmp_launch_worker
+    //
+
+    return;
+  }
+
+  inner_info_type = task_data_value_get_info(inner_task_data->ptr,
+      &inner_task_cct, &inner_reg_depth);
+  outer_info_type = task_data_value_get_info(outer_task_data->ptr,
+      &outer_task_cct, &outer_reg_depth);
+
+
+  if (!waiting_on_last_implicit_barrier) {
+    if (info_type == 2) {
+      // some edge case where task_frames are not set properly
+      // still not reach the last implicit barrier.
+
+      // inner_reg_depth == inner_reg->depth
+      // outer_reg_depth == outer_reg->depth
+
+      if (inner_reg_depth != inner_reg->depth) {
+        // never happened
+        printf("inner_reg_depth (%d) != inner_reg->depth (%d)\n",
+            inner_reg_depth, inner_reg->depth);
+      }
+
+      if (outer_reg_depth != outer_reg->depth) {
+        // FIXME happened once (1) != (2)
+        printf("outer_reg_depth (%d) != outer_reg->depth (%d)\n",
+               outer_reg_depth, outer_reg->depth);
+      }
+
+      // In most cases vi3_last_to_register is -1
+      if (vi3_last_to_register != -1) {
+        // vi3_last_to_register == 0
+
+        // case 0:
+        // __kmp_invoke_microtask
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __ kmp_launch_worker
+        // ...
+
+        // case 1:
+        // __kmp_api_GOMP_parallel_40_alias
+        // g
+        // f
+        // e.__omp_fn.1
+        // ...
+
+        // case 2:
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __ kmp_launch_worker
+        // ...
+
+
+        // It seems that vi3_last_to_register can be zero only
+        if (vi3_last_to_register != 0) {
+          // never happened
+          printf("vi3_last_to_register should be 0: %d", vi3_last_to_register);
+        }
+      }
+
+      if (inner_info_type == 2 || outer_info_type == 2) {
+        // never happened
+        printf("inner_info_type: %d, outer_info_type: %d\n",
+            inner_info_type, outer_info_type);
+      }
+
+      if (!inner_task_data) {
+        // never happened
+        printf("inner_task_data missing\n");
+      }
+
+      if (!outer_task_data) {
+        // never happened
+        printf("outer_task_data missing\n");
+      }
+
+      if (!inner_reg) {
+        // never happened
+        printf("inner_reg missing\n");
+      }
+
+      if (!outer_reg) {
+        // never happened
+        printf("outer_reg missing\n");
+      }
+
+    } else {
+
+      if (inner_task_data) {
+        if (inner_reg) {
+          // depths should be equal
+          if (inner_reg_depth != inner_reg->depth) {
+            // printf("inner_reg_depth (%d) != inner_reg->depth (%d)\n",
+            //     inner_reg_depth, inner_reg->depth);
+
+            // inner_reg depth may be -1
+            if (inner_reg_depth == -1) {
+              // printf("Why is task_data empty: %p\n", inner_task_data->ptr);
+              // vi3_last_index == 1
+              // outer_task_data contains something
+
+              // FIXME vi3 check this.
+
+              // case 0:
+              // pthread_create@@GLIBC_2.2.5
+              // pthread_create
+              // __kmp_create_worker
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // e
+              // d
+              // c.__omp_fn.2
+
+
+              // case 2:
+              // clone
+              // do_clone.constprop
+              // pthread_create@@GLIBC_2.2.5
+              // pthread_create
+              // __kmp_create_worker
+              // __kmp_allocate_thread
+              // __kmp_fork_call
+              // kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e.__omp_fn.2
+
+              //
+
+            }
+
+
+          }
+        } else {
+          printf("inner_task_data present, but not inner_reg\n");
+        }
+      } else {
+        if (inner_reg) {
+          printf("inner_task_data not present, but inner_reg is\n");
+        }
+      }
+
+
+
+      if (outer_task_data) {
+        if (outer_reg) {
+          // depths should be equal
+          if (outer_reg_depth != outer_reg->depth) {
+            printf("outer_reg_depth (%d) != outer_reg->depth (%d)\n",
+                   outer_reg_depth, outer_reg->depth);
+          }
+        } else {
+          // FIXME vi3 >>> happened once
+          printf("outer_task_data present, but not outer_reg\n");
+        }
+      } else {
+        if (outer_reg) {
+          printf("outer_task_data not present, but outer_reg is\n");
+        }
+      }
+
+
+
+    }
+  }
+
+  if (inner_reg && !outer_reg && inner_task_data && outer_task_data) {
+    // vi3_idle_collapsed changes value
+    //printf("Am I waiting: %d? Idle: %d\n", waiting_on_last_implicit_barrier, vi3_idle_collapsed);
+
+    if (!waiting_on_last_implicit_barrier) {
+      // never happened.
+      printf("Should be waitin\n");
+    }
+
+    typed_stack_elem(region) *reg0 = hpcrun_ompt_get_region_data(0);
+    typed_stack_elem(region) *reg1 = hpcrun_ompt_get_region_data(1);
+    typed_stack_elem(region) *reg2 = hpcrun_ompt_get_region_data(2);
+    typed_stack_elem(region) *reg3 = hpcrun_ompt_get_region_data(3);
+    //typed_stack_elem(region) *reg4 = hpcrun_ompt_get_region_data(4);
+
+    ompt_data_t *task0 = hpcrun_ompt_get_task_data(0);
+    ompt_data_t *task1 = hpcrun_ompt_get_task_data(1);
+    ompt_data_t *task2 = hpcrun_ompt_get_task_data(2);
+    // it seems that this may produce segfault inside runtime
+    // if I try to access task data that is to much outer.
+    // see picture too-much-outer.png
+    // That occur at the very beginning of the program
+    ompt_data_t *task3 = hpcrun_ompt_get_task_data(3);
+    //ompt_data_t *task4 = hpcrun_ompt_get_task_data(4);
+
+
+    if (vi3_idle_collapsed) {
+      // What are depths of tasks and regions.
+//      printf("Idle: depth0: %d, r0: %p, r1: %p, r2: %p, r3: %p, r4: %p, t0: %p, t1: %p, t2: %p, t3: %p, t4: %p\n",
+//          reg0 ? reg0->depth: -1, reg0, reg1, reg2, reg3, reg4, task0, task1, task2, task3, task4);
+
+
+      // case 0:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+    } else {
+//      printf("not Idle: depth0: %d, r0: %p, r1: %p, r2: %p, r3: %p, r4: %p, t0: %p, t1: %p, t2: %p, t3: %p, t4: %p\n",
+//             reg0 ? reg0->depth: -1, reg0, reg1, reg2, reg3, reg4, task0, task1, task2, task3, task4);
+
+    }
+
+  }
+
+
+  if (!waiting_on_last_implicit_barrier) {
+    typed_stack_elem(region) *reg0 = hpcrun_ompt_get_region_data(0);
+    typed_stack_elem(region) *reg1 = hpcrun_ompt_get_region_data(1);
+    typed_stack_elem(region) *reg2 = hpcrun_ompt_get_region_data(2);
+    typed_stack_elem(region) *reg3 = hpcrun_ompt_get_region_data(3);
+    //typed_stack_elem(region) *reg4 = hpcrun_ompt_get_region_data(4);
+
+    ompt_data_t *task0 = hpcrun_ompt_get_task_data(0);
+    ompt_data_t *task1 = hpcrun_ompt_get_task_data(1);
+    ompt_data_t *task2 = hpcrun_ompt_get_task_data(2);
+    // it seems that this may produce segfault inside runtime
+    // if I try to access task data that is to much outer.
+    // see picture too-much-outer.png
+    // That occur at the very beginning of the program
+    ompt_data_t *task3 = hpcrun_ompt_get_task_data(3);
+    //ompt_data_t *task4 = hpcrun_ompt_get_task_data(4);
+
+    if (!reg0) {
+      printf("How is this possible??? \n");
+      return;
+    }
+
+    if (reg0->depth >= 3) {
+
+      if (!task0 || task0->value != 0x7) {
+        // hapenned
+        printf("task0 unexpected: %p, %lx\n", task0, task0 ? task0->value: -1);
+
+        // case 0:
+        // pthread_create
+        // __kmp_create_worker
+        // __kmp_allocate_thread
+        // __kmp_fork_call
+        // __kmp_GOMP_fork_call
+        // __kmp_api_GOMP_parallel_40_alias
+
+        // case 0:
+        // __memset_sse2
+        // __kmp_allocate_thread
+        // __kmp_fork_call
+        // __kmp_GOMP_fork_call
+        // __kmp_api_GOMP_parallel_40_alias
+      }
+
+      if (!task1 || task1->value != 0x5) {
+        // happened
+        printf("task1 unexpected: %p, %lx\n", task1, task1 ? task1->value: -1);
+      }
+
+      if (!task2 || task2->value != 0x3) {
+        // hapenned
+        printf("task2 unexpected: %p, %lx\n", task2, task2 ? task2->value: -1);
+      }
+
+      if (!task3 || task3->value != 0x1) {
+        // hapenned
+        printf("task3 unexpected: %p, %lx\n", task3, task3 ? task3->value: -1);
+      }
+
+
+
+      if (!reg1 || reg1->depth != 2) {
+        // never hapenned
+        printf("reg1 problem: %p, %d\n", reg1, reg1 ? reg1->depth : -1);
+      }
+
+      if (!reg2 || reg2->depth != 1) {
+        // never happenned
+        printf("reg2 problem: %p, %d\n", reg2, reg2 ? reg2->depth : -1);
+      }
+
+
+      if (!reg3 || reg3->depth != 0) {
+        // never hapenned
+        printf("reg3 problem: %p, %d\n", reg3, reg3 ? reg3->depth : -1);
+      }
+    }
+
+
+
+
+  }
+#endif
+
+  // invalidate value
+  vi3_last_to_register = -1;
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                           &omp_task_context, &region_depth);
+
+  if (waiting_on_last_implicit_barrier) {
+    // check if thread_data is available and contains any useful information
+    if (info_type == 2) {
+      // Thread is waiting on the last implicit barrier.
+      // OMPT frames are not set properly (see ompt_elide_runtime_frame).
+      // Thread cannot guarantee that it is still part of any parallel team.
+      // Safe thing to do is to skip registration process
+      // and attribute the sample to the thread local (idle) placeholder.
+      return;
+    }
+  }
+
+
+  // Try to find active region in which thread took previous sample
+  // (in further text lca->region_data)
+  typed_random_access_stack_elem(region) *lca;
+  if (!least_common_ancestor(&lca)) {
+    // There is no active regions, so there is no regions to register for.
+    // Just return, since thread should be executing sequential code.
+    return;
+  }
+
+  int start_from = 0;
+  cct_node_t *parent_cct = NULL;
+
+  if (lca) {
+    // Optimization: Thread will register for regions nested
+    // inside lca->region_data
+    start_from = lca->region_data->depth;
+    parent_cct = lca->unresolved_cct;
+  } else {
+    // Thread must register for all active region,
+    // starting from the outermost one.
+    start_from = 0;
+    parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  }
+
+  if (!parent_cct) {
+    printf("least_common_ancestor - parent_cct missing: %d (%lx, %p)\n",
+        start_from, lca->region_data->region_id, lca->unresolved_cct);
+  }
+
+  // registration process
+  // start_from: thread will register for regions which
+  //   depths are >= "start_from"
+  // parent_cct: the parent cct_node of the unresolved_cct
+  //   which corresponds to the region at depth "start_from".
+  typed_random_access_stack_reverse_iterate_from(region)(start_from,
+                                                         region_stack,
+                                                         thread_take_sample,
+                                                         &parent_cct);
   // NOTE vi3 >>> I put this function call inside ompt_cct_cursor_finalize function
   //   since I'm still not sure why/how thread_data can change its value while
   //   our tool is in the middle of sample processing.
@@ -951,7 +1552,6 @@ resolve_one_region_context
     msg_deferred_resolution_breakpoint("resolve_one_region_context: Parent of unresolved_cct node is missing\n");
   }
   else if (region_data->call_path == NULL) {
-    printf("Region call path is missing\n");
     msg_deferred_resolution_breakpoint("resolve_one_region_context: Region call path is missing\n");
   } else {
     // prefix should be put between unresolved_cct and parent_unresolved_cct

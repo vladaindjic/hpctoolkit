@@ -83,6 +83,8 @@
 
 #define DEBUG_OMPT_PARALLEL_END_REGION_MULTIPLE_TIMES 0
 
+#define THREAD_MASTER_CHECK 1
+
 struct ompt_region_data_s;
 struct ompt_notification_s;
 struct mpsc_channel_region_s;

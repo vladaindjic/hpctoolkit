@@ -113,8 +113,11 @@ ompt_task_begin_internal
       task_data_set_cct(task_data, cct_node);
     } else {
       // otherwise, store depth of the innermost region
+#if 0
       task_data_set_depth(task_data,
           typed_random_access_stack_top_index_get(region)(region_stack));
+#endif
+      task_data_set_depth(task_data, region_data->depth);
     }
   }
 

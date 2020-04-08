@@ -108,6 +108,11 @@ extern __thread long notification_used;
 // master thread memoizes innermost region inside ompt_implicit_task_end
 // which will be used inside ompt_parallel_end
 extern __thread typed_stack_elem_ptr(region) memo_inner_reg;
+
+#if THREAD_MASTER_CHECK == 1
+extern __thread uint64_t my_upper_bits;
+extern __thread uint64_t upper_bits_mask;
+#endif
 //******************************************************************************
 // interface operations 
 //******************************************************************************

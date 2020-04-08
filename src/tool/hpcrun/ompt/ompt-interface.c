@@ -397,6 +397,10 @@ ompt_thread_begin
 #if FREELISTS_DEBUG
   atomic_exchange(&region_freelist_channel.region_used, 0);
 #endif
+
+#if THREAD_MASTER_CHECK == 1
+  my_upper_bits = hpcrun_ompt_get_unique_id() & upper_bits_mask;
+#endif
 }
 
 
@@ -951,6 +955,7 @@ hpcrun_ompt_notification_alloc
   // try to pop notification from the freelist
   typed_stack_elem_ptr(notification) first =
     typed_stack_pop(notification, sstack)(&notification_freelist_head);
+  //printf("Not: %p, %p\n", first, &region_freelist_channel);
   // allocate new notification if there's no any to reuse
   first = first ? first :
       (typed_stack_elem_ptr(notification))
@@ -1040,6 +1045,22 @@ hpcrun_ompt_get_parent_region_data
   return hpcrun_ompt_get_region_data(1);
 }
 
+bool
+hpcrun_ompt_is_thread_region_owner
+(
+  typed_stack_elem(region) *region_data
+)
+{
+#if THREAD_MASTER_CHECK
+  // If thread generated region id, then it is owner/master of the region.
+  return (region_data->region_id & upper_bits_mask) == my_upper_bits;
+#else
+  // FIXME vi3 >>> Any better approach?
+  return false;
+#endif
+}
+
+
 typed_stack_elem_ptr(region)
 hpcrun_ompt_get_top_region_on_stack
 (
@@ -1065,6 +1086,37 @@ hpcrun_ompt_get_top_unresolved_cct_on_stack
 }
 
 
+typed_random_access_stack_elem(region) *
+get_corresponding_stack_element_if_any
+(
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  // corresponding stack element must be at index equal to depth of the region
+  typed_random_access_stack_elem(region) *el =
+      typed_random_access_stack_get(region)(region_stack, region_data->depth);
+  // If thread took sample in region_data, then region_data should be contained
+  // in el. Otherwise, return NULL as indication that thread didn't take sample
+  // in region_data, so there's no stack element which corresponds to
+  // region_data.
+  if (el->region_data != region_data) {
+    printf("Potencijalni problem :(\n");
+  }
+
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+
+  if (top_el->region_data != region_data) {
+    printf("A ovo, jebe li te??? \n");
+  }
+
+
+  return el->region_data == region_data ? el : NULL;
+}
+
+
+// FIXME vi3 >>> It seems that thread_num cam be 0 even though
+//   thread wasn't part of the team (outer regions).
 int
 hpcrun_ompt_get_thread_num(int level)
 {
