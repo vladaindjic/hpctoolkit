@@ -118,12 +118,14 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
+#if DEBUG_BARRIER_CNT
   // FIXME vi3 >>> Check if this is right.
   atomic_exchange(&e->barrier_cnt, 0);
   int old_value = atomic_fetch_add(&e->barrier_cnt, 0);
   if (old_value != 0) {
     printf("************ barrier_cnt initialization error... The old value was: %d\n", old_value);
   }
+#endif
   return e;
 }
 
@@ -163,7 +165,7 @@ ompt_parallel_begin_internal
   typed_stack_next_set(region, sstack)(region_data, parent_region);
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
   // FIXME vi3 >>> Any good reason why I implemented push operation like this?
   // Push new region in which thread is master.
   typed_random_access_stack_elem(runtime_region) *runtime_top_el =
@@ -193,7 +195,7 @@ ompt_parallel_end_internal
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
-#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX == 1
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
   // Pop the innermost region in which thread is the master.
   typed_random_access_stack_elem(runtime_region) *runtime_top_el =
       typed_random_access_stack_pop(runtime_region)(runtime_master_region_stack);
@@ -206,7 +208,7 @@ ompt_parallel_end_internal
 #endif
 
   if (!ompt_eager_context_p()){
-#if 1
+#if DEBUG_BARRIER_CNT
     // Debug only
     // Mark that this region is finished
     int old_value = atomic_fetch_add(&region_data->barrier_cnt, MAX_THREAD_IN_TEAM);
@@ -516,11 +518,13 @@ ompt_region_freelist_put
 )
 {
 #if FREELISTS_DEBUG
+#if DEBUG_BARRIER_CNT
   // just debug
   int old = atomic_fetch_add(&r->barrier_cnt, 0);
   if (old >= 0) {
     printf("ompt_region_release >>> Region should be inactive: %d.\n", old);
   }
+#endif
   atomic_fetch_sub(&r->owner_free_region_channel->region_used, 1);
 #endif
 #if KEEP_PARENT_REGION_RELATIONSHIP

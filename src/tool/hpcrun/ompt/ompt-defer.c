@@ -552,25 +552,31 @@ register_to_region
 
   ompt_region_debug_notify_needed(notification);
 
-  // register thread to region's wait free queue
+  // invalidate value of notification->next pointer
   typed_stack_next_set(notification, cstack)(notification, 0);
 
+#if DEBUG_BARRIER_CNT
   // debug information
   int old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
     // FIXME seems it may happened
     printf("register_to_region >>> To late to try registering. Old value: %d\n", old_value);
   }
+#endif
 
+  // register thread for region's call path by pushing
+  // notification to to region's wait free queue
   typed_stack_push(notification, cstack)(&region_data->notification_stack,
                                          notification);
 
+#if DEBUG_BARRIER_CNT
   // debug information
   old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
     // FIXME seems it may happened
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
+#endif
 
   // increment the number of unresolved regions
   unresolved_cnt++;

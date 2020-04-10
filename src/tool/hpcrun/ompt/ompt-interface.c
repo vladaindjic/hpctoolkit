@@ -402,7 +402,7 @@ ompt_thread_begin
   my_upper_bits = hpcrun_ompt_get_unique_id() & upper_bits_mask;
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
   runtime_master_region_stack =
       typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
 #endif
@@ -999,11 +999,13 @@ hpcrun_ompt_region_free
 {
 #if FREELISTS_ENABLED
 #if FREELISTS_DEBUG
+#if DEBUG_BARRIER_CNT
   // just debug
   int old = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old >= 0) {
     printf("hpcrun_ompt_region_free >>> Region should be inactive: %d.\n", old);
   }
+#endif
   atomic_fetch_sub(&region_data->owner_free_region_channel->region_used, 1);
 #endif
 #if KEEP_PARENT_REGION_RELATIONSHIP
@@ -1108,9 +1110,6 @@ get_corresponding_stack_element_if_any
   // in el. Otherwise, return NULL as indication that thread didn't take sample
   // in region_data, so there's no stack element which corresponds to
   // region_data.
-  typed_random_access_stack_elem(region) *top_el =
-      typed_random_access_stack_top(region)(region_stack);
-
   return el->region_data == region_data ? el : NULL;
 }
 
@@ -1162,6 +1161,6 @@ typed_channel_impl(notification);
 // implement region stack
 typed_random_access_stack_impl(region);
 
-#if ENDING_REGION_MULTIPLE_TIME_BUG_FIX
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
 typed_random_access_stack_impl(runtime_region);
 #endif
