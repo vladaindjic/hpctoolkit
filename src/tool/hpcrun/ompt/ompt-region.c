@@ -118,6 +118,9 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
+  e->num_times_ended = 0;
+#endif
 #if DEBUG_BARRIER_CNT
   // FIXME vi3 >>> Check if this is right.
   atomic_exchange(&e->barrier_cnt, 0);
@@ -185,6 +188,19 @@ ompt_parallel_begin_internal
 }
 
 
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
+void
+region_already_ended
+(
+  typed_stack_elem(region) *region_data_passed_to_end,
+  typed_stack_elem(region) *region_data_expected
+)
+{
+  // how many times is this region ended
+  // vi3 to prof John Mellor-Crummey: put a break point here
+}
+#endif
+
 static void
 ompt_parallel_end_internal
 (
@@ -192,6 +208,7 @@ ompt_parallel_end_internal
  int flags
 )
 {
+  // region_data passed to the parallel end callback
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
@@ -199,8 +216,15 @@ ompt_parallel_end_internal
   // Pop the innermost region in which thread is the master.
   typed_random_access_stack_elem(runtime_region) *runtime_top_el =
       typed_random_access_stack_pop(runtime_region)(runtime_master_region_stack);
+  // this is the expected region at the top of the temporary stack
   typed_stack_elem(region) *runtime_master_region = runtime_top_el->region_data;
   if (runtime_master_region != region_data) {
+    if (region_data) {
+      region_data->num_times_ended++;
+      if (region_data->num_times_ended > 0) {
+        region_already_ended(region_data, runtime_master_region);
+      }
+    }
     // FIXME vi3 >>> runtime tries to end region_data another time
     //  Use the value we provided for now.
     region_data = runtime_master_region;

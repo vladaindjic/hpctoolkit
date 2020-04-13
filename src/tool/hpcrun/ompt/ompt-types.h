@@ -78,7 +78,7 @@
 //******************************************************************************
 
 // freelists of region_data and notification structures
-#define FREELISTS_ENABLED 1
+#define FREELISTS_ENABLED 0
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
 #define FREELISTS_DEBUG FREELISTS_ENABLED && 0
@@ -127,6 +127,9 @@ typedef struct ompt_region_data_s {
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
+#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
+  int num_times_ended;
+#endif
 #if DEBUG_BARRIER_CNT
   // barrier counter which indicates if region is active
   _Atomic(int) barrier_cnt;
