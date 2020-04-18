@@ -140,6 +140,8 @@ ompt_parallel_begin_internal
  int flags
 ) 
 {
+  where_am_I = vi3_my_enum_parallel_begin;
+
   typed_stack_elem_ptr(region) region_data =
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   parallel_data->ptr = region_data;
@@ -208,6 +210,8 @@ ompt_parallel_end_internal
  int flags
 )
 {
+  where_am_I = vi3_my_enum_parallel_end;
+
   // region_data passed to the parallel end callback
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
@@ -392,6 +396,8 @@ ompt_implicit_task_internal_begin
  unsigned int index
 )
 {
+  where_am_I = vi3_my_enum_impl_task_begin;
+
   task_data->ptr = NULL;
 
   typed_stack_elem_ptr(region) region_data =
@@ -444,6 +450,7 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
+  where_am_I = vi3_my_enum_impl_task_end;
 
   if (!ompt_eager_context_p()) {
     // try to resolve some regions, if any

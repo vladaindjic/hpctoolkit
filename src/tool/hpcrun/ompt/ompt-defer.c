@@ -776,11 +776,15 @@ least_common_ancestor
     return false;
   }
 
+  int ancestor_level = 0;
   if (td_region_depth >= 0) {
     // skip regions deeper than td_region_depth
-    while(innermost_reg->depth > td_region_depth)
+    while(innermost_reg->depth > td_region_depth) {
       // skip me by using my parent
       innermost_reg = typed_stack_next_get(region, sstack)(innermost_reg);
+      // increment ancestor level
+      ancestor_level++;
+    }
   } else {
     if (td_region_depth != -1) {
       printf("Some invalid value: %d.\n", td_region_depth);
@@ -797,13 +801,61 @@ least_common_ancestor
   // thread took previous sample
   lca_args_t args;
   // Assume that thread is not worker
-  args.level = 0;
+  args.level = ancestor_level;
   args.region_data = innermost_reg;
   *lca = typed_random_access_stack_forall(region)(region_stack,
                                                   lca_el_fn,
                                                   &args);
   // thread is inside parallel region
   return true;
+}
+
+// temporary copy from ompt-callstack.c
+static ompt_state_t
+check_state
+(
+  void
+)
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
+
+
+void
+innermost_region_present_but_not_parent
+(
+  typed_stack_elem(region) *innermost_region,
+  typed_stack_elem(region) *parent_region
+)
+{
+  if (hpcrun_ompt_is_thread_region_owner(innermost_region)) {
+    // maybe this can help to debug
+    // thread is the master of the innermost region
+
+    // stack frame content for some cases that occur
+
+    // case 0:
+    // __kmp_free_thread
+    // __kmp_free_team
+    // __kmp_join_call
+    // __kmp_api_GOMP_parallel_40_alias
+    // g
+    // f
+    // e._omp_fn.1
+    // ... (frames that will be probably be clipped by elider)
+
+    // case 1:
+    // __kmp_free_implicit_task
+    // __kmp_free_thread
+    // __kmp_free_team
+    // __kmp_join_call
+    // __kmp_api_GOMP_parallel_40_alias
+    // g
+    // f
+    // e._omp_fn.1
+    // ... (frames that will be probably be clipped by elider)
+  }
 }
 
 
@@ -1500,6 +1552,1288 @@ register_to_all_regions
 
   }
 #endif
+
+  // focus still on this
+#if 0
+  if (!waiting_on_last_implicit_barrier) {
+    typed_stack_elem(region) *innermost_reg =
+        hpcrun_ompt_get_region_data(0);
+    if (!innermost_reg) {
+      // never happened
+      printf("Is this even possible\n");
+    } else {
+      typed_stack_elem(region) *parent_reg =
+          hpcrun_ompt_get_region_data(1);
+      typed_stack_elem(region) *grandpa_reg =
+          hpcrun_ompt_get_region_data(2);
+      typed_stack_elem(region) *grand_grandpa_reg =
+          hpcrun_ompt_get_region_data(3);
+      typed_stack_elem(region) *should_be_null =
+          hpcrun_ompt_get_region_data(4);
+
+      if (innermost_reg->depth >= 1) {
+        if (!parent_reg) {
+          // never happened
+          printf("Parent region missing: %p\n", parent_reg);
+        }
+      }
+
+      if (innermost_reg->depth >= 2) {
+        if (!grandpa_reg) {
+          // never happened
+          printf("grandpa region missing: %p\n", grandpa_reg);
+        }
+      }
+
+      if (innermost_reg->depth >= 3) {
+        if (!grand_grandpa_reg) {
+          printf("grand_grandpa region missing: %p\n", grand_grandpa_reg);
+        }
+        if (innermost_reg->depth < 4 && should_be_null) {
+          printf("Why region exists here??? Depth: %d\n", should_be_null->depth);
+        }
+      }
+
+    }
+  }
+  else {
+    typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+    if (innermost_reg) {
+      int old = atomic_fetch_add(&innermost_reg->barrier_cnt, 0);
+      if (old < 0) {
+        printf("Region has been finished: %d\n", old);
+      }
+
+      // how about checking if my ancestor are finished
+      typed_stack_elem(region) *curr = innermost_reg;
+      int count_to_minus_one = innermost_reg->depth;
+      while (curr) {
+        old = atomic_fetch_add(&curr->barrier_cnt, 0);
+        if (old < 0) {
+          // it seems that this happened once for the innermost region,
+          // which make sense, since it is possible that master free
+          // the region in the meantime.
+          printf("Ancestor: %lx on depth: %d has been finished\n", curr->region_id, curr->depth);
+        }
+        curr = typed_stack_next_get(region, sstack)(curr);
+        count_to_minus_one--;
+      }
+
+      if (count_to_minus_one != -1) {
+        printf("Something is wrong: %d\n", count_to_minus_one);
+      }
+
+      cct_node_t *omp_task_context = NULL;
+      int region_depth = -1;
+      int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                               &omp_task_context, &region_depth);
+
+      if (info_type == 2) {
+        if (!vi3_idle_collapsed) {
+          //printf("Elider does not know what to do, but didn't collapsed everything: %d\n", info_type);
+          // case 0:
+          // hpcrun_safe_enter
+          // ompt_implicit_task (endpoint = end)
+          // __ompt_implicit_task_end
+          // __kmp_fork_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+
+          // case 1:
+          // pthread_getspecific
+          // hpcrun_get_thread_data_specific
+          // hpcrun_safe_enter
+          // ompt_implicit_task (endpoint = begin)
+          // __kmp_invoke_task_func
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+        }
+      }
+
+
+      if (innermost_reg->depth >= 1) {
+        typed_stack_elem(region) *parent_reg = hpcrun_ompt_get_region_data(1);
+        if (!parent_reg) {
+          //printf("Parent region is missing: %p\n", parent_reg);
+          // sched_yield
+          // __kmp_fork_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          if (!vi3_idle_collapsed) {
+            if (info_type == 2) {
+              // never happened
+              printf("What edge case is this?\n");
+            } else if (info_type == 1) {
+              // printf("Elider said this sample belongs to region at depth: %d, but innermost is on: %d\n",
+              //     region_depth, innermost_reg->depth);
+
+              // case 0:
+              // __kmp_free_thread
+              // __kmp_free_team
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e.__omp_fn.1
+
+              // case 1:
+              // __kmp_free_implicit_task
+              // __kmp_free_thread
+              // __kmp_free_team
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e.__omp_fn.1
+
+
+              // case 2:
+              // pthread_mutex_lock
+              // __kmp_lock_suspend_mx
+              // __kmp_free_thread
+              // __kmp_free_team
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e.__omp_fn.1
+
+
+              if (region_depth >= innermost_reg->depth) {
+                // never happened
+                printf("Sample belongs to innermost_reg\n");
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+
+  // is it possible that elider stores something and that parallel_data is unavailable
+
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                           &omp_task_context, &region_depth);
+
+  if (info_type == 1) {
+    typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+    if (!innermost_reg) {
+      // never happened
+      printf("No innermost region\n");
+    }
+  }
+
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+  if (!innermost_reg) {
+    typed_stack_elem(region) *parent_reg = hpcrun_ompt_get_region_data(1);
+    if (parent_reg) {
+      //printf("No inner, but parent at depth is present: %d\n", parent_reg->depth);
+      // case 0:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+      // parent_reg->depth = 2 (still active)
+      // grandpa_reg->depth = 1 (still active)
+      // grand_grandpa->depth = 1 (still active)
+      // vi3_idle_collapsed = true
+
+      // case 1:
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+    }
+  }
+
+  if (innermost_reg) {
+    int old = atomic_fetch_add(&innermost_reg->barrier_cnt, 0);
+    if (old < 0) {
+      // never happened
+      printf("Region has been finished: %d\n", old);
+    }
+  }
+
+  // Can you be worker in innermost region and omp_task_context points to parent???
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+  if (innermost_reg) {
+    bool master = hpcrun_ompt_is_thread_region_owner(innermost_reg);
+    if (!master || innermost_reg->owner_free_region_channel != (&region_freelist_channel)) {
+      // thread is worker
+      cct_node_t *omp_task_context = NULL;
+      int region_depth = -1;
+      int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                               &omp_task_context, &region_depth);
+      if (info_type == 1) {
+        if (region_depth != innermost_reg->depth) {
+          // is it possible that elider points to outer region
+          // in which thread should not be involved
+          printf("This is also possible: %d, %d\n",
+              region_depth, innermost_reg->depth);
+        }
+      }
+    }
+  }
+#endif
+
+#if 0
+  cct_node_t *omp_task_context = NULL;
+  int region_depth = -1;
+  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+                                           &omp_task_context, &region_depth);
+
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+  ompt_state_t thread_state = check_state();
+  if (innermost_reg) {
+    if (innermost_reg->depth >= 1) {
+      // innermost_reg is nested inside at least one region
+      // check if its parent exist
+      typed_stack_elem(region) *parent_reg = hpcrun_ompt_get_region_data(1);
+      if (!parent_reg) {
+
+        typed_stack_elem(region) *hack_parent_reg = typed_stack_next_get(region, sstack)(innermost_reg);
+
+        bool innermost_owner = hpcrun_ompt_is_thread_region_owner(innermost_reg);
+        bool hack_parent_owner = hpcrun_ompt_is_thread_region_owner(hack_parent_reg);
+
+        ompt_data_t* parallel_data = NULL;
+        int team_size;
+        int ret_val = hpcrun_ompt_get_parallel_info(1, &parallel_data, &team_size);
+        // ret_val is always zero
+        // ompt_initialized = 1 (static variable from ompt-interface.c
+        // OpenMP specification:
+        // "The entry point returns 2 if there is a
+        //  parallel region at the specified ancestor level and the information is available, 1 if there is a parallel
+        //  region at the specified ancestor level but the information is currently unavailable, and 0 otherwise."
+        if (ret_val != 0) {
+          // never happened
+          printf("Region is present, but information is unavailable: %d\n", ret_val);
+        }
+
+        if (thread_state == ompt_state_wait_barrier_implicit) {
+          if (innermost_owner || hack_parent_owner) {
+            // never happened
+            printf("Thread is master of inner or parent\n");
+          } else {
+            // thread is the worker inside innermost region and should not be involved
+            // inside parent region at all.
+
+            // FIXME vi3 to vi3 NOTE: innermost_reg MAY BE FINISHED, so its not safe to register
+
+            // case 0:
+            // sched_yield
+            // __kmp_fork_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+
+          }
+        }
+        else if (thread_state == ompt_state_overhead) {
+          if (!innermost_owner) {
+            // never happened
+            printf("Not master of the innermost region\n");
+          }
+          else {
+            if (info_type != 1) {
+              // never happened
+              printf("Is it possible that elider didn't store depth of the parent region\n");
+            }
+            else {
+              if (hack_parent_reg->depth != region_depth) {
+                // never happened
+                printf("Elider points to region which is not parent\n");
+              }
+              else {
+                // elider says that sample should be attributed to the parent region
+                //printf("I need parent here\n");
+
+                // case 0:
+                // __kmp_free_thread
+                // __kmp_free_team
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.1
+                // ..
+
+                // case 1:
+                // pthread_mutex_unlock
+                // __kmp_unlock_suspend_mx
+                // __kmp_free_thread
+                // __kmp_free_team
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.1
+                // ..
+
+
+                // case 2:
+                // __kmp_free_implicit_task
+                // __kmp_free_thread
+                // __kmp_free_team
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.1
+                // ..
+
+
+              }
+            }
+
+          }
+        }
+        else {
+          // never happened
+          printf("1865 Some other state: %d\n", thread_state);
+        }
+      }
+    }
+  }
+
+  if (thread_state == ompt_state_wait_barrier_implicit_parallel) {
+    // never happened
+    printf("This may happened: %d\n", thread_state);
+  }
+
+  if (thread_state == ompt_state_wait_barrier_implicit) {
+    if (!waiting_on_last_implicit_barrier) {
+      printf("This may also happened\n");
+    }
+  }
+
+  if (where_am_I == vi3_my_enum_parallel_begin) {
+    typed_stack_elem(region) *new_reg =
+        typed_random_access_stack_top(runtime_region)(runtime_master_region_stack)->region_data;
+
+    if (thread_state == ompt_state_overhead) {
+       // printf("State overhead may be expected\n");
+
+       // case 0:
+       // clone
+       // do_clone.constprop.4
+       // pthread_create@@GLIBC_2.2.5
+       // pthread_create
+       // __kmp_create_worker
+       // __kmp_allocate_thread
+       // __kmp_allocate_team
+       // __kmp_fork_call
+       // __kmp_GOMP_fork_call
+       // __kmp_api_GOMP_parallel_40_alias
+       // a
+       // main
+
+       // case 1:
+       // __kmp_wait_4_ptr
+       // __kmp_acquire_ticket_lock
+       // __kmp_fork_call
+       // __kmp_GOMP_fork_call
+       // __kmp_api_GOMP_parallel_40_alias
+       // e
+       // d
+       // c._omp_fn.2
+       // ...
+
+
+      // case 2:
+      // __kmp_wait_4_ptr
+      // __kmp_acquire_ticket_lock
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 3:
+      // sched_yield
+      // __kmp_wait_4_ptr
+      // __kmp_acquire_ticket_lock
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 4:
+      //
+
+    }
+    else if (thread_state == ompt_state_work_parallel) {
+      // printf("Why is state work parallel\n");
+
+      // case 0:
+      // __kmp_fork_barrier
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 1:
+      // __kmp_task_team_setup
+      // __kmp_fork_barrier
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 2:
+      // sched_yield
+      // __kmp_wat_4_ptr
+      // __kmp_acquire_ticket_lock
+      // __kmp_task_team_setup
+      // __kmp_fork_barrier
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 3:
+      // __kmp_release_ticket_lock
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+      // case 4:
+      // __kmp_wat_4_ptr
+      // __kmp_acquire_ticket_lock
+      // __kmp_task_team_setup
+      // __kmp_fork_barrier
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+
+      // case 5:
+      // __kmp_acquire_ticket_lock
+      // __kmp_task_team_setup
+      // __kmp_fork_barrier
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // g
+      // f
+      // e._omp_fn.1
+      // ...
+
+    }
+    else {
+      // never happened
+      printf("Even this state is possible: %x\n", thread_state);
+    }
+
+    if (!innermost_reg) {
+      // it may happen according to standard
+      // "Between a parallel-begin event and an implicit-task-begin event, a call to
+      //  ompt_get_parallel_info(0,...) may return information about the outer parallel team,
+      //  the new parallel team or an inconsistent state."
+      // FIXME check when this happened???
+      printf("Innermost region not present: %x\n", where_am_I);
+    }
+    else {
+      if (innermost_reg != new_reg) {
+        // innermost_reg should be the parent region
+        if (innermost_reg->depth + 1 != new_reg->depth) {
+          // never happened
+          printf("What kind of region is innermost_reg\n");
+        }
+        else {
+          // innermost_reg is the parent of the new region
+          if (info_type != 1) {
+            // never happened
+            printf("Elider didn't find anything\n");
+          }
+          else {
+            if (region_depth != innermost_reg->depth) {
+              // never happened
+              printf("Elider doesn't point out parent region\n");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (innermost_reg) {
+    int old = atomic_fetch_add(&innermost_reg->barrier_cnt, 0);
+    if (old < 0) {
+      // FIXME this happened only once.
+      printf("Skip this one: %d\n", old);
+    }
+  }
+
+  if (waiting_on_last_implicit_barrier) {
+    if (info_type == 2) {
+      if (thread_state == ompt_state_wait_barrier_implicit) {
+
+      }
+      else if (thread_state == ompt_state_overhead) {
+        // OpenMP Specification:
+        // "The value ompt_state_overhead indicates that the thread is in the overhead state at any point
+        // while executing within the OpenMP runtime, except while waiting at a synchronization point."
+
+        // case 0:
+        // __omp_implicit_task_end
+        // __kmp_fork_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+        // case 1:
+        // __kmp_fork_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+        // case 2:
+        // pthread_getspecifi
+        // hpcrun_get_thread_data_specific_avail
+        // hpcrun_safe_enter
+        // ompt_implicit_task
+        // __omp_implicit_task_end
+        // __kmp_fork_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+        // case 3:
+
+
+      }
+      else if (thread_state == ompt_state_work_parallel) {
+        // case 0:
+        // hpcrun_get_thread_data_specific
+        // hpcrun_safe_enter
+        // ompt_implicit_task(begin)
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+        // case 1:
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+        // case 0:
+        // pthread_getspecific@plt
+        // hpcrun_get_thread_data_specific
+        // hpcrun_safe_enter
+        // ompt_implicit_task(begin)
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+
+      }
+      else if (thread_state == ompt_state_idle) {
+
+        // case 0:
+        // __ompt_implicit_task_end
+        // __kmp_fork_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+
+      }
+      else if (thread_state == ompt_state_work_serial){
+        // I guess thread is executing sequential code
+      }
+      else {
+        printf("2102 Some other state: %x\n", thread_state);
+      }
+    }
+  }
+
+  if (thread_state == ompt_state_undefined) {
+    printf("State is undefined\n");
+  }
+
+  if (!innermost_reg) {
+    if (thread_state != ompt_state_wait_barrier_implicit) {
+      // this can happen
+      // state was: 0x101 (ompt_state_overhead)
+      printf("No innermost_reg. wait: %d, where: %x, state: %x\n",
+             waiting_on_last_implicit_barrier, where_am_I, thread_state);
+    }
+
+    if (info_type == 1) {
+      // never happened
+      printf("Did elider find something. Reg depth: %d\n", region_depth);
+    }
+
+    typed_stack_elem(region) *parent_reg = hpcrun_ompt_get_region_data(1);
+    if (parent_reg) {
+      // case 0:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+      // case 1:
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+    }
+
+    ompt_data_t *inner_td = hpcrun_ompt_get_task_data(0);
+    if (inner_td) {
+      // inner_td = {0x0}
+      // parent_td = {0x5}
+
+      // case 0:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+    }
+  }
+
+  if (innermost_reg) {
+    ompt_data_t *inner_td = hpcrun_ompt_get_task_data(0);
+    if (!inner_td) {
+      // case 0:
+      // sched_yield
+      // __kmp_fork_barrier
+      // __kmp_launch_thread
+      // __kmp_launch_worker
+
+      // case 1:
+      //
+
+    }
+  }
+
+  int task_type_flags = -1;
+  int thread_num = -1;
+  ompt_data_t *inner_td = vi3_hpcrun_ompt_get_task_data(0, &task_type_flags, &thread_num);
+
+  cct_node_t *cct_null = NULL;
+  int td_reg_depth = -1;
+  int info_type2 = 2;
+  if (inner_td)
+    task_data_value_get_info(inner_td->ptr, &cct_null, &td_reg_depth);
+
+  if (innermost_reg && inner_td) {
+    if (info_type2 == 1) {
+      if (innermost_reg->depth == td_reg_depth) {
+        if ((thread_num == 0) != hpcrun_ompt_is_thread_region_owner(innermost_reg)) {
+          // never happened
+          printf("No correspondence in checking region ownershio\n");
+        }
+      }
+    }
+  }
+
+  if (waiting_on_last_implicit_barrier) {
+    if (!innermost_reg) {
+      if (info_type != 2) {
+        printf("No region data, but elider found something %d\n", info_type);
+      }
+    }
+
+    if (innermost_reg) {
+      if (!inner_td) {
+        if (info_type != 2) {
+          printf("No task data, but elider found something: %d\n", info_type);
+        }
+
+        if (hpcrun_ompt_is_thread_region_owner(innermost_reg)) {
+          printf("It seems I'm master of this region: %lx, (%lx)\n",
+                 innermost_reg->region_id, my_upper_bits);
+        }
+      }
+    }
+
+    if (innermost_reg && inner_td) {
+      if (inner_td->ptr == 0x0) {
+        if (info_type == 1) {
+          bool owner = hpcrun_ompt_is_thread_region_owner(innermost_reg);
+          if (!owner) {
+            printf("I'm not the owner\n");
+          }
+        }
+      }
+    }
+
+    if (innermost_reg && inner_td) {
+      bool implicit = (task_type_flags & ompt_task_implicit) == ompt_task_implicit;
+      if (!implicit) {
+        printf("May not be implicit task\n");
+      }
+
+      bool master_by_td = thread_num == 0;
+      bool master_by_reg = hpcrun_ompt_is_thread_region_owner(innermost_reg);
+
+      if (master_by_reg) {
+        if (info_type != 1) {
+          // printf("Elider didn't find anything. Inner_depth: %d, td_reg_depth: %d\n",
+          //    innermost_reg->depth, td_reg_depth);
+
+          // innermost_reg->depth == td_reg_depth
+
+          if (innermost_reg->depth != td_reg_depth) {
+            // never happened
+            printf("2264: This never happened for now\n");
+          }
+          else {
+            //printf("I think this should go to master.\n");
+
+            // case 0:
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+
+          }
+        }
+        else {
+
+          if (innermost_reg->depth != region_depth + 1) {
+
+            if (where_am_I == vi3_my_enum_parallel_begin) {
+              if (td_reg_depth != region_depth) {
+                // never happened
+                printf("Can this happen???\n");
+              }
+
+              // case 0:
+              // sched_yield
+              // __kmp_wait_4_ptr
+              // __kmp_acquire_ticket_lock
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+
+            }
+            else if (where_am_I == vi3_my_enum_impl_task_begin) {
+
+              // case 0:
+              // pthread_getspecific
+              // hpcrun_get_thread_data_specific
+              // hpcrun_safe_enter
+              // ompt_implicit_task (end)
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+
+              // case 1:
+              // pthread_getspecific
+              // hpcrun_get_thread_data_specific_aval
+              // hpcrun_safe_enter
+              // ompt_implicit_task (end)
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+
+              // case 2:
+              //
+
+            }
+            else if (where_am_I == vi3_my_enum_impl_task_end) {
+              // case 0:
+              // hpcrun_safe_exit
+              // ompt_implicit_task (end)
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+
+              // case 1:
+              // __ompt_get_task_info_object
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+
+              // case 2:
+              // __tls_get_addr
+              // __kmp_get_global_thread_id
+              // __ompt_get_task_info_object
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+
+              // case 3:
+              // __kmp_join_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+            }
+            else if (where_am_I == vi3_my_enum_parallel_end) {
+              // case 0:
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+
+              // case 1:
+              // __kmp_fork_call
+              // __kmp_GOMP_fork_call
+              // __kmp_api_GOMP_parallel_40_alias
+              // g
+              // f
+              // e._omp_fn.1
+
+              // case 2:
+              // g
+              // f
+              // e._omp_fn.1
+              // ...
+            }
+
+          }
+
+
+
+        }
+      }
+      else {
+        if (info_type == 1) {
+          // printf("inner->ptr: %p, td_reg_depth: %d, region_depth: %d\n",
+          //     inner_td->ptr, td_reg_depth, region_depth);
+
+          if (td_reg_depth != region_depth) {
+            // never happened
+            printf("2403: td_reg_depth != region_depth\n");
+          }
+
+          if (innermost_reg->depth != td_reg_depth) {
+            // never happened
+            printf("2407: innermost_reg->depth != td_reg_depth");
+          }
+
+          if (innermost_reg->depth != region_depth) {
+            // never happened
+            printf("2411: innermost_reg->depth != region_depth");
+          }
+
+          // innermost_reg->depth == td_reg_depth == region_depth
+
+          if (where_am_I == vi3_my_enum_parallel_begin) {
+            // case 0:
+            // sched_yield
+            // __kmp_wait_4_ptr
+            // __kmp_acquire_ticket_lock
+            // __kmp_fork_call
+            // __kmp_GOMP_fork_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+          }
+          else if (where_am_I == vi3_my_enum_impl_task_end) {
+            // case 0:
+            // __kmp_release_ticket_lock
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+
+            // case 1:
+            // hpcrun_safe_enter
+            // ompt_prallel_end
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+
+            // case 2:
+            // __kmp_join_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+          }
+          else if (where_am_I == vi3_my_enum_parallel_end) {
+            // case 0:
+            // hpcrun_safe_enter
+            // ompt_parallel_begin
+            // __kmp_fork_call
+            // __kmp_GOMP_fork_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+
+            // case 1:
+            // __kmp_GOMP_fork_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+
+            // case 2:
+            // __kmp_fork_call
+            // __kmp_GOMP_fork_call
+            // __kmp_api_GOMP_parallel_40_alias
+            // g
+            // f
+            // e._omp_fn.1
+            // ...
+
+
+          }
+          else {
+            // never happened
+            printf("What this can be??? %d\n", where_am_I);
+          }
+
+
+        }
+      }
+
+
+#if 0
+      if (thread_num == 0) {
+        // BIG NOTE VI3: should be safe to register for the innermost region
+
+        // thread is master
+        // expect that elider found parent task_data
+        if (info_type != 1) {
+          // case 0:
+          // __kmp_join_barrier
+          // __kmp_internal_join
+          // __kmp_api_GOMP_parallel_40_alias
+          // a
+          // main
+
+          // initial master thread
+        }
+        else {
+          if (region_depth + 1 != innermost_reg->depth) {
+
+            if (region_depth != innermost_reg->depth) {
+              // never happened
+              printf("It should be at least innermost region\n");
+            }
+            else {
+              if (where_am_I == vi3_my_enum_parallel_begin) {
+                // FIXME vi3: this kind of waiting_on_lasti_implicit_barrier is not accurate
+                // case 0:
+                // sched_yield
+                // __kmp_wait_4_ptr
+                // __kmp_acquire_ticket_lock
+                // __kmp_fork_call
+                // __kmp_GOMP_fork_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.1
+                // ...
+
+              }
+              else if (where_am_I == vi3_my_enum_impl_task_begin) {
+                // case 0:
+                // sched_yield
+                // __kmp_wait_4_ptr
+                // __kmp_acquire_ticket_lock
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.1
+              }
+              else if (where_am_I == vi3_my_enum_impl_task_end) {
+                // case 0:
+                // __kmp_release_ticket_lock
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // e
+                // d
+                // c._omp_fn.2
+
+                // case 1:
+                // __kmp_release_ticket_lock
+                // __kmp_join_call
+                // __kmp_api_GOMP_parallel_40_alias
+                // g
+                // f
+                // e._omp_fn.2
+                // ...
+
+              }
+              else if (where_am_I == vi3_my_enum_parallel_end) {
+                // case 0:
+                // sched_yield
+                // __kmp_join_barrier
+                // __kmp_internal_join
+                // __kmp_api_GOMP_parallel_40_alias
+                // e
+                // d
+                // c._omp_fn.2
+                // ...
+              }
+              else {
+                printf("2277: Unexpected state\n");
+              }
+            }
+
+
+
+          }
+        }
+      }
+      else {
+        if (inner_td->ptr != 0x0) {
+          printf("Da li je realno ovo???\n");
+        }
+      }
+#endif
+
+    }
+
+
+  }
+
+  if (innermost_reg && inner_td) {
+    if (!hpcrun_ompt_is_thread_region_owner(innermost_reg)) {
+      ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(0);
+      if (info_type == 2) {
+        if (!frame0) {
+          if (thread_state == ompt_state_wait_barrier_implicit) {
+            // case 0:
+            // sched_yield
+            // __kmp_fork_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+          }
+          else {
+            printf("I should always have it: %p, Thread state: %x\n", frame0, thread_state);
+          }
+        }
+        else {
+          if (frame0->enter_frame.value != 0x0 || frame0->exit_frame.value !=0x0) {
+            if (frame0->exit_frame.value != 0x0) {
+              // case 0:
+              // __kmp_invoke_task_func
+              // __kmp_launch_thread
+              // __kmp_launch_worker
+
+              // case 1:
+              // hpcrun_safe_enter
+              // ompt_implicit_task (end)
+              // __ompt_implicit_task_end
+              // __kmp_fork_barrier
+              // __kmp_launch_thread
+              // __kmp_launch_worker
+
+
+              // vi3_idle_collapsed = 0
+            }
+
+            if (frame0->enter_frame.value != 0x0) {
+              printf("enter: %p\n", frame0->enter_frame.ptr);
+              
+            }
+          }
+        }
+
+        // whats the value of inner_td->ptr
+
+        if (thread_state == ompt_state_wait_barrier_implicit) {
+
+        }
+        else if (thread_state == ompt_state_work_parallel) {
+          // case 0:
+          // __kmp_invoke_task_func
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          if (inner_td->ptr != 0x0) {
+            // case 0:
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 1:
+            // __kmp_run_after_invoket_task
+            // __kmp_invoke_task_func
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+          }
+
+        }
+        else if (thread_state == ompt_state_overhead) {
+          // case 0:
+          // ompt_implicit_task (end)
+          // __omp_implicit_task_end
+          // __kmp_fork_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          // case 1:
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          // case 2:
+          // __kmp_fork_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          // case 3:
+          // pthread_getspecfic
+          // hpcrun_get_thread_data_specifi
+          // hpcrun_safe_enter
+          // ompt_implicit_task (end)
+          // __ompt_implicit_task_end
+          // __kmp_fork_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+
+          if (inner_td->ptr != 0x0) {
+            // case 0:
+            // __tls_get_addr
+            // ompt_sync
+            // __kmp_join_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+            // case 1:
+            // ompt_sync
+            // __kmp_join_barrier
+            // __kmp_launch_thread
+            // __kmp_launch_worker
+
+          }
+        }
+        else if (thread_state == ompt_state_idle) {
+        }
+        else {
+          printf("Some other state: %x\n", thread_state);
+        }
+      }
+      else {
+
+        if (vi3_idle_collapsed) {
+          // never
+          printf("May be idling\n");
+        }
+
+
+        if (!frame0) {
+          // never happened
+          printf("This may happen\n");
+        }
+        else {
+          if (frame0->exit_frame.value == 0x0 && frame0->enter_frame.value == 0x0) {
+            // never happened
+            printf("No exit or enter frame\n");
+          }
+        }
+
+
+        if (inner_td->ptr == 0x0) {
+          // vi3 to vi3 - use this ... this won't happen
+          printf("Is this possible\n");
+        }
+        if (thread_state == ompt_state_wait_barrier_implicit) {
+          // never happened
+          printf("No disjunct\n");
+        }
+        else if (thread_state == ompt_state_work_parallel) {
+          // case 0:
+          // loop2
+          // g._omp_fn.0
+        }
+        else if (thread_state == ompt_state_overhead) {
+          // case 0:
+          // __kmp_wait_4_ptr
+          // __kmp_acquire_ticket_lock
+          // __kmp_fork_call
+          // __kmp_GOMP_fork_call
+          // __kmp_api_GOMP_prallel_40_alias
+          // e
+          // d
+          // c._omp_fn.2
+
+          // case 1:
+          // __kmp_bakery_check
+          // __kmp_wait_4_ptr
+          // __kmp_acquire_ticket_lock
+          // __kmp_fork_call
+          // __kmp_GOMP_fork_call
+          // __kmp_api_GOMP_prallel_40_alias
+          // g
+          // f
+          // e._omp_fn.1
+
+          // case 2:
+          // sched_yield
+          // __kmp_wait_4_ptr
+          // __kmp_acquire_ticket_lock
+          // __kmp_fork_call
+          // __kmp_GOMP_fork_call
+          // __kmp_api_GOMP_prallel_40_alias
+          // g
+          // f
+          // e._omp_fn.1
+        }
+        else {
+          printf("What else to expect to see this: %x\n", thread_state);
+        }
+      }
+    }
+  }
+#endif
+
+
+  typed_stack_elem(region) *innermost_region = hpcrun_ompt_get_region_data(0);
+  if (innermost_region && innermost_region->depth >= 1) {
+    // there is at least one outer parallel region
+    typed_stack_elem(region) *parent_region = hpcrun_ompt_get_region_data(1);
+    if (!parent_region) {
+      innermost_region_present_but_not_parent(innermost_region, parent_region);
+    }
+  }
 
   // invalidate value
   vi3_last_to_register = -1;

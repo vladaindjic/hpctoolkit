@@ -102,7 +102,7 @@
 // otherwise master thread executed ompt_parallel_end_callback
 // and region should be considered as finished.
 // The code wrapped around with this pragma is used for debug purposes only.
-#define DEBUG_BARRIER_CNT 0
+#define DEBUG_BARRIER_CNT 1
 
 
 struct ompt_region_data_s;

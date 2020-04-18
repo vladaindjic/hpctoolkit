@@ -99,7 +99,16 @@ hpcrun_ompt_get_task_data
 );
 
 
-uint64_t 
+ompt_data_t*
+vi3_hpcrun_ompt_get_task_data
+(
+  int level,
+  int *task_type_flags,
+  int *thread_num
+);
+
+
+uint64_t
 hpcrun_ompt_outermost_parallel_id
 (
  void

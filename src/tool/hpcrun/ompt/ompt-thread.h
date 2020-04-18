@@ -114,6 +114,16 @@ extern __thread uint64_t upper_bits_mask;
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
 extern __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack;
 #endif
+
+
+typedef enum vi3_my_enum_e {
+  vi3_my_enum_start_thread                    = 0x000,
+  vi3_my_enum_parallel_begin                  = 0x001,
+  vi3_my_enum_impl_task_begin                 = 0x002,
+  vi3_my_enum_impl_task_end                   = 0x003,
+  vi3_my_enum_parallel_end                    = 0x004,
+} vi3_my_enum_t;
+extern __thread vi3_my_enum_t where_am_I;
 //******************************************************************************
 // interface operations 
 //******************************************************************************

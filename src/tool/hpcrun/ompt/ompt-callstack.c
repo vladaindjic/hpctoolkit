@@ -275,6 +275,10 @@ collapse_callstack
   bt->partial_unwind = false;
   bt->collapsed = true;
 //  bt->fence = FENCE_MAIN;
+  //set_frame(*bt_outer, &ompt_placeholders.ompt_idle_state);
+  //      *bt_inner = *bt_outer;
+  //      bt->bottom_frame_elided = false;
+  //      bt->partial_unwind = false;
 }
 
 __thread int nested_regions_before_explicit_task = 0;
@@ -456,7 +460,9 @@ ompt_elide_runtime_frame(
        lead to quadratic cost. could pick up below where you left off cutting in 
        previous iterations.
     */
-    it = *bt_inner; 
+    it = *bt_inner; // FIXME vi3 to prof Mellor-Crummey do we really need this.
+                    //   If we're inside runtime and isSync = false,
+                    //   then we'll again pass through runtime frames
     if (exit0_flag) {
       for (; it <= *bt_outer; it++) {
         if ((uint64_t)(it->cursor.sp) >= (uint64_t)(fp_exit(frame0))) {
@@ -469,7 +475,7 @@ ompt_elide_runtime_frame(
 
     if (exit0_flag && omp_task_context) {
       TD_GET(omp_task_context) = omp_task_context;
-      *bt_outer = exit0 - 1;
+      *bt_outer = exit0 - 1;  // FIXME vi3 ??? why - 1???
       break;
     }
 

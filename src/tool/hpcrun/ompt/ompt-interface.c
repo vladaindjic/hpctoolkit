@@ -833,6 +833,27 @@ hpcrun_ompt_get_task_data
 }
 
 
+ompt_data_t*
+vi3_hpcrun_ompt_get_task_data
+(
+  int level,
+  int *task_type_flags,
+  int *thread_num
+)
+{
+  if (ompt_initialized){
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    ompt_frame_t *task_frame = NULL;
+    ompt_get_task_info_fn(level, task_type_flags, &task_data, &task_frame, &parallel_data, thread_num);
+    return task_data;
+  }
+  *task_type_flags = -1;
+  *thread_num = -1;
+  return (ompt_data_t*) ompt_data_none;
+}
+
+
 void *
 hpcrun_ompt_get_idle_frame
 (
@@ -855,6 +876,7 @@ int hpcrun_ompt_get_parallel_info
   if (ompt_initialized) {
     return ompt_get_parallel_info_fn(ancestor_level, parallel_data, team_size);
   }
+  printf("Can this happened\n");
   return 0;
 }
 

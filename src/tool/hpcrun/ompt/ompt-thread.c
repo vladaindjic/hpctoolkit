@@ -99,6 +99,8 @@ __thread uint64_t upper_bits_mask = 0xFFFF000000000000;
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
 __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack = NULL;
 #endif
+
+__thread vi3_my_enum_t where_am_I = vi3_my_enum_start_thread;
 //******************************************************************************
 // private variables 
 //******************************************************************************
