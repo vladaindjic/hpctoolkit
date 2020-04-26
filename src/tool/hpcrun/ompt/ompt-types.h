@@ -89,7 +89,7 @@
 // code wrapped around with this pragma will use upper bits of generated unique
 // parallel region id to check if the thread is the master (owner/creator)
 // of the parallel region
-#define THREAD_MASTER_CHECK 1
+#define THREAD_MASTER_CHECK 0
 // keep pointer to parent region so we can get information about outer/ancestor
 // regions that runtime is not able to provide.
 #define KEEP_PARENT_REGION_RELATIONSHIP 1
@@ -103,6 +103,18 @@
 // and region should be considered as finished.
 // The code wrapped around with this pragma is used for debug purposes only.
 #define DEBUG_BARRIER_CNT 1
+
+
+typedef enum ompt_region_execution_phase_e {
+  ompt_region_execution_phase_invalid                     = 0,
+  ompt_region_execution_phase_parallel_begin              = 1,
+  ompt_region_execution_phase_implicit_task_begin         = 2,
+  ompt_region_execution_phase_last_implicit_barrier_enter = 4,
+  ompt_region_execution_phase_last_implicit_barrier_exit  = 8,
+  ompt_region_execution_phase_implicit_task_end           = 16,
+  ompt_region_execution_phase_parallel_end                = 32,
+
+} ompt_region_execution_phase_t;
 
 
 struct ompt_region_data_s;
@@ -209,14 +221,18 @@ typedef struct old_region_s {
 // took sample in the region and also if the
 // thread is the master of that region.
 typedef struct region_stack_el_s {
+  // region execution phase determined by last recent executed callback
+  ompt_region_execution_phase_t exec_phase;
   // region at depth equal to index on the stack
   typed_stack_elem_ptr(region) region_data;
   // placeholder that keeps call paths of samples attributed to region_data
   cct_node_t *unresolved_cct;
-  bool took_sample;
   // should be safe to remove this
+#if 0
+  bool took_sample;
   bool team_master;
   old_region_t *old_region_list;
+#endif
 } typed_random_access_stack_elem(region);
 // declare pointer to previous struct
 typed_random_access_stack_declare_type(region);

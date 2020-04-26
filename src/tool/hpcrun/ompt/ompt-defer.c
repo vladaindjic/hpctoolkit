@@ -106,8 +106,8 @@ __thread cct_node_t *cct_path_before_kernel_extension = NULL;
 static void
 merge_metrics
 (
- cct_node_t *a, 
- cct_node_t *b, 
+ cct_node_t *a,
+ cct_node_t *b,
  merge_op_arg_t arg
 )
 {
@@ -165,8 +165,8 @@ msg_deferred_resolution_breakpoint
 static void
 omp_resolve
 (
- cct_node_t* cct, 
- cct_op_arg_t a, 
+ cct_node_t* cct,
+ cct_op_arg_t a,
  size_t l
 )
 {
@@ -224,8 +224,8 @@ omp_resolve
 static void
 omp_resolve_and_free
 (
- cct_node_t* cct, 
- cct_op_arg_t a, 
+ cct_node_t* cct,
+ cct_op_arg_t a,
  size_t l
 )
 {
@@ -287,7 +287,7 @@ is_partial_resolve
 //     unresolved tree indexed by the current region_id
 // (4) Update td->region_id to be the current region id
 
-void 
+void
 resolve_cntxt
 (
  void
@@ -459,11 +459,13 @@ swap_and_free
   stack_element->region_data = region_data;
   // invalidate previous value unresolved_cct
   stack_element->unresolved_cct = NULL;
+#if 0
   // invalidate value of team_master,
   // will be set in function add_region_and_ancestors_to_stack
   stack_element->team_master = 0;
   // thread hasn't taken a sample in this region yet
   stack_element->took_sample = 0;
+#endif
 }
 
 
@@ -534,8 +536,10 @@ add_region_and_ancestors_to_stack
   // If the stack content does not corresponds to ancestors of the region_data,
   // then thread could only be master of the region_data, but not to its ancestors.
 
+#if 0
   // Values of argument team_master says if the thread is the master of region_data
   typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
+#endif
 }
 
 
@@ -594,33 +598,49 @@ thread_take_sample
   // pseudo cct node which corresponds to the parent region
   cct_node_t *parent_cct = *parent_cct_ptr;
 
+#if 0
   // FIXME vi3 >>> If we use this approach, then field took_sample is not needed
   // thread took a sample in this region before
   if (el->took_sample) {
     // skip this region, and go to the inner one
     goto return_label;
   }
+#endif
+  if (el->unresolved_cct) {
+    // this should not happen
+    printf("Trying to register multiple times for the same region???\n");
+  }
 
   // Check if the address that corresponds to the region
   // has already been inserted in parent_cct subtree.
-  // This means that thread took sample in this region before.
   cct_addr_t *region_addr = &ADDR2(UNRESOLVED,el->region_data->region_id);
   cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
   if (found_cct) {
-    // Region was on the stack previously, so the thread does not need
-    // neither to insert cct nor to register itself for the region's call path.
-    // Mark that thread took a sample, store found_cct in el and skip the region.
+    // The following scenario happened be possible:
+    //     1. Thread take sample as a worker in region nested inside region N.
+    //        Register for N's call path
+    //        Insert unresolved_cct that corresponds to N.
+    //     2. Thread take sample as a worker in region nested inside region M.
+    //        Register for M's call path
+    //        Insert unresolved_cct that corresponds to M.
+    //     3. Thread take sample as a worker in new region nested inside region N
+    //        No need to register for N's call path again
+    //        No need to insert unresolved_cct that corresponds to N again,
+    //           since it was inserted in step 1, just reuse it.
+#if 0
     el->took_sample = true;
+#endif
     el->unresolved_cct = found_cct;
     goto return_label;
   }
-
+#if 0
   // mark that thread took sample in this region for the first time
   el->took_sample = true;
+#endif
   // insert cct node with region_addr in the parent_cct's subtree
   el->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
 
-  if (!el->team_master) {
+  if (!hpcrun_ompt_is_thread_region_owner(el->region_data)) {
     // Worker thread should register for the region's call path
     register_to_region(el->region_data, el->unresolved_cct);
   } else {
@@ -629,6 +649,7 @@ thread_take_sample
   }
 
   return_label: {
+#if 0
     // If region is marked as the last to register (see function register_to_all_regions),
     // then stop further processing.
     // FIXME vi3 >>> this should be removed.
@@ -636,6 +657,7 @@ thread_take_sample
       // Indication that processing of active regions should stop.
       return 1;
      }
+#endif
     // continue processing descendants
     // store new parent_cct node for the inner region
     *parent_cct_ptr = el->unresolved_cct;
@@ -702,7 +724,7 @@ least_common_ancestor
 }
 #endif
 
-
+#if 0
 typedef struct lca_args_s {
   int level;
   typed_stack_elem(region) *region_data;
@@ -809,7 +831,9 @@ least_common_ancestor
   // thread is inside parallel region
   return true;
 }
+#endif
 
+#if 0
 // temporary copy from ompt-callstack.c
 static ompt_state_t
 check_state
@@ -857,7 +881,155 @@ innermost_region_present_but_not_parent
     // ... (frames that will be probably be clipped by elider)
   }
 }
+#endif
 
+static inline bool
+unresolved_cct_belongs_to_region
+(
+  cct_node_t *unresolved_cct,
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  // unresolved_cct belongs to region if its lm_ip matches
+  // to region_data->region_id
+  return hpcrun_cct_addr(unresolved_cct)->ip_norm.lm_ip == region_data->region_id;
+}
+
+bool
+lca_el_fn
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  typed_stack_elem(region) **expected_reg_ptr =
+      (typed_stack_elem(region) **) arg;
+  // Get active region which depth is equal to el's index on the stack and
+  // mark it as expected_reg. This region should be already stored inside el.
+  typed_stack_elem(region) *expected_reg = *expected_reg_ptr;
+
+  if (el->region_data == expected_reg) {
+    // Stack el already contains expected_reg.
+    if (el->unresolved_cct) {
+      // Presence of el->unresolved_cct should mean that thread took sample
+      // inside this region, unless the el->region_data has been reused.
+      // If el->unresolved_cct belongs to el->region_data, then el->region_data
+      // has not been reused, thread already took sample inside it so
+      // el->region_data represents the least common ancestor.
+      if (unresolved_cct_belongs_to_region(el->unresolved_cct, el->region_data)) {
+        return 1;
+      }
+      // FIXME vi3 consider this scenario again
+    } else {
+      // Thread has not taken sample inside expected_reg, so it cannot be the
+      // least common ancestor. Continue searching for it.
+      goto return_label;
+    }
+  }
+
+  //printf("It seems I've finished here\n");
+  // Since expected_reg is not present on the stack inside el,
+  // it represents the region in which thread is not involved.
+  // TODO FIXME vi3: (Try to optimized upper part)
+  // Invalidate previous content of el and store expected_reg.
+  memset(el, 0, sizeof(typed_random_access_stack_elem(region)));
+  el->region_data = expected_reg;
+
+  return_label:
+  // Next expected_reg is the parent region of the current expected_reg stored
+  // inside el->region_data. (parent region = the first enclosing region)
+  expected_reg = typed_stack_next_get(region, sstack)(el->region_data);
+  if (!expected_reg) {
+    // Since el->region_data is the outermost region,
+    // it represents the least common ancestor
+    return 1;
+  }
+
+  // continue looking for the least common ancestor
+  *expected_reg_ptr = expected_reg;
+  return 0;
+}
+
+typed_random_access_stack_elem(region) *
+least_common_ancestor
+(
+  void
+)
+{
+  // FIXME use innermost instead of top_reg
+  typed_stack_elem(region) *innermost_reg =
+      typed_random_access_stack_top(region)(region_stack)->region_data;
+
+  return typed_random_access_stack_forall(region)(region_stack,
+                                                  lca_el_fn, &innermost_reg);
+}
+
+
+bool
+safe_to_register_for_active_regions
+(
+  void
+)
+{
+  if (!hpcrun_ompt_is_thread_part_of_team()) {
+    // Thread is not part of any team, so there's no region to register.
+    return false;
+  }
+
+  // NOTE: innermost region == region on the top of the stack
+
+  // Thread is master of the innermost region, which means that all regions
+  // on the stack are active and is safe to register for their call paths.
+  if (hpcrun_ompt_is_thread_master_of_the_innermost_region()) {
+    return true;
+  }
+
+  // Thread is the worker in the innermost region.
+  ompt_region_execution_phase_t exec_phase =
+      hpcrun_ompt_get_current_region_execution_phase();
+
+  if (exec_phase == ompt_region_execution_phase_implicit_task_begin) {
+    // Thread took sample while executing implicit task,
+    // which means that innermost region and all enclosing regions are active.
+    // Safe to register for all active regions.
+    return true;
+  } else if (exec_phase == ompt_region_execution_phase_last_implicit_barrier_enter) {
+    // thread entered last implicit barrier
+    int task_type_flags, thread_num;
+    ompt_data_t *task_data =
+        vi3_hpcrun_ompt_get_task_data(0, &task_type_flags, &thread_num);
+    if (!task_data) {
+      // thread cannot be sure if executing task that belongs to the innermost
+      // region. Not safe to register
+      return false;
+    }
+
+    if (task_type_flags & ompt_task_explicit) {
+      // Thread is executing explicit task while waiting on last implicit barrier.
+      // Innermost region and all enclosing regions are still active.
+      // Safe to register.
+      return true;
+    }
+
+    // task_data belongs to implicit task. Thread cannot be sure if
+    // innermost region or any of enclosing regions are still active.
+    // (The following scenario may happen: While thread is waiting on
+    // the last implicit barrier for more work, the innermost region's team
+    // was torn apart. Also, enclosing regions may be finished too.)
+    // Not safe to register.
+    return false;
+  } else {
+    // Thread finished with waiting on the last implicit barrier of the
+    // innermost region.
+    // It should either be finalized or become part of the team that belongs
+    // to the next parallel region.
+    // Region present on the top of the stack should have been finished.
+    // Obviously, it is not safe to register for that region or any of
+    // enclosing regions, because they might be finished too.
+    return false;
+  }
+
+}
 
 void
 register_to_all_regions
@@ -865,6 +1037,7 @@ register_to_all_regions
   void
 )
 {
+#if 0
 #if 0
   // If there is no regions on the stack, just return.
   // Thread should be executing sequential code.
@@ -2825,7 +2998,7 @@ register_to_all_regions
   }
 #endif
 
-
+#if 0
   typed_stack_elem(region) *innermost_region = hpcrun_ompt_get_region_data(0);
   if (innermost_region && innermost_region->depth >= 1) {
     // there is at least one outer parallel region
@@ -2894,12 +3067,51 @@ register_to_all_regions
                                                          region_stack,
                                                          thread_take_sample,
                                                          &parent_cct);
-  // NOTE vi3 >>> I put this function call inside ompt_cct_cursor_finalize function
-  //   since I'm still not sure why/how thread_data can change its value while
-  //   our tool is in the middle of sample processing.
-      // If any idle samples have been previously taken inside this region,
-      // attribute them to it.
-      // attr_idleness2region_at(vi3_last_to_register);
+#endif
+#endif
+
+  // check if thread should register for active regions
+  if (!safe_to_register_for_active_regions()) {
+    // Not safe to register for call paths of regions present on the stack
+    // For more information see safe_to_register_for_active_regions.
+
+    // Notify ompt_cct_cursor_finalize that sample should not be attributed
+    // to any region present on the stack.
+    registration_safely_applied = false;
+    return;
+  }
+
+  // Least common ancestor algorithm will try to find active region in which
+  // thread already took a sample.
+  // If there is no that kind of region, it will return the outermost region.
+  typed_random_access_stack_elem(region) *lca_el = least_common_ancestor();
+
+  cct_node_t *parent_cct;
+  int start_from;
+
+  if (lca_el->unresolved_cct) {
+    // thread took sample inside this region, so register only for nested regions
+    parent_cct = lca_el->unresolved_cct;
+    start_from = lca_el->region_data->depth + 1;
+  } else {
+    // lca_el->region_data is the outermost region and thread haven't taken
+    // sample in it, so it needs to register for all regions
+    // present on the stack.
+    parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+    start_from = 0;
+  }
+
+  // Registration process
+  typed_random_access_stack_reverse_iterate_from(region)(start_from,
+      region_stack, thread_take_sample, &parent_cct);
+
+  // Notify ompt_cct_cursor_finalize that cursor should be unresolved_cct
+  // of the innermost region
+  registration_safely_applied = true;
+
+  // All remained samples attributed to the local placeholder belongs to
+  // innermost region which is still active.
+  attr_idleness2innermost_region();
 }
 
 
@@ -3029,17 +3241,17 @@ attr_idleness2outermost_ctx
 
 
 void
-attr_idleness2region_at
+attr_idleness2innermost_region
 (
-  int depth
+  void
 )
 {
   // This if may be put inside attr_idleness2_cct_node.
   // The problem that may occur is that thread asks for unresolved_cct
-  // which corresponds to the region present on the top of the stack
-  // and then finds that there is no idle samples under idle placeholder.
-  // In that case, thread just lost cycles getting information about
-  // unresolved_cct that won't use.
+  // which corresponds to the innermost region present on the top of
+  // the stack and then finds that there is no idle samples under idle
+  // placeholder. In that case, thread just lost cycles getting information
+  // about unresolved_cct that won't use.
   if (any_idle_samples_remained()) {
     // NOTE vi3: Happened in nestedtasks.c.
     attr_idleness2_cct_node(hpcrun_ompt_get_top_unresolved_cct_on_stack());
@@ -3050,8 +3262,8 @@ attr_idleness2region_at
 void
 update_unresolved_node
 (
- cct_node_t* n, 
- cct_op_arg_t arg, 
+ cct_node_t* n,
+ cct_op_arg_t arg,
  size_t level
 )
 {
@@ -3059,10 +3271,10 @@ update_unresolved_node
 
   // Note: GCC7 statically evaluates this as false and dead code
   // eliminates the body without the cast on UNRESOLVED
-  if (addr->ip_norm.lm_id == (uint16_t) UNRESOLVED) { 
-    addr->ip_norm.lm_ip = 
+  if (addr->ip_norm.lm_id == (uint16_t) UNRESOLVED) {
+    addr->ip_norm.lm_ip =
       ompt_placeholders.ompt_region_unresolved.pc_norm.lm_ip;
-    addr->ip_norm.lm_id = 
+    addr->ip_norm.lm_id =
       ompt_placeholders.ompt_region_unresolved.pc_norm.lm_id;
   }
 }
@@ -3071,7 +3283,7 @@ update_unresolved_node
 void
 update_any_unresolved_regions
 (
- cct_node_t* root 
+ cct_node_t* root
 )
 {
   void *no_arg = 0;
@@ -3120,7 +3332,7 @@ resolve_if_worker
 }
 #endif
 
-void 
+void
 ompt_resolve_region_contexts
 (
  int is_process
@@ -3153,7 +3365,7 @@ ompt_resolve_region_contexts
   for(;;i++) {
 
     // if all regions resolved, we are done
-    if (unresolved_cnt == 0) break; 
+    if (unresolved_cnt == 0) break;
 
     // poll for a notification to resolve a region context
     try_resolve_one_region_context();
@@ -3223,7 +3435,7 @@ ompt_resolve_region_contexts
 }
 
 
-void 
+void
 ompt_resolve_region_contexts_poll
 (
  void
@@ -3245,7 +3457,7 @@ top_cct
 (
  cct_node_t *current_cct
 )
-{  
+{
   if (!current_cct)
     return NULL;
 

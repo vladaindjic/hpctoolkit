@@ -209,9 +209,9 @@ attr_idleness2outermost_ctx
 );
 
 void
-attr_idleness2region_at
+attr_idleness2innermost_region
 (
-  int depth
+  void
 );
 
 #define VI3_DEBUG 0

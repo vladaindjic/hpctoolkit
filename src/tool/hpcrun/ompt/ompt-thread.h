@@ -124,6 +124,8 @@ typedef enum vi3_my_enum_e {
   vi3_my_enum_parallel_end                    = 0x004,
 } vi3_my_enum_t;
 extern __thread vi3_my_enum_t where_am_I;
+
+extern __thread bool registration_safely_applied;
 //******************************************************************************
 // interface operations 
 //******************************************************************************

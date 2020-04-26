@@ -1502,11 +1502,15 @@ handle_idle_sample
   cct_node_t *cct_cursor
 )
 {
+#if 0
+  // worker is part of the team, so this is not needed anymore
+
   if (typed_random_access_stack_empty(region)(region_stack)) {
     // No regions are present on the stack
     // It can be assumed that thread is executing the sequential code.
     return cct_cursor;
   }
+#endif
 
   if (!local_idle_placeholder) {
     // create placeholder if needed
@@ -1516,6 +1520,521 @@ handle_idle_sample
   return local_idle_placeholder;
 }
 
+// this function is used to provide debug infomation only
+void
+vi3_regions_active_no_omp_task_context_provided_by_elider_debug
+(
+  cct_bundle_t *cct,
+  backtrace_info_t *bt,
+  cct_node_t *cct_cursor,
+  cct_node_t *omp_task_context,
+  int region_depth,
+  int info_type
+)
+{
+  typed_random_access_stack_elem(region) *top_el = typed_random_access_stack_top(region)(region_stack);
+  if (TD_GET(master)) {
+    if (top_el->exec_phase == ompt_region_execution_phase_last_implicit_barrier_enter) {
+      // top_el->region_data->depth == 0
+      // printf("Entered last barrier: %d, %d\n", top_el->region_data->depth, top_el->exec_phase);
+      // elider haven't collapsed
+      // exec_phase 0x4 - enter last barrier
+      // depth 0
+
+      // case 0:
+      // sched_yield
+      // __kmp_join_barrier
+      // __kmp_internal_join
+      // __kmp_join_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
+
+      // FIXME vi3: Assume this should be put underneath thread_root
+      if (vi3_idle_collapsed) {
+        // never happened
+        printf("Why is stack collapsed to idle? initial master, rd: %d, ph: %d\n",
+               top_el->region_data->depth, top_el->exec_phase);
+      }
+    }
+    else {
+      // happened in simple.c (0, 1 - parallel_begin)
+
+      // happened in for-nested-functions. (0, 1 - parallel begin), (3, 2 - impl_task_begin)
+      // (depth: 3, phase: 8, collapsed: 1)
+      // (depth: 3, phase: 8, collapsed: 1, initial master: 1)
+      // (depth: 0, phase: 1, collapsed: 0)
+      // (depth: 0, phase: 1, collapsed: 0, initial master: 1)
+      // (depth: 3, phase: 2, collapsed: 1, initial master: 1)
+      printf("region: %d, phase: %d, collapsed: %d, initial master: %d\n",
+             top_el->region_data->depth, top_el->exec_phase, vi3_idle_collapsed, TD_GET(master));
+
+
+      // example region-in-task3.c
+      // (depth: 4, phase: 2, collapsed: 1, initial master: 1)
+      // case 0:
+      // __kmp_execute_tasks_32
+      // __kmpc_omp_taskwait_ompt
+      // __kmpt_omp_taskwait
+      // fib(n = 5)
+      // fb._omp_fn.1
+      // __kmp_execute_tasks_32
+      // __kmpc_omp_taskwait_ompt
+      // __kmpt_omp_taskwait
+      // fib(n = 7)
+      // fb._omp_fn.0
+      // __kmp_execute_tasks_32
+      // __kmpc_omp_taskwait_ompt
+      // __kmpt_omp_taskwait
+      // fib(n = 8)
+      // fb._omp_fn.0
+      // ... some other nested pattern until fib(n=33)
+      // inner_parallel._omp_fn.5
+      // __kmp_api_GOMP_parallel_40_alias
+      // inner_parallel._omp_fn.4
+      // __kmp_api_GOMP_parallel_40_alias
+      // inner_parallel._omp_fn.3
+      // __kmp_api_GOMP_parallel_40_alias
+      // inner_parallel
+      // a._omp_fn.8
+      // __kmp_execute_tasks_64
+      // __kmp_join_barrier
+      // __kmp_internal_join
+      // __kmp_join_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // a._omp_fn.6
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
+
+      // similar pattern happened multiple times
+    }
+  }
+  else {
+    if (hpcrun_ompt_is_thread_region_owner(top_el->region_data)) {
+      if (vi3_idle_collapsed) {
+        // printf("Why is stack collapsed to idle? NOT INITIAL, BUT MASTER, rd: %d, ph: %d\n",
+        //        top_el->region_data->depth, top_el->exec_phase);
+
+        // depth 3, phase 2 (impl_task_begin)
+        // thread worker in region at depth 2
+        // case 0:
+        // __kmp_api_GOMP_parallel_40_alias
+        // g
+        // f
+        // e._omp_fn.1
+        // __kmp_GOMP_microtask_wrapper
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+        // depth 3, phase 2 (impl_task_begin)
+        // thread master in region at depth 2
+        // thread worker in region at depth 1
+        // case 1:
+        // __kmp_api_GOMP_parallel_40_alias
+        // g
+        // f
+        // e._omp_fn.1
+        // __kmp_api_GOMP_parallel_40_alias
+        // e
+        // d
+        // c._omp_fn.2
+        // __kmp_GOMP_microtask_wrapper
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+      }
+      else {
+        // since this still never happened, you may consider that examples
+        // in the first below pragma had also collapsd stack frames
+        printf("Stack not collapsed? NOT INITIAL, BUT MASTER, rd: %d, ph: %d\n",
+               top_el->region_data->depth, top_el->exec_phase);
+      }
+#if 0
+      // Have not check if stack was collapsed for the below cases
+          // (3, 2) (3, 8)
+          // printf("master innermost region: rd: %d, ph: %d\n",
+          //        top_el->region_data->depth, top_el->exec_phase);
+          // top_el->exec_phase = 8 (last barrier exit)
+          // top_el->region_data->depth = 3
+          // thread is worker in region at depth 2
+
+          // case 0:
+          // __kmp_join_call
+          // __kmp_api_GOMP_parallel_40_alias
+          // g
+          // f
+          // e._omp_fn.1
+          // __kmp_GOMP_microtask_wrapper
+          // __kmp_invoke_task_func
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+          // monitor_thread_fence2
+          // start_thread
+          // clone
+
+          // ----------------
+          // top_el->exec_phase = 2 (impl_task_begin)
+          // top_el->region_data->depth = 3
+          // thread is worker in region at depth 2
+
+          // case 0:
+          // __kmp_api_GOMP_parallel_40_alias
+          // g
+          // f
+          // e._omp_fn.1
+          // __kmp_GOMP_microtask_wrapper
+          // __kmp_invoke_task_func
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+          // monitor_thread_fence2
+          // start_thread
+          // clone
+#endif
+      // FIXME vi3: I guess sample should be attributed to the parent of the innermost region.
+    }
+    else {
+      if (!vi3_idle_collapsed) {
+        // printf("Stack should be collapsed. Thread is worker.: rd: %d, ph: %d\n",
+        //        top_el->region_data->depth, top_el->exec_phase);
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 0:
+        // random_access_stack_empty
+        // region_random_access_stack_empty
+        // hpcrun_ompt_is_thread_part_of_team
+        // hpcrun_ompt_get_next_execution_phase
+        // ompt_sync(begin, last implicit barrier)
+        // __kmp_join_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 1:
+        // ompt_sync(begin, last implicit barrier)
+        // __kmp_join_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 2:
+        // random_access_stack_empty
+        // random_access_stack_top
+        // region_random_access_stack_top
+        // hpcrun_ompt_is_thread_part_of_team
+        // hpcrun_ompt_get_next_execution_phase
+        // ompt_sync(begin, last implicit barrier)
+        // __kmp_join_barrier
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+      }
+      else {
+        // printf("Stack collapsed. Thread is worker.: rd: %d, ph: %d\n",
+        //        top_el->region_data->depth, top_el->exec_phase);
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 0:
+        // __kmp_join_barrier
+        // __kmp_launch_thread
+        // __kmp_lanch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 1:
+        // __kmp_finish_implicit_task
+        // __kmp_invoke_task_func
+        // __kmp_launch_thread
+        // __kmp_launch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+
+        // depth 3, phase 2 (impl_task_begin)
+        // case 2:
+        // random_access_stack_empty
+        // random_access_stack_top
+        // region_random_access_stack_top
+        // hpcrun_ompt_is_thread_part_of_team
+        // hpcrun_ompt_next_region_execution_phase
+        // ompt_sync (begin last barrier)
+        // __kmp_join_barrier
+        // __kmp_launch_thread
+        // __kmp_lanch_worker
+        // monitor_thread_fence2
+        // start_thread
+        // clone
+      }
+
+#if 0
+      // haven't check if stack is collapsed
+
+          // printf("Worker inside innermost region: rd: %d, ph: %d\n",
+          //        top_el->region_data->depth, top_el->exec_phase);
+          // idle collapsed???
+          // exec_phase 2 (impl_task_begin)
+          // depth 3
+          //
+
+          // case 0:
+          // __tls_get_addr@plt
+          // hpcrun_ompt_is_thread_part_of_team
+          // hpcrun_ompt_next_region_execution_phase
+          // ompt_sync (begin, last_implicit_barrier)
+          // __kmp_join_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+          // monitor_thread_fence2
+          // start_thread
+          // clone
+
+          // case 1:
+          // __kmp_finish_implicit_task
+          // __kmp_invoke_task_func
+          // __kmp_launch_worker_thread
+          // monitor_thread_fence2
+          // start_thread
+          // clone
+
+          // case 2:
+          // ompt_sync (begin, last_implicit_barrier)
+          // __kmp_join_barrier
+          // __kmp_launch_thread
+          // __kmp_launch_worker
+          // monitor_thread_fence2
+          // start_thread
+          // clone
+#endif
+
+    }
+  }
+}
+
+void
+vi3_regions_may_not_be_active_debug
+(
+  cct_bundle_t *cct,
+  backtrace_info_t *bt,
+  cct_node_t *cct_cursor,
+  cct_node_t *omp_task_context,
+  int region_depth,
+  int info_type
+)
+{
+  // <<<<<<<<<<Debug>>>>>>>>>>
+  if (info_type == 1) {
+    // never happened
+    printf("Elider says this should be attributed to somewhere\n");
+  }
+  // <<<<<<<<<<Debug>>>>>>>>>>
+
+
+  // function register_to_all_regions is not sure if any region present
+  // on the stack is still active.
+
+  // if thread belongs to a team, then it must be worker in it
+  if (hpcrun_ompt_is_thread_part_of_team()) {
+    // Thread entered the last implicit barrier and is waiting for work.
+    // If the innermost task_data is present, then it represents an implcit task.
+    if (hpcrun_ompt_get_current_region_execution_phase()
+        == ompt_region_execution_phase_last_implicit_barrier_enter) {
+      // <<<<<<<<<<Debug>>>>>>>>>>
+      int ttf, tn;
+      ompt_data_t *inner_td = vi3_hpcrun_ompt_get_task_data(0, &ttf, &tn);
+      if (inner_td) {
+        if (! (ttf & ompt_task_implicit) ) {
+          // never happened
+          printf("If present, task should be implicit\n");
+        }
+      }
+      // <<<<<<<<<<Debug>>>>>>>>>>
+
+
+
+
+      // Sample will be attributed to the local placeholder and then later
+      // eventually be attributed to either innermost region (if determined as
+      // still active) or to the thread root.
+      //return check_and_return_non_null(handle_idle_sample(cct_cursor),
+      //                                 cct_cursor, 1823);
+    }
+    else {
+      // <<<<<<<<<<Debug>>>>>>>>>>
+      // just for debug purposes
+      if (hpcrun_ompt_get_current_region_execution_phase() != ompt_region_execution_phase_last_implicit_barrier_exit) {
+        // never happened
+        printf("Unpredicted region execution phase: %d\n",
+               ompt_region_execution_phase_last_implicit_barrier_exit);
+      }
+      // <<<<<<<<<<Debug>>>>>>>>>>
+    }
+  }
+
+  // Two remained cases:
+  // 1. thread is not part of any team
+  // 2. thread still thinks it is worker inside the team after exiting the
+  //    last implicit barrier. Still hasn't executing ompt_implicit_task_end
+  // In both cases, attribute sample to the outermost context (thread_root)
+  //return check_and_return_non_null(cct_cursor, cct_cursor, 1834);
+
+}
+
+
+cct_node_t *
+vi3_regions_active_no_omp_task_context_provided_by_elider
+(
+  cct_bundle_t *cct,
+  backtrace_info_t *bt,
+  cct_node_t *cct_cursor,
+  cct_node_t *omp_task_context,
+  int region_depth,
+  int info_type
+)
+{
+  // FIXME vi3: this should be reconsider
+
+  // <<<<<<<<<<Debug>>>>>>>>>>
+  // if debug info is needed
+  vi3_regions_active_no_omp_task_context_provided_by_elider_debug(cct, bt, cct_cursor,
+      omp_task_context, region_depth, info_type);
+  // <<<<<<<<<<Debug>>>>>>>>>>
+  typed_random_access_stack_elem(region) *innermost_el =
+      typed_random_access_stack_top(region)(region_stack);
+  typed_stack_elem(region) *innermost_reg = innermost_el->region_data;
+  typed_random_access_stack_elem(region) *parent_el = innermost_reg->depth > 0 ?
+      typed_random_access_stack_get(region)(region_stack,
+          innermost_reg->depth - 1) : NULL;
+
+  // Elider didn't store non-null value inside TD_GET(omp_task_context).
+  // We can get information about if stack is collapsed or not.
+  // If stack is not collapsed, there is no information about what bottom
+  // frames have been clipped from backtrace.
+  // If the call path built from this backtrace is put underneath unresolved_cct
+  // of the innermost region, this may cause that innermost region prefix finished
+  // underneath unresolved_cct of that region..
+
+  // Consider following example:
+  // Sample is taken while initial master is waiting on the last implicit
+  // barrier of the region. Elider return the whole backtrace, from which call
+  // path is built. The outermost cct node of the call path is program root.
+  // If this call path is put under the unresolved_cct node of the innermost
+  // region, then the program root cct node will be child of the region's prefix.
+
+  if (vi3_idle_collapsed) {
+    // stack is collapsed to idle, put sample underneath unresolved_cct
+    // of the innermost region
+    return check_and_return_non_null(innermost_el->unresolved_cct,
+        cct_cursor, 1872);
+  }
+
+  // Stack is not collapsed
+
+  if (hpcrun_ompt_is_thread_region_owner(innermost_reg)) {
+    // thread is the master of the innermost region
+    if (parent_el) {
+      // parent region exists and the call path will be put under
+      // its unresolved_cct
+      return check_and_return_non_null(parent_el->unresolved_cct,
+          cct_cursor, 1883);
+    } else {
+      // Since innermost_reg does not have parent region, call path will be put
+      // under the thread root, which is "parent" context of the innermost_reg.
+      return check_and_return_non_null(cct_cursor, cct_cursor, 1887);
+    }
+  } else {
+    // Thread is not the master of the innermost region
+    // I guess that sample call path should be put underneath
+    // innermost region's unresolved_cct
+    return check_and_return_non_null(
+        typed_random_access_stack_top(region)(region_stack)->unresolved_cct,
+        cct_cursor, 1895);
+  }
+
+}
+
+
+cct_node_t *
+finalize_cursor_lazy
+(
+  cct_bundle_t *cct,
+  backtrace_info_t *bt,
+  cct_node_t *cct_cursor,
+  cct_node_t *omp_task_context,
+  int region_depth,
+  int info_type
+)
+{
+  if (registration_safely_applied) {
+    // register_to_all_regions function guarantees that all regions present on
+    // the stack are active.
+
+    if (info_type == 1) {
+      // Just for know, consider information provided by the ompt_elide_runtime_frame
+      // (is TD_GET(omp_task_context) provided or not)
+      // The sample is going to be attributed to the unresolved_cct of the
+      // region present at region_depth on the stack.
+      return check_and_return_non_null(
+          typed_random_access_stack_get(region)(region_stack, region_depth)->unresolved_cct,
+          cct_cursor, 1982);
+    }
+    else{
+      // This case is not clear and that's why is moved to separate function
+      return vi3_regions_active_no_omp_task_context_provided_by_elider(cct, bt,
+          cct_cursor, omp_task_context, region_depth, info_type);
+    }
+  }
+  else {
+    // <<<<<<<<<<Debug>>>>>>>>>>
+    // if need debug info
+    vi3_regions_may_not_be_active_debug(cct, bt, cct_cursor, omp_task_context,
+        region_depth, info_type);
+    // <<<<<<<<<<Debug>>>>>>>>>>
+
+    // function register_to_all_regions is not sure if any region present
+    // on the stack is still active.
+
+    if (hpcrun_ompt_is_thread_part_of_team()) {
+      // thread belongs to a team and can only be worker in it
+      if (hpcrun_ompt_get_current_region_execution_phase()
+            == ompt_region_execution_phase_last_implicit_barrier_enter) {
+        // Thread entered the last implicit barrier and is waiting for work.
+        // If the innermost task_data is present, then it represents an implicit task.
+
+        // Sample will be attributed to the local placeholder and then later
+        // eventually be attributed to either innermost region (if determined as
+        // still active) or to the thread root.
+        return check_and_return_non_null(handle_idle_sample(cct_cursor),
+            cct_cursor, 1823);
+      }
+    }
+
+    // Two remained cases:
+    // 1. thread is not part of any team
+    // 2. thread still thinks it is worker inside the team after exiting the
+    //    last implicit barrier. Still hasn't executed ompt_implicit_task_end
+    // In both cases, attribute sample to the outermost context (thread_root)
+    return check_and_return_non_null(cct_cursor, cct_cursor, 1834);
+  }
+}
 
 cct_node_t *
 ompt_cct_cursor_finalize
@@ -1547,7 +2066,7 @@ ompt_cct_cursor_finalize
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
-
+#if 0
 #if 0
   // NOTE vi3: code that contains a lot of useful debug information about edge cases
 
@@ -1618,6 +2137,7 @@ ompt_cct_cursor_finalize
   }
 #endif
 
+#if 0
   // FIXME: should memoize the resulting task context in a thread-local variable
   //        I think we can just return omp_task_context here. it is already
   //        relative to one root or another.
@@ -1944,6 +2464,36 @@ ompt_cct_cursor_finalize
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);
+#endif
+#endif
+
+  if (ompt_eager_context_p()) {
+    // old implementation that should be revised
+    if (info_type == 0) {
+      // FIXME: should memoize the resulting task context in a thread-local variable
+      //        I think we can just return omp_task_context here. it is already
+      //        relative to one root or another.
+      cct_node_t *root;
+#if 1
+      root = ompt_region_root(omp_task_context);
+#else
+      if ((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {
+      root = hpcrun_get_thread_epoch()->csdata.unresolved_root;
+    } else {
+      root = hpcrun_get_thread_epoch()->csdata.tree_root;
+    }
+#endif
+      return check_and_return_non_null(
+          hpcrun_cct_insert_path_return_leaf(root, omp_task_context),
+          cct_cursor, 919);
+    }
+
+    return check_and_return_non_null(cct_cursor, cct_cursor, 904);
+  } else {
+
+    return finalize_cursor_lazy(cct, bt, cct_cursor, omp_task_context, region_depth, info_type);
+  }
+
 }
 
 

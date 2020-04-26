@@ -291,6 +291,79 @@ ompt_set_callback_internal
 
 
 //-----------------------------------------------------------------------------
+// parallel region execution phase
+//-----------------------------------------------------------------------------
+
+void
+hpcrun_ompt_initialize_new_master_region
+(
+  typed_stack_elem_ptr(region) region_data
+);
+
+void
+hpcrun_ompt_initialize_new_worker_region
+(
+  typed_stack_elem_ptr(region) region_data
+);
+
+
+void
+hpcrun_ompt_initialize_new_region
+(
+  typed_stack_elem_ptr(region) region_data,
+  ompt_region_execution_phase_t exec_phase
+);
+
+
+void
+hpcrun_ompt_finalize_master_region
+(
+  void
+);
+
+
+void
+hpcrun_ompt_finalize_worker_region
+(
+  void
+);
+
+
+void
+hpcrun_ompt_finalize_region
+(
+  void
+);
+
+bool
+hpcrun_ompt_is_thread_part_of_team
+(
+  void
+);
+
+
+ompt_region_execution_phase_t
+hpcrun_ompt_get_current_region_execution_phase
+(
+  void
+);
+
+
+void
+hpcrun_ompt_next_region_execution_phase
+(
+  void
+);
+
+
+bool
+hpcrun_ompt_is_thread_master_of_the_innermost_region
+(
+  void
+);
+
+
+//-----------------------------------------------------------------------------
 // NVIDIA GPU pc sampling support
 //-----------------------------------------------------------------------------
 

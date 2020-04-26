@@ -1088,8 +1088,9 @@ hpcrun_ompt_is_thread_region_owner
   // If thread generated region id, then it is owner/master of the region.
   return (region_data->region_id & upper_bits_mask) == my_upper_bits;
 #else
-  // FIXME vi3 >>> Any better approach?
-  return false;
+  // If pointer to thread's region_freelist_channel is set inside region_data,
+  // then thread is the owner of the region
+  return region_data->owner_free_region_channel == &region_freelist_channel;
 #endif
 }
 
@@ -1165,6 +1166,198 @@ ompt_set_callback_internal
 {
   return ompt_set_callback_fn(event, callback);
 }
+
+
+void
+hpcrun_ompt_initialize_new_master_region
+(
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  hpcrun_ompt_initialize_new_region(region_data,
+      ompt_region_execution_phase_parallel_begin);
+}
+
+void
+correct_top_of_the_stack
+(
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  // This function should be changed if double-linked-list is going to replace
+  // currently implemented random access stack.
+  if (region_data->depth == 0) {
+    // region_data is the outermost, clear the region stack
+    // TODO vi3 >>> implement clear function
+    typed_random_access_stack_top_index_set(region)(-1, region_stack);
+  } else {
+    // current depth of the stack should be equal to depth of region_data->parent,
+    // which is equal to region_data->depth - 1
+    typed_random_access_stack_top_index_set(region)(region_data->depth-1,
+                                                    region_stack);
+  }
+
+}
+
+void
+hpcrun_ompt_initialize_new_worker_region
+(
+  typed_stack_elem_ptr(region) region_data
+)
+{
+  correct_top_of_the_stack(region_data);
+  // initialize new region with ompt_region_execution_phase_implicit_task_begin
+  hpcrun_ompt_initialize_new_region(region_data,
+      ompt_region_execution_phase_implicit_task_begin);
+}
+
+
+void
+hpcrun_ompt_initialize_new_region
+(
+  typed_stack_elem_ptr(region) region_data,
+  ompt_region_execution_phase_t exec_phase
+)
+{
+  // FIXME vi3 >>> Any good reason why I implemented push operation like this?
+  // FIXME vi3 >>> what if random access stack if full?
+  // Push new element on the stack.
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_push(region)(region_stack);
+  // invalidate previous values
+  memset(top_el, 0, sizeof(typed_random_access_stack_elem(region)));
+  // set region_data
+  top_el->region_data = region_data;
+  // set ompt_region_execution_phase
+  top_el->exec_phase = exec_phase;
+}
+
+
+void
+hpcrun_ompt_finalize_master_region
+(
+  void
+)
+{
+  hpcrun_ompt_finalize_region();
+}
+
+
+void
+hpcrun_ompt_finalize_worker_region
+(
+  void
+)
+{
+  hpcrun_ompt_finalize_region();
+}
+
+
+void
+hpcrun_ompt_finalize_region
+(
+  void
+)
+{
+  // pop region from the stack
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_pop(region)(region_stack);
+  if (!top_el) {
+    // stack is empty
+    return;
+  }
+  // invalidate values
+  memset(top_el, 0, sizeof(typed_random_access_stack_elem(region)));
+}
+
+
+bool
+hpcrun_ompt_is_thread_part_of_team
+(
+  void
+)
+{
+  if (typed_random_access_stack_empty(region)(region_stack)) {
+    // no regions on the stack, so thread cannot be part of any team
+    return false;
+  }
+
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+
+  // ompt_region_execution_phase_invalid execution phase is only possible
+  // for enclosing regions in which thread is/was not involve(d).
+  // Those regions may remained on the stack, even after thread
+  // finishes all work.
+
+  // Thread is part of the parallel region's team if the phase of the innermost
+  // region (present on the top of the stack) is different than
+  // ompt_region_execution_phase_invalid
+  return top_el->exec_phase != ompt_region_execution_phase_invalid;
+
+}
+
+
+ompt_region_execution_phase_t
+hpcrun_ompt_get_current_region_execution_phase
+(
+  void
+)
+{
+  if (!hpcrun_ompt_is_thread_part_of_team()) {
+    // thread is not part of any parallel region's team
+    return ompt_region_execution_phase_invalid;
+  }
+
+  // return execution phase of the innermost region, present on
+  // the top of the stack
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+  return top_el->exec_phase;
+}
+
+
+void
+hpcrun_ompt_next_region_execution_phase
+(
+  void
+)
+{
+  if (!hpcrun_ompt_is_thread_part_of_team()) {
+    // thread is not involved in any parallel region, so there's no
+    // next exec phase
+    //printf("Jebe mene ovo bruda izgleda: %d\n",
+    //    typed_random_access_stack_top_index_get(region)(region_stack));
+    return;
+  }
+
+  // return execution phase of the innermost region, present on
+  // the top of the stack
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+  // move to the next phase by left-shifting current for 1 place (multiply by 2)
+  top_el->exec_phase = (top_el->exec_phase) << 1;
+  //printf("Phase: %d\n", top_el->exec_phase);
+}
+
+
+bool
+hpcrun_ompt_is_thread_master_of_the_innermost_region
+(
+  void
+)
+{
+  if (!hpcrun_ompt_is_thread_part_of_team()) {
+    // thread is not involved in any parallel region,
+    // so it cannot be the master.
+    return false;
+  }
+  typed_random_access_stack_elem(region) *top_el =
+      typed_random_access_stack_top(region)(region_stack);
+  // check if thread is the owner of the region
+  return hpcrun_ompt_is_thread_region_owner(top_el->region_data);
+}
+
 
 
 // implement sequential stack of regions

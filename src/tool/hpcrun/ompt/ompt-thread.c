@@ -101,6 +101,8 @@ __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region
 #endif
 
 __thread vi3_my_enum_t where_am_I = vi3_my_enum_start_thread;
+
+__thread bool registration_safely_applied = false;
 //******************************************************************************
 // private variables 
 //******************************************************************************
