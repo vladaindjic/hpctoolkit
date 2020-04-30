@@ -1560,15 +1560,89 @@ vi3_regions_active_no_omp_task_context_provided_by_elider_debug
     else {
       // happened in simple.c (0, 1 - parallel_begin)
 
-      // happened in for-nested-functions. (0, 1 - parallel begin), (3, 2 - impl_task_begin)
-      // (depth: 3, phase: 8, collapsed: 1)
-      // (depth: 3, phase: 8, collapsed: 1, initial master: 1)
-      // (depth: 0, phase: 1, collapsed: 0)
-      // (depth: 0, phase: 1, collapsed: 0, initial master: 1)
-      // (depth: 3, phase: 2, collapsed: 1, initial master: 1)
-      printf("region: %d, phase: %d, collapsed: %d, initial master: %d\n",
-             top_el->region_data->depth, top_el->exec_phase, vi3_idle_collapsed, TD_GET(master));
+      // example for-nested-functions.c
+      // - depth: 3,
+      // - phase: 8-ompt_region_execution_phase_last_implicit_barrier_exit,
+      // - collapsed: 1,
+      // - initial master: 1)
+      // case 0:
+      // __kmp_join_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // g
+      // f
+      // e._omp_fn.1
+      // __kmp_api_GOMP_parallel_40_alias
+      // e
+      // d
+      // c._omp_fn.2
+      // __kmp_api_GOMP_parallel_40_alias
+      // c
+      // b
+      // a._omp_fn.3
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
 
+
+      // example for-nested-functions.c
+      // - depth: 3
+      // - phase: 1 - ompt_region_execution_phase_parallel_begin
+      // - collapsed: 0,
+      // - initial master: 1)
+      // case 0:
+      // pthread_create@@GLIBC_2.2.5
+      // pthread_create
+      // __kmp_create_worker
+      // __kmp_allocate_thread
+      // __kmp_allocate_team
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
+
+      // case 1:
+      // clone
+      // do_clone.constprop.4
+      // pthread_create@@GLIBC_2.2.5
+      // pthread_create
+      // __kmp_create_worker
+      // __kmp_allocate_thread
+      // __kmp_allocate_team
+      // __kmp_fork_call
+      // __kmp_GOMP_fork_call
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
+
+
+      // example for-nested-functions.c
+      // - depth: 3
+      // - phase: 2 - ompt_region_execution_phase_implicit_task_begin
+      // - collapsed: 1,
+      // - initial master: 1
+      // case 0:
+      // __kmp_api_GOMP_parallel_40_alias
+      // g
+      // f
+      // e._omp_fn.1
+      // __kmp_api_GOMP_parallel_40_alias
+      // e
+      // d
+      // c._omp_fn.2
+      // __kmp_api_GOMP_parallel_40_alias
+      // c
+      // b
+      // a._omp_fn.3
+      // __kmp_api_GOMP_parallel_40_alias
+      // a
+      // main
+
+      if (top_el->exec_phase != 1 && top_el->exec_phase != 2 && top_el->exec_phase != 8) {
+        // FIXME vi3 (debug) >>> try to be patient :)
+        printf("region: %d, phase: %d, collapsed: %d, initial master: %d\n",
+               top_el->region_data->depth, top_el->exec_phase, vi3_idle_collapsed, TD_GET(master));
+      }
 
       // example region-in-task3.c
       // (depth: 4, phase: 2, collapsed: 1, initial master: 1)

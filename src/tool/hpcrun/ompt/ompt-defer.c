@@ -89,10 +89,6 @@
 
 #define DEFER_DEBUGGING 0
 
-// vi3: used to memoize the call path that corresponds to the
-// user level functions before eventual extension with
-// cct nodes that correspond to the kernel functions
-__thread cct_node_t *cct_path_before_kernel_extension = NULL;
 
 //*****************************************************************************
 // private operations
@@ -445,7 +441,7 @@ help_notification_alloc
   return notification;
 }
 
-
+#if 0
 void
 swap_and_free
 (
@@ -541,6 +537,7 @@ add_region_and_ancestors_to_stack
   typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
 #endif
 }
+#endif
 
 
 void

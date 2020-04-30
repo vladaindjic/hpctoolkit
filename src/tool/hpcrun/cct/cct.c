@@ -125,6 +125,9 @@ struct cct_node_t {
   struct cct_node_t* left;
   struct cct_node_t* right;
 
+  // FIXME debug vi3 --- remove this
+  bool already_used;
+
 };
 
 #if 0
@@ -934,6 +937,7 @@ hpcrun_cct_merge(cct_node_t* cct_a, cct_node_t* cct_b,
     hpcrun_cct_walkset(cct_b, attach_to_a, (cct_op_arg_t) cct_a);
     //cct_b->children = NULL;
     // FIXME vi3 >>> Should we also merge cct_b to cct_a (exclusive metrics)?
+    //    merge may fail because of unavailability availabilty of mset_a or mset_b
     //  merge(cct_a, cct_b, arg);
   }
   else {
@@ -960,6 +964,7 @@ merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l)
     // that is the reason why return value is not NULL
     hpcrun_cct_merge(tmp, n, the_arg->fn, the_arg->arg);
     // FIXME vi3 >>> Should we also merge n to targ (exclusive metrics)?
+    //    merge may fail because of unavailability of mset_a or mset_b
     //  merge_op_t merge_fn = the_arg->fn;
     //  merge_op_arg_t merge_arg = the_arg->arg;
     //  merge_fn(targ, n, merge_arg);
@@ -1086,14 +1091,58 @@ remove_node_from_freelist(){
   // FIXME: seg fault happened once and i cannot reproduce it anymore
 }
 
+void
+invalidate_previous_metrics
+(
+  cct_node_t *cct_node
+)
+{
+  // FIXME vi3 >>> Can this be done simpler?
+  // Metrics map stores pairs "cct_node_t* : metrics".
+  // Check if there were some metrics attributed to this cct_node pointer.
+  metric_data_list_t *mset = hpcrun_get_metric_data_list(cct_node);
+  if (mset) {
+    // Invalidate previous metrics. Otherwise they'll remain attributed again
+    // to this reused cct_node pointer, which now represents new cct_node_t
+    // with different cct_addr.
+    int num_kind_metrics = hpcrun_get_num_kind_metrics();
+    for (int i = 0; i < num_kind_metrics; i++) {
+      cct_metric_data_t *mdata = hpcrun_metric_set_loc(mset, i);
+      // FIXME: this test depends upon dense metric sets. sparse metrics
+      //        should ensure that node a has the result
+      if (!mdata) continue;
+
+      metric_desc_t *mdesc = hpcrun_id2metric(i);
+      switch (mdesc->flags.fields.valFmt) {
+        case MetricFlags_ValFmt_Int:
+          mdata->i = 0;
+          break;
+        case MetricFlags_ValFmt_Real:
+          mdata->r = 0;
+          break;
+        default:
+          TMSG(DEFER_CTXT, "in merge_op: what's the metric type");
+      }
+    }
+  }
+}
+
 
 // allocating and free cct_node_t
 // FIXME vi3 >>> freeing policy should be revised
 cct_node_t*
 hpcrun_cct_node_alloc(){
-#if 0
+#if 1
   cct_node_t* cct_new = remove_node_from_freelist();
-  return cct_new ? cct_new : (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
+  if (cct_new) {
+    // cct_new is going to be reused, so invalidate previously attributed
+    // metrics to this pointer.
+    invalidate_previous_metrics(cct_new);
+    // reuse cct_new
+    return cct_new;
+  }
+  // allocate new cct_node_t
+  return (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
 #else
   return (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
 #endif

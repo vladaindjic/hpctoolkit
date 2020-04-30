@@ -182,13 +182,14 @@ ompt_resolve_region_contexts
 );
 
 // stack reorganization
-void 
+#if 0
+void
 add_region_and_ancestors_to_stack
 (
  typed_stack_elem_ptr(region) region_data,
  bool team_master
 );
-
+#endif
 
 void
 resolve_one_region_context_vi3
@@ -216,9 +217,5 @@ attr_idleness2innermost_region
 
 #define VI3_DEBUG 0
 
-// vi3: used to memoize the call path that corresponds to the
-// user level functions before eventual extension with
-// cct nodes that correspond to the kernel functions
-extern __thread cct_node_t *cct_path_before_kernel_extension;
 
 #endif
