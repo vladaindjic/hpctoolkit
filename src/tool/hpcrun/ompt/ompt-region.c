@@ -651,20 +651,11 @@ ompt_sync
 
   // mark that thread is (not) waiting om last implicit barrier
   // at the end of the innermost parallel region
-  if (kind == ompt_sync_region_barrier_implicit_last) {
-    // FIXME vi3: simplify this
-    // thread starts waiting on the last implicit barrier
-    if (endpoint == ompt_scope_begin) {
-      waiting_on_last_implicit_barrier = true;
-      // move to the next execution phase
-      hpcrun_ompt_next_region_execution_phase();
-    } else if (endpoint == ompt_scope_end) {
-      // move to the next execution phase
-      hpcrun_ompt_next_region_execution_phase();
-    } else {
-      // this should never happen
+  if (kind == ompt_sync_region_barrier_implicit_final) {
+    // move to the next execution phase
+    hpcrun_ompt_next_region_execution_phase();
+    if (endpoint != ompt_scope_begin && endpoint != ompt_scope_end)
       assert(0);
-    }
   }
 }
 
