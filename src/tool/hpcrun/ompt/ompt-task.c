@@ -102,6 +102,8 @@ ompt_task_begin_internal
     // store cct_node in task_data
     task_data_set_cct(task_data, cct_node);
   } else {
+    // FIXME vi3: Use top of the stack of active regions (if decide to keep stack
+    //   for synchronous version of call path assembling)
     ompt_data_t *parallel_info = NULL;
     int team_size = 0;
     hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);

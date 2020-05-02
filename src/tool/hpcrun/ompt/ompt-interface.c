@@ -397,15 +397,6 @@ ompt_thread_begin
 #if FREELISTS_DEBUG
   atomic_exchange(&region_freelist_channel.region_used, 0);
 #endif
-
-#if THREAD_MASTER_CHECK == 1
-  my_upper_bits = hpcrun_ompt_get_unique_id() & upper_bits_mask;
-#endif
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-  runtime_master_region_stack =
-      typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
-#endif
 }
 
 
@@ -1084,14 +1075,9 @@ hpcrun_ompt_is_thread_region_owner
   typed_stack_elem(region) *region_data
 )
 {
-#if THREAD_MASTER_CHECK
-  // If thread generated region id, then it is owner/master of the region.
-  return (region_data->region_id & upper_bits_mask) == my_upper_bits;
-#else
   // If pointer to thread's region_freelist_channel is set inside region_data,
   // then thread is the owner of the region
   return region_data->owner_free_region_channel == &region_freelist_channel;
-#endif
 }
 
 
@@ -1375,7 +1361,3 @@ typed_stack_impl(notification, cstack);
 typed_channel_impl(notification);
 // implement region stack
 typed_random_access_stack_impl(region);
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-typed_random_access_stack_impl(runtime_region);
-#endif

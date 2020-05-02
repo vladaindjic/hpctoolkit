@@ -88,19 +88,10 @@ __thread bool vi3_idle_collapsed = false;
 __thread cct_node_t *local_idle_placeholder = NULL;
 
 #if FREELISTS_ENABLED
+#if FREELISTS_DEBUG
 __thread long notification_used = 0;
 #endif
-
-#if THREAD_MASTER_CHECK == 1
-__thread uint64_t my_upper_bits = 0;
-__thread uint64_t upper_bits_mask = 0xFFFF000000000000;
 #endif
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-__thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack = NULL;
-#endif
-
-__thread vi3_my_enum_t where_am_I = vi3_my_enum_start_thread;
 
 __thread bool registration_safely_applied = false;
 //******************************************************************************

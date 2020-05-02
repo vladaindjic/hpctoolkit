@@ -281,7 +281,6 @@ collapse_callstack
   //      bt->partial_unwind = false;
 }
 
-__thread int nested_regions_before_explicit_task = 0;
 
 static void
 ompt_elide_runtime_frame(
@@ -295,7 +294,6 @@ ompt_elide_runtime_frame(
   TD_GET(omp_task_context) = 0;
 
   vi3_idle_collapsed = false;
-  nested_regions_before_explicit_task = 0;
   frame_t **bt_outer = &bt->last;
   frame_t **bt_inner = &bt->begin;
 
@@ -537,9 +535,6 @@ ompt_elide_runtime_frame(
       *bt_inner = *bt_inner + (reenter1 - exit0 + 1);
 
       exit0 = reenter1 = NULL;
-      // --------------------------------
-
-      nested_regions_before_explicit_task++;
 
     } else if (exit0 && !reenter1) {
       // corner case: reenter1 is in the team master's stack, not mine. eliminate all
@@ -1555,6 +1550,9 @@ vi3_regions_active_no_omp_task_context_provided_by_elider_debug
         // never happened
         printf("Why is stack collapsed to idle? initial master, rd: %d, ph: %d\n",
                top_el->region_data->depth, top_el->exec_phase);
+
+        // happened once initial master, region_depth: 3, phase: 4 (ompt_region_execution_phase_last_implicit_barrier_enter)
+        // FIXME vi3 debug this.
       }
     }
     else {
@@ -2546,9 +2544,17 @@ ompt_cct_cursor_finalize
     if (info_type == 0) {
       // FIXME: should memoize the resulting task context in a thread-local variable
       //        I think we can just return omp_task_context here. it is already
-      //        relative to one root or another.
+      //        relative to one root or another (vi3: this should not be the case for
+      //        explicit task, since one thread may create task and store omp_task_context
+      //        and another thread may execute the task.
+      //        Also, current implementation store region_data->call_path which belongs
+      //        to master thread).
       cct_node_t *root;
 #if 1
+      // thread_root, unresolved_root or partial root
+      // FIXME vi3: In asynchronous version of call path assembling,
+      //    we should use only thread_root, I think. Maybe partial for some
+      //    samples. As I know, unresolved root is not used at all.
       root = ompt_region_root(omp_task_context);
 #else
       if ((is_partial_resolve((cct_node_tt *)omp_task_context) > 0)) {

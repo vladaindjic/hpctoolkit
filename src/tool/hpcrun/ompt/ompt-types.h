@@ -86,23 +86,16 @@
 // and then check if all region_data are freed
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1
 
-// code wrapped around with this pragma will use upper bits of generated unique
-// parallel region id to check if the thread is the master (owner/creator)
-// of the parallel region
-#define THREAD_MASTER_CHECK 0
 // keep pointer to parent region so we can get information about outer/ancestor
 // regions that runtime is not able to provide.
 #define KEEP_PARENT_REGION_RELATIONSHIP 1
-// It seems that runtime may ended (passed to the ompt_parallel_end_callback)
-// some regions multiple times, while other regions won't be ended.
-#define ENDING_REGION_MULTIPLE_TIMES_BUG_FIX 1
 
 // Barrier_cnt is used as indication of parallel region activity.
 // If value is greater or equal to zero, then region is active,
 // otherwise master thread executed ompt_parallel_end_callback
 // and region should be considered as finished.
 // The code wrapped around with this pragma is used for debug purposes only.
-#define DEBUG_BARRIER_CNT 1
+#define DEBUG_BARRIER_CNT 0
 
 
 typedef enum ompt_region_execution_phase_e {
@@ -139,9 +132,6 @@ typedef struct ompt_region_data_s {
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  int num_times_ended;
-#endif
 #if DEBUG_BARRIER_CNT
   // barrier counter which indicates if region is active
   _Atomic(int) barrier_cnt;
@@ -244,30 +234,6 @@ typedef struct {
 // declare api functions of random access stack of regions
 typed_random_access_stack_declare(region);
 
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-
-// Below stack contains only region in which thread is master.
-// It is used as a workaround of the following runtime bug:
-// "Some regions are ended multiple times and some never."
-// Element of aforementioned stack.
-typedef struct runtime_master_region_stack_el_s {
-  // region at depth equal to index on the stack
-  typed_stack_elem_ptr(region) region_data;
-} typed_random_access_stack_elem(runtime_region);
-
-// declare pointer to previous struct
-typed_random_access_stack_declare_type(runtime_region);
-
-// structure that represents random access stack of regions in which thread is involved
-typedef struct {
-  typed_random_access_stack_elem(runtime_region) *array;
-  typed_random_access_stack_elem(runtime_region) *current;
-} typed_random_access_stack_struct(runtime_region);
-
-// declare api functions of aforemention stack
-typed_random_access_stack_declare(runtime_region);
-#endif
 
 // FIXME vi3: ompt_data_t freelist manipulation
 #endif

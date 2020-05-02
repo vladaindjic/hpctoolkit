@@ -118,9 +118,6 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  e->num_times_ended = 0;
-#endif
 #if DEBUG_BARRIER_CNT
   // FIXME vi3 >>> Check if this is right.
   atomic_exchange(&e->barrier_cnt, 0);
@@ -140,8 +137,6 @@ ompt_parallel_begin_internal
  int flags
 ) 
 {
-  where_am_I = vi3_my_enum_parallel_begin;
-
   typed_stack_elem_ptr(region) region_data =
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   parallel_data->ptr = region_data;
@@ -170,14 +165,6 @@ ompt_parallel_begin_internal
   typed_stack_next_set(region, sstack)(region_data, parent_region);
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  // FIXME vi3 >>> Any good reason why I implemented push operation like this?
-  // Push new region in which thread is master.
-  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
-      typed_random_access_stack_push(runtime_region)(runtime_master_region_stack);
-  runtime_top_el->region_data = region_data;
-#endif
-
   // add region on the stack
   hpcrun_ompt_initialize_new_master_region(region_data);
 
@@ -193,19 +180,6 @@ ompt_parallel_begin_internal
 }
 
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-void
-region_already_ended
-(
-  typed_stack_elem(region) *region_data_passed_to_end,
-  typed_stack_elem(region) *region_data_expected
-)
-{
-  // how many times is this region ended
-  // vi3 to prof John Mellor-Crummey: put a break point here
-}
-#endif
-
 static void
 ompt_parallel_end_internal
 (
@@ -213,30 +187,10 @@ ompt_parallel_end_internal
  int flags
 )
 {
-  where_am_I = vi3_my_enum_parallel_end;
-
   // region_data passed to the parallel end callback
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  // Pop the innermost region in which thread is the master.
-  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
-      typed_random_access_stack_pop(runtime_region)(runtime_master_region_stack);
-  // this is the expected region at the top of the temporary stack
-  typed_stack_elem(region) *runtime_master_region = runtime_top_el->region_data;
-  if (runtime_master_region != region_data) {
-    if (region_data) {
-      region_data->num_times_ended++;
-      if (region_data->num_times_ended > 0) {
-        region_already_ended(region_data, runtime_master_region);
-      }
-    }
-    // FIXME vi3 >>> runtime tries to end region_data another time
-    //  Use the value we provided for now.
-    region_data = runtime_master_region;
-  }
-#endif
   typed_random_access_stack_elem(region) *top_el =
       typed_random_access_stack_top(region)(region_stack);
   // get the innermost region
@@ -398,8 +352,6 @@ ompt_implicit_task_internal_begin
  unsigned int index
 )
 {
-  where_am_I = vi3_my_enum_impl_task_begin;
-
   task_data->ptr = NULL;
 
   typed_stack_elem_ptr(region) region_data =
@@ -467,8 +419,6 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
-  where_am_I = vi3_my_enum_impl_task_end;
-
   if (hpcrun_ompt_is_thread_master_of_the_innermost_region()) {
     // thread is region's master, move to the next phase
     hpcrun_ompt_next_region_execution_phase();
