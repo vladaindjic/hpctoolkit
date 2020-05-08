@@ -65,7 +65,7 @@
 #define s_element_invalid ((s_element_t*)~0)
 
 void
-sstack_ptr_set
+vi3_sstack_ptr_set
 (
   s_element_ptr_t *p,
   s_element_t *v
@@ -76,7 +76,7 @@ sstack_ptr_set
 
 
 s_element_t *
-sstack_ptr_get
+vi3_sstack_ptr_get
 (
   s_element_ptr_t *e
 )
@@ -86,7 +86,7 @@ sstack_ptr_get
 
 
 s_element_t *
-sstack_swap
+vi3_sstack_swap
 (
   s_element_ptr_t *q,
   s_element_t *r
@@ -97,7 +97,7 @@ sstack_swap
 
 // push the whole chain
 void
-sstack_push
+vi3_sstack_push
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -126,7 +126,7 @@ sstack_push
 
 
 s_element_t *
-sstack_pop
+vi3_sstack_pop
 (
   s_element_ptr_t *q
 )
@@ -142,19 +142,19 @@ sstack_pop
 
 
 s_element_t *
-sstack_steal
+vi3_sstack_steal
 (
   s_element_ptr_t *q
 )
 {
-  s_element_t *e = sstack_swap(q, 0);
+  s_element_t *e = vi3_sstack_swap(q, 0);
 
   return e;
 }
 
 // vi3 >> not used
 void
-sstack_reverse
+vi3_sstack_reverse
 (
   s_element_ptr_t *q
 )
@@ -172,7 +172,7 @@ sstack_reverse
 
 // vi3 >> not used
 void
-sstack_forall
+vi3_sstack_forall
 (
   s_element_ptr_t *q,
   stack_forall_fn_t fn,
@@ -187,7 +187,7 @@ sstack_forall
 }
 
 s_element_t*
-sstack_next_get
+vi3_sstack_next_get
 (
   s_element_t* e
 )
@@ -196,7 +196,7 @@ sstack_next_get
 }
 
 void
-sstack_next_set
+vi3_sstack_next_set
 (
   s_element_t* e,
   s_element_t* next_e
@@ -211,7 +211,7 @@ sstack_next_set
 // concurrent implementation
 
 void
-cstack_ptr_set
+vi3_cstack_ptr_set
 (
   s_element_ptr_t *e,
   s_element_t *v
@@ -222,7 +222,7 @@ cstack_ptr_set
 
 
 s_element_t *
-cstack_ptr_get
+vi3_cstack_ptr_get
 (
   s_element_ptr_t *e
 )
@@ -232,7 +232,7 @@ cstack_ptr_get
 
 
 s_element_t *
-cstack_swap
+vi3_cstack_swap
 (
   s_element_ptr_t *q,
   s_element_t *r
@@ -245,7 +245,7 @@ cstack_swap
 
 
 void
-cstack_push
+vi3_cstack_push
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -257,7 +257,7 @@ cstack_push
   // push a singleton or a chain on the list
   for (;;) {
     // wait for next pointer if it is invalid
-    s_element_t *enext = cstack_next_get(e);
+    s_element_t *enext = vi3_cstack_next_get(e);
     if (enext == 0) break;
     e = enext;
   }
@@ -270,7 +270,7 @@ cstack_push
 #endif
 
   // set next pointer to invalid value
-  cstack_next_set(e, s_element_invalid);
+  vi3_cstack_next_set(e, s_element_invalid);
   // set new head
   s_element_t *head = (s_element_t *)atomic_exchange(&Ap(q), new_head);
   // connect chain wih old head
@@ -279,7 +279,7 @@ cstack_push
 
 // popping from stack can happen after all pushing has finished
 s_element_t *
-cstack_pop
+vi3_cstack_pop
 (
   s_element_ptr_t *q
 )
@@ -301,30 +301,30 @@ cstack_pop
   s_element_t *head = atomic_load(&Ap(q));
   if (head) {
     // wait until next pointer is set properly
-    s_element_t *next = cstack_next_get(head);
+    s_element_t *next = vi3_cstack_next_get(head);
     // store new head
     atomic_store(&Ap(q), next);
     // invalidate next pointer of old head
-    cstack_next_set(head, 0);
+    vi3_cstack_next_set(head, 0);
   }
   return head;
 }
 
 
 s_element_t *
-cstack_steal
+vi3_cstack_steal
 (
   s_element_ptr_t *q
 )
 {
-  s_element_t *e = cstack_swap(q, 0);
+  s_element_t *e = vi3_cstack_swap(q, 0);
 
   return e;
 }
 
 
 void
-cstack_forall
+vi3_cstack_forall
 (
   s_element_ptr_t *q,
   stack_forall_fn_t fn,
@@ -337,12 +337,12 @@ cstack_forall
 #if 0
     current = atomic_load(&current->Ad(next));
 #endif
-    current = cstack_next_get(current);
+    current = vi3_cstack_next_get(current);
   }
 }
 
 s_element_t*
-cstack_next_get
+vi3_cstack_next_get
 (
   s_element_t* e
 )
@@ -362,7 +362,7 @@ cstack_next_get
 }
 
 void
-cstack_next_set
+vi3_cstack_next_set
 (
   s_element_t* e,
   s_element_t* next_e
@@ -393,7 +393,7 @@ mpsc_channel_shared_push
   s_element_t *e
 )
 {
-  cstack_push(&c->shared, e);
+  vi3_cstack_push(&c->shared, e);
 }
 
 void
@@ -403,7 +403,7 @@ mpsc_channel_private_push
   s_element_t *e
 )
 {
-  sstack_push(&c->private, e);
+  vi3_sstack_push(&c->private, e);
 }
 
 s_element_t *
@@ -413,18 +413,18 @@ mpsc_channel_steal
 )
 {
   // private stack is empty
-  if (!sstack_ptr_get(&c->private)) {
+  if (!vi3_sstack_ptr_get(&c->private)) {
     // steal from shared stack
-    s_element_t *el = cstack_steal(&c->shared);
+    s_element_t *el = vi3_cstack_steal(&c->shared);
     // push stolen elements to private stack
     if (el) {
       // in order to get proper next element,
       // need to wait for it to be set
-      cstack_push(&c->private, el);
+      vi3_cstack_push(&c->private, el);
     }
   }
   // pop from private stack, if it contains any elements
-  return sstack_pop(&c->private);
+  return vi3_sstack_pop(&c->private);
 }
 
 
@@ -433,7 +433,9 @@ mpsc_channel_steal
 // ==================================== Random Access Stack
 #include <stdio.h>
 #include <stdlib.h>
+#if ISOLATE_TEST == 0
 #include <tool/hpcrun/memory/hpcrun-malloc.h>
+#endif
 
 random_access_stack_t *
 random_access_stack_init
@@ -442,11 +444,13 @@ random_access_stack_init
   size_t element_size
 )
 {
+#if ISOLATE_TEST == 0
   random_access_stack_t *stack = hpcrun_malloc(sizeof(random_access_stack_t));
   stack->array = hpcrun_malloc(max_elements * element_size);
-//  random_access_stack_t *stack = malloc(sizeof(random_access_stack_t));
-//  stack->array = malloc(max_elements * element_size);
-
+#else
+  random_access_stack_t *stack = malloc(sizeof(random_access_stack_t));
+  stack->array = malloc(max_elements * element_size);
+#endif
   stack->current = stack->array - element_size;
   return stack;
 }
