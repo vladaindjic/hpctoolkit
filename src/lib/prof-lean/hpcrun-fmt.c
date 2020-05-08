@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -455,6 +455,15 @@ hpcrun_fmt_metricDesc_free(metric_desc_t* x, hpcfmt_free_fn dealloc)
   hpcfmt_str_free(x->format, dealloc);
   x->format = NULL;
 }
+
+
+void
+hpcrun_fmt_metric_set_format(metric_desc_t *metric_desc, char *format)
+{
+  metric_desc->format = format;
+}
+
+
 
 double 
 hpcrun_fmt_metric_get_value(metric_desc_t metric_desc, hpcrun_metricVal_t metric)
@@ -951,9 +960,9 @@ int
 hpctrace_fmt_datum_fprint(hpctrace_fmt_datum_t* x, hpctrace_hdr_flags_t flags,
 			  FILE* fs)
 {
-  fprintf(fs, "(%"PRIu64", %u", HPCTRACE_FMT_GET_TIME(x->comp), x->cpId);
+  fprintf(fs, "(%llu, %u", HPCTRACE_FMT_GET_TIME(x->comp), x->cpId);
   if (HPCTRACE_HDR_FLAGS_GET_BIT(flags, HPCTRACE_HDR_FLAGS_LCA_RECORDED_BIT_POS)) {
-    fprintf(fs, ", %u",  HPCTRACE_FMT_GET_DLCA(x->comp));
+    fprintf(fs, ", %llu",  HPCTRACE_FMT_GET_DLCA(x->comp));
   }
   if (HPCTRACE_HDR_FLAGS_GET_BIT(flags, HPCTRACE_HDR_FLAGS_DATA_CENTRIC_BIT_POS)) {
     fprintf(fs, ", %u",  x->metricId);

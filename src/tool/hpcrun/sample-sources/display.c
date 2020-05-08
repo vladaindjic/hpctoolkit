@@ -9,7 +9,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -129,8 +129,8 @@ printw(FILE *output, const char *name, const char *desc_unsanitized)
         }
         fprintf(output, "%-*s %s\n", MAX_EVENT_NAME, name_ptr, sdesc);
       }
-      free (line);
-      free (len);
+      free(line);
+      free(len);
     }
     free(desc);
   } else {

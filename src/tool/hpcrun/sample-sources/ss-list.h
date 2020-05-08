@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -62,6 +62,9 @@ SAMPLE_SOURCE_DECL_MACRO(ga)
 SAMPLE_SOURCE_DECL_MACRO(io)  
 SAMPLE_SOURCE_DECL_MACRO(itimer)  
 
+SAMPLE_SOURCE_DECL_MACRO(OMP_MUTEX)
+SAMPLE_SOURCE_DECL_MACRO(OMP_IDLE)
+
 #ifdef HPCRUN_SS_LINUX_PERF
 SAMPLE_SOURCE_DECL_MACRO(linux_perf)  
 #endif
@@ -74,7 +77,7 @@ SAMPLE_SOURCE_DECL_MACRO(none)
 SAMPLE_SOURCE_DECL_MACRO(papi)  
 #endif
 
-SAMPLE_SOURCE_DECL_MACRO(directed_blame)
+SAMPLE_SOURCE_DECL_MACRO(pthread_blame)
 
 #ifdef HOST_CPU_x86_64
 SAMPLE_SOURCE_DECL_MACRO(retcnt)
@@ -86,4 +89,8 @@ SAMPLE_SOURCE_DECL_MACRO(papi_c_cupti)
 
 #ifdef HPCRUN_SS_NVIDIA
 SAMPLE_SOURCE_DECL_MACRO(nvidia_gpu)
+#endif
+
+#ifdef HPCRUN_SS_AMD
+SAMPLE_SOURCE_DECL_MACRO(amd_gpu)
 #endif

@@ -11,7 +11,7 @@ dnl Information about sources of support for research and development of
 dnl HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 dnl --------------------------------------------------------------------------
 dnl
-dnl Copyright ((c)) 2002-2019, Rice University
+dnl Copyright ((c)) 2002-2020, Rice University
 dnl All rights reserved.
 dnl
 dnl Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,7 @@ dnl  Organization:
 dnl  1. Autoconf dependencies (autoconf version/automake version)
 dnl  2. Special options that need to be checked before compiler tests
 dnl  3. Basic prerequisites (compiler tests, tools, system, etc.)
-dnl  4. Host-specific settings and tests 
+dnl  4. Host-specific settings and tests
 dnl  5. Process and test --with/--enable options (which may need the host-specific settings)
 dnl  6. Generate output
 dnl
@@ -78,14 +78,14 @@ dnl--------------------------------------------------------------------------
 m4_include(config/hpc-cxxutils.m4)
 
 #----------------------------------------------------------------------------
-# Initialization: 
+# Initialization:
 #----------------------------------------------------------------------------
 
-AC_INIT([hpctoolkit], [develop],
+AC_INIT([hpctoolkit], [2020.03-develop],
         [hpctoolkit-forum@rice.edu],
 	[hpctoolkit],
 	[http://hpctoolkit.org/])
-AC_COPYRIGHT([Copyright (c) 2002-2019, Rice University.
+AC_COPYRIGHT([Copyright (c) 2002-2020, Rice University.
 See the file README.License for details.])
 
 AC_CONFIG_SRCDIR([src/include/hpctoolkit-config.h.in])
@@ -118,6 +118,9 @@ hpctoolkit_build=`pwd`
 HPCTOOLKIT_PLATFORM=`cd ${hpctoolkit_top}/config && ./hpcplatform`
 AC_SUBST([HPCTOOLKIT_PLATFORM])
 
+AC_DEFINE_UNQUOTED([HPCTOOLKIT_INSTALL_PREFIX],
+  ["$prefix"], [HPCToolkit install prefix])
+
 #-------------------------------------------------
 # CONFIG_SITE
 #-------------------------------------------------
@@ -135,7 +138,7 @@ fi
 libdir='${exec_prefix}/lib'
 
 #-------------------------------------------------
-# Git version
+# Git and Spack versions
 #-------------------------------------------------
 
 # If this is a git repo, then try to identify the branch name and the
@@ -145,29 +148,30 @@ AC_MSG_CHECKING([for git version])
 
 git_version='unknown (not a git repo)'
 
-mesg=`cd "$srcdir" && git log -n 1 --date=short 2>/dev/null`
-if echo "$mesg" | grep -i commit >/dev/null ; then
-  git_hash=`echo "$mesg" | grep -i commit | head -1 | awk '{print $2}'`
-  git_hash=`expr "$git_hash" : '\(........\)'`
-  git_date=`echo "$mesg" | grep -i date | head -1 | awk '{print $2}'`
+if test -d "${srcdir}/.git" ; then
+  mesg=`cd "$srcdir" && git log -n 1 --date=short 2>/dev/null`
+  if echo "$mesg" | grep -i commit >/dev/null ; then
+    git_hash=`echo "$mesg" | grep -i commit | head -1 | awk '{print $2}'`
+    git_hash=`expr "$git_hash" : '\(................\)'`
+    git_date=`echo "$mesg" | grep -i date | head -1 | awk '{print $2}'`
 
-  mesg=`cd "$srcdir" && git status 2>/dev/null | head -1`
-  if echo "$mesg" | grep -i branch >/dev/null ; then
-    git_branch=`echo "$mesg" | sed -e 's/^.*branch//i' | awk '{print $1}'`
+    mesg=`cd "$srcdir" && git status 2>/dev/null | head -1`
+    if echo "$mesg" | grep -i branch >/dev/null ; then
+      git_branch=`echo "$mesg" | sed -e 's/^.*branch//i' | awk '{print $1}'`
 
-  elif echo "$mesg" | grep -i detach >/dev/null ; then
-    # detached commits don't have a branch name
-    git_branch=detached
+    elif echo "$mesg" | grep -i detach >/dev/null ; then
+      # detached commits don't have a branch name
+      git_branch=detached
 
-  else
-    git_branch=unknown
+    else
+      git_branch=unknown
+    fi
+
+    git_version="$git_branch at $git_date ($git_hash)"
   fi
-
-  git_version="$git_branch at $git_date ($git_hash)"
 fi
 
 AC_MSG_RESULT([$git_version])
-
 
 AC_DEFINE_UNQUOTED([HPCTOOLKIT_VERSION],
 	  ["${PACKAGE_VERSION}"],
@@ -176,6 +180,19 @@ AC_DEFINE_UNQUOTED([HPCTOOLKIT_VERSION],
 AC_DEFINE_UNQUOTED([HPCTOOLKIT_VERSION_STRING],
 	  ["A member of HPCToolkit, version ${PACKAGE_VERSION}"],
 	  [HPCToolkit version string])
+
+# If this is a spack build, then try to identify the spack spec.
+
+AC_MSG_CHECKING([for spack spec])
+
+spack_spec='unknown (not a spack build)'
+
+if test "x$SPACK_SHORT_SPEC" != x ; then
+  spack_spec=`echo $SPACK_SHORT_SPEC | tr -d "'"`
+fi
+
+AC_MSG_RESULT([$spack_spec])
+
 
 #-------------------------------------------------
 # is_cross_compile: non-empty string if cross-compiling
@@ -612,7 +629,7 @@ my_demangle_ldflags=""
 if test "$OPT_ENABLE_DEVELOP" = "yes" ; then
   my_opt_cflags="-g -O0 -Wall"
   my_opt_cxxflags="-g -O0 -Wall"
-else 
+else
   # On some compilers, -g implies -O0.  Make sure -O3 takes precedence!
   my_opt_cflags="-g -O3 -Wall"
   my_opt_cxxflags="-g -O3 -Wall"
@@ -695,7 +712,7 @@ case "${host}" in
     if HPCcccmp([cc]) ; then
       HOST_CFLAGS="-64"
     fi
-    
+
     # GCC
     if HPCcxxcmp([g++ c++]) ; then
       HOST_CXXFLAGS="-mabi=64"
@@ -703,7 +720,7 @@ case "${host}" in
     if HPCcccmp([gcc]) ; then
       HOST_CFLAGS="-mabi=64"
     fi
-   
+
     # SGI demangle
     my_demangle_ldflags="-lmangle"
     ;;
@@ -714,7 +731,7 @@ case "${host}" in
     if HPCcxxcmp([CC]); then
       if test "$OPT_ENABLE_DEVELOP" = "yes" ; then
         my_opt_cxxflags="-g"
-      else 
+      else
         my_opt_cxxflags="-fast -g"
       fi
       HOST_AR="$CXX $CXXFLAGS -xar -o"
@@ -722,11 +739,11 @@ case "${host}" in
     if HPCcccmp([cc]); then
       if test "$OPT_ENABLE_DEVELOP" = "yes" ; then
         my_opt_cflags="-g"
-      else 
+      else
         my_opt_cflags="-fast -g"
       fi
     fi
-    
+
     # Sun demangle
     my_demangle_ldflags="-ldemangle"
     ;;
@@ -744,14 +761,14 @@ case "${host}" in
       #old: HOST_LIBTREPOSITORY="./cxx_trepository/*.o"
       if test "$OPT_ENABLE_DEVELOP" = "yes" ; then
         my_opt_cxxflags="-gall"
-      else 
+      else
         my_opt_cxxflags="-g3 -O2"
       fi
     fi
     if HPCcccmp([cc]); then
       if test "$OPT_ENABLE_DEVELOP" = "yes" ; then
         my_opt_cflags="-g"
-      else 
+      else
         my_opt_cflags="-g3 -O3"
       fi
     fi
@@ -866,6 +883,7 @@ fi
 
 # These tests only use GNU syntax.  Intel, Clang, etc use a different
 # format, but we don't really build with those.
+# For example:  gcc (GCC) 7.3.1 20180130 (Red Hat 7.3.1-2)
 
 find_version()
 {
@@ -911,7 +929,10 @@ test_is_gnu()
 # C, C++ compiler versions and paths
 #-------------------------------------------------
 
-warn_non_gcc=no
+# Find path and version for CC/CXX, test if GNU, and check if recent
+# enough version >= 5.x.
+
+cc_is_gnu=yes
 
 CC_VERSION=`find_version "$CC"`
 CC_PATH=`find_path "$CC"`
@@ -920,8 +941,8 @@ AC_MSG_NOTICE([C compiler: $CC_VERSION])
 AC_MSG_NOTICE([C path: $CC_PATH])
 
 if test_is_gnu "$CC" ; then : ; else
-  warn_non_gcc=yes
   AC_MSG_WARN([Not using the GNU C compiler.])
+  cc_is_gnu=no
 fi
 
 CXX_VERSION=`find_version "$CXX"`
@@ -931,9 +952,83 @@ AC_MSG_NOTICE([C++ compiler: $CXX_VERSION])
 AC_MSG_NOTICE([C++ path: $CXX_PATH])
 
 if test_is_gnu "$CXX" ; then : ; else
-  warn_non_gcc=yes
   AC_MSG_WARN([Not using the GNU C++ compiler.])
+  cc_is_gnu=no
 fi
+
+warn_non_gnu=no
+warn_non_gnu_mesg=
+
+warn_old_gnu=no
+
+warn_identify_compiler=no
+warn_identify_compiler_mesg=
+have_cc_version=no
+
+# parse CC version: gcc (GCC) 7.3.1 20180130 (Red Hat 7.3.1-2)
+if test "$cc_is_gnu" = yes ; then
+  ver=`echo $CC_VERSION | sed -e '[s/^[^)]*[)]//]' | awk '{print $1}'`
+  cc_major=`echo $ver | awk -F. '{print $1}'`
+  cc_minor=`echo $ver | awk -F. '{print $2}'`
+
+  if test "x$cc_minor" != x ; then
+    have_cc_version=yes
+    if test "$cc_major" -lt 5 ; then
+      AC_MSG_WARN([CC/CXX compiler too old for hpctoolkit])
+      AC_MSG_WARN([Use GNU version 5.x or later])
+      warn_old_gnu=yes
+    fi
+  else
+    AC_MSG_WARN([unable to identify CC/CXX compiler version: $CC_VERSION])
+    warn_identify_compiler=yes
+    warn_identify_compiler_mesg='CC/CXX'
+  fi
+else
+  warn_non_gnu=yes
+  warn_non_gnu_mesg='CC/CXX'
+fi
+
+
+#-------------------------------------------------
+# Find base CC compiler, outside of spack
+#-------------------------------------------------
+
+# Hpclink needs the CC compiler for the fnbounds array, but the spack
+# wrapper won't run outside of spack.  So, if we're being built by
+# spack, then find the base compiler for hpclink.
+
+HPCLINK_CC="$CC_PATH"
+
+echo "$CC_PATH" | grep -E -i -e 'lib.*spack.*env' >/dev/null
+if test $? -eq 0 ; then
+  AC_MSG_NOTICE([found spack compiler wrapper])
+  AC_MSG_CHECKING([if base compiler works: $SPACK_CC])
+
+  ORIG_CC="$CC"
+  CC="$SPACK_CC"
+  AC_LANG_PUSH([C])
+
+  AC_COMPILE_IFELSE([
+  AC_LANG_SOURCE([[
+unsigned long addrs[] = {
+  0x400400, 0x400410
+};
+unsigned long len = sizeof(addrs) / sizeof(addrs[0]);
+]])], [ans=yes], [ans=no])
+
+  AC_MSG_RESULT([$ans])
+
+  AC_LANG_POP()
+  CC="$ORIG_CC"
+
+  if test "$ans" = yes ; then HPCLINK_CC="$SPACK_CC"
+  else HPCLINK_CC=gcc
+  fi
+fi
+
+AC_MSG_NOTICE([hpclink compiler: $HPCLINK_CC])
+
+AC_SUBST([HPCLINK_CC])
 
 
 #-------------------------------------------------
@@ -1001,7 +1096,7 @@ AC_SUBST([cxx_c11_flag])
 #-------------------------------------------------
 
 # Find location of libstdc++.  This is used to set LD_LIBRARY_PATH in
-# hpcfnbounds.
+# hpcfnbounds.  It is not used by hpcfnbounds2.
 #
 # Try --print-file-name first.  If that doesn't work, then try ldd.
 # If --print-file-name works, then its answer is more reliable because
@@ -1040,6 +1135,47 @@ case "$HPCRUN_LIBCXX_PATH" in
 esac
 
 AC_SUBST([HPCRUN_LIBCXX_PATH])
+
+
+#-------------------------------------------------
+# CXXFLAGS for extended C++ alignment: -faligned-new
+#-------------------------------------------------
+
+# Test if CXX supports '-faligned-new' and add it to CXXFLAGS if
+# supported and not already supplied.  This suppresses warnings from
+# boost and dyninst:
+#   warning: 'new' of type 'SymtabCodeSource' with extended alignment 128
+
+flag='-faligned-new'
+
+AC_MSG_CHECKING([if CXX supports $flag])
+
+AC_LANG_PUSH([C++])
+ORIG_CXXFLAGS="$CXXFLAGS"
+CXXFLAGS="$HOST_CXXFLAGS $ORIG_CXXFLAGS $flag"
+
+AC_COMPILE_IFELSE([
+AC_LANG_SOURCE([[
+#include <list>
+long mylen(std::list <int> lst)
+{
+  return (long) lst.size();
+}
+]])], [ans=yes], [ans=no])
+
+AC_MSG_RESULT([$ans])
+
+AC_LANG_POP
+
+CXXFLAGS="$ORIG_CXXFLAGS"
+
+# Add to CXXFLAGS if supported and not already supplied.
+if test "$ans" = yes ; then
+  case "x$CXXFLAGS" in
+    *${flag}* ) ;;
+    * ) HOST_CXXFLAGS="$HOST_CXXFLAGS $flag" ;;
+  esac
+fi
 
 
 #-------------------------------------------------
@@ -1350,8 +1486,9 @@ if test "x$MPICXX" != x ; then
   AC_MSG_NOTICE([MPICXX path: $MPICXX_PATH])
 
   if test_is_gnu "$MPICXX" ; then : ; else
-    warn_non_gcc=yes
     AC_MSG_WARN([Not using the GNU MPICXX compiler.])
+    warn_non_gnu=yes
+    warn_non_gnu_mesg="$warn_non_gnu_mesg MPICXX"
   fi
 
   AC_MSG_CHECKING([if MPICXX is a valid MPI C++ compiler])
@@ -1680,6 +1817,7 @@ AC_MSG_NOTICE([spack directory: $with_spack])
 default_binutils_prefix=no
 default_boost_prefix=no
 default_bzip_prefix=no
+default_cuda_prefix=no
 default_dyninst_prefix=no
 default_elfutils_prefix=no
 default_libdwarf_prefix=no
@@ -1694,6 +1832,7 @@ default_tbb_prefix=no
 default_xed_prefix=no
 default_xerces_prefix=no
 default_zlib_prefix=no
+default_valgrind_prefix=no
 
 if test "$use_externals" = yes ; then
   default_binutils_prefix="$ext_binutils_prefix"
@@ -1770,6 +1909,9 @@ then
   if find_spack_pkg bzip2 ; then
     default_bzip_prefix="$spack_ans"
   fi
+  if find_spack_pkg cuda ; then
+    default_cuda_prefix="$spack_ans"
+  fi
   if find_spack_pkg dyninst ; then
     default_dyninst_prefix="$spack_ans"
   fi
@@ -1812,6 +1954,9 @@ then
   if find_spack_pkg zlib ; then
     default_zlib_prefix="$spack_ans"
   fi
+  if find_spack_pkg valgrind ; then
+    default_valgrind_prefix="$spack_ans"
+  fi
 fi
 
 
@@ -1819,23 +1964,54 @@ fi
 # Check consistency of C, C++ and wordsize
 #-------------------------------------------------
 
-# If still using externals, verify that toolkit and externals use the
-# same C and C++ compilers.  Spack does things differently.
+# If using --with-spack, try to test if the spack compiler and the
+# toolkit compiler are both GNU and the same rev.  This is mostly
+# heuristic, we may throw false positives.  For example:
+#
+# spack path:  /home/krentel/Spack/install/linux-fedora26-x86_64/gcc-7.3.1
+# CC version:  gcc (GCC) 7.3.1 20180130 (Red Hat 7.3.1-2)
+
+have_spack_version=no
+
+# parse spack version from path: .../gcc-7.3.1
+case "$with_spack" in
+  /* )
+    base=`basename "$with_spack"`
+    AC_MSG_NOTICE([checking that CC matches the spack compiler: $base])
+
+    case "$base" in
+      gcc-* )
+        ver=`echo $base | sed -e 's/gcc-//'`
+        spack_major=`echo $ver | awk -F. '{print $1}'`
+        spack_minor=`echo $ver | awk -F. '{print $2}'`
+
+        if test "x$spack_minor" != x ; then
+	  have_spack_version=yes
+	else
+          AC_MSG_WARN([unable to identify spack compiler version: $with_spack])
+	  warn_identify_compiler=yes
+	  warn_identify_compiler_mesg="$warn_identify_compiler_mesg spack"
+        fi
+	;;
+      * )
+        AC_MSG_WARN([not using the GNU compiler for spack prereqs: $with_spack])
+        warn_non_gnu=yes
+        warn_non_gnu_mesg="$warn_non_gnu_mesg spack"
+	;;
+    esac
+    ;;
+esac
 
 warn_compiler_mismatch=no
 
-if test "$ext_cc_path" != unknown && test "$ext_cc_path" != "$CC_PATH"
+if test "$have_spack_version" = yes && test "$have_cc_version" = yes  \
+   && test "x${spack_major}-${spack_minor}" != "x${cc_major}-${cc_minor}"
 then
+  AC_MSG_WARN([the CC and spack compilers are not the same version])
   warn_compiler_mismatch=yes
-  AC_MSG_WARN([The C compiler does not match the one used to build \
-hpctoolkit-externals.])
 fi
-if test "$ext_cxx_path" != unknown && test "$ext_cxx_path" != "$CXX_PATH"
-then
-  warn_compiler_mismatch=yes
-  AC_MSG_WARN([The C++ compiler does not match the one used to build \
-hpctoolkit-externals.])
-fi
+
+#-------------------------------------------------
 
 # Continue to set multilib_path for package tests below, but we really
 # only support 64-bit now.
@@ -1949,6 +2125,41 @@ BINUTILS_LIBS="${BINUTILS_LIBS} -ldl"
 AC_SUBST([BINUTILS_IFLAGS])
 AC_SUBST([BINUTILS_LIBS])
 
+#-------------------------------------------------
+
+# Test for binutils 2.34 or later.  The signature of
+# bfd_section_vma(), etc dropped the first argument.
+# up to 2.33.1:  #define bfd_section_vma(bfd, ptr) ((ptr)->vma)
+# after 2.34:    bfd_section_vma (const asection *sec)
+
+ORIG_CFLAGS="$CFLAGS"
+CFLAGS="$HOST_CFLAGS  $BINUTILS_IFLAGS"
+
+AC_LANG_PUSH([C])
+
+AC_MSG_CHECKING([if binutils version 2.34 or later])
+
+AC_COMPILE_IFELSE([
+AC_LANG_SOURCE([[
+#define PACKAGE "hpctoolkit"
+#include <bfd.h>
+unsigned long
+get_vma(asection * asec)
+{
+    return bfd_section_vma(asec);
+}
+]])], [binutils_234=yes], [binutils_234=no])
+
+AC_MSG_RESULT([$binutils_234])
+
+AC_LANG_POP
+
+CFLAGS="$ORIG_CFLAGS"
+
+if test "$binutils_234" = yes ; then
+  AC_DEFINE(BINUTILS_234, 1, [binutils version 2.34 or later])
+fi
+
 
 #-------------------------------------------------
 # Option: --with-boost=PATH
@@ -1971,7 +2182,8 @@ BOOST_COPY=no
 # dyninst would use (but no more).  But copy-libs won't fail on a
 # missing library, so it doesn't have to be exact.
 
-BOOST_COPY_LIST='atomic chrono date_time filesystem system thread timer graph regex'
+BOOST_COPY_LIST='atomic chrono date_time filesystem graph regex system thread timer'
+BOOST_NEEDED_LIST='graph regex system'
 
 AC_MSG_CHECKING([for boost])
 
@@ -2006,21 +2218,25 @@ esac
 
 AC_MSG_RESULT([$BOOST])
 
-# Toolkit doesn't use a boost library directly, but something from a
-# dyninst header pulls in libboost_system (not sure how).  So, we just
-# add everything from the copy list to the link line.  (They're pulled
-# in indirectly anyway).
-
 if test "x$BOOST_LIB_DIR" != x ; then
   boost_lib_list=
+  boost_lflag_list=
 
-  for lib in $BOOST_COPY_LIST ; do
+  for lib in $BOOST_NEEDED_LIST ; do
     if test -f "${BOOST_LIB_DIR}/libboost_${lib}.so" ; then
-      boost_lib_list="${boost_lib_list} -lboost_$lib"
+      boost_lflag_list="${boost_lflag_list} -lboost_$lib"
+    else
+      AC_MSG_ERROR([boost ${lib} is required])
     fi
   done
 
-  BOOST_LFLAGS="-L${BOOST_LIB_DIR} $boost_lib_list"
+  for lib in $BOOST_COPY_LIST ; do
+    if test -f "${BOOST_LIB_DIR}/libboost_${lib}.so" ; then
+      boost_lib_list="${boost_lib_list} $lib"
+    fi
+  done
+
+  BOOST_LFLAGS="-L${BOOST_LIB_DIR} $boost_lflag_list"
 
   AC_MSG_NOTICE([boost libs: $boost_lib_list])
 fi
@@ -2141,216 +2357,6 @@ AC_SUBST([DYNINST_LFLAGS])
 AC_SUBST([DYNINST_LIB_DIR])
 AC_SUBST([DYNINST_COPY])
 
-#-------------------------------------------------
-
-# Check that ParseAPI includes CFG loop support.
-
-ORIG_CXXFLAGS="$CXXFLAGS"
-CXXFLAGS="${HOST_CXXFLAGS} ${CXXFLAGS} ${BOOST_IFLAGS} ${DYNINST_IFLAGS}"
-AC_LANG_PUSH([C++])
-
-if test "$DYNINST" != no ; then
-  AC_MSG_CHECKING([for parseapi CFG loop support])
-
-  AC_COMPILE_IFELSE([
-  AC_LANG_SOURCE([[
-#include <vector>
-#include <Symtab.h>
-#include <Function.h>
-#include <CFG.h>
-using namespace Dyninst;
-using namespace SymtabAPI;
-using namespace ParseAPI;
-using namespace std;
-long num_blocks(LoopTreeNode * node)
-{
-  Loop * loop = node->loop;
-  vector <Block *> bvec;
-  loop->getLoopBasicBlocks(bvec);
-  return (long) bvec.size();
-}
-]])],
-  [cfg_loop_support=yes ; dyninst_features="$dyninst_features cfg"],
-  [cfg_loop_support=no])
-
-  AC_MSG_RESULT([$cfg_loop_support])
-
-  if test "$cfg_loop_support" != yes ; then
-    AC_MSG_ERROR([parseAPI does not include CFG loop support])
-  fi
-fi
-
-#-------------------------------------------------
-
-# Test if Block::getInsns() uses Instruction::Ptr or Instruction.
-# 9.3 uses Instruction::Ptr, new-par-par and 10.x use Instruction.
-
-use_instn_ptr=yes
-
-if test "$DYNINST" != no ; then
-  AC_MSG_CHECKING([if parseapi uses Instruction::Ptr])
-
-  AC_COMPILE_IFELSE([
-  AC_LANG_SOURCE([[
-#include <map>
-#include <Symtab.h>
-#include <Function.h>
-#include <Instruction.h>
-#include <CFG.h>
-using namespace Dyninst;
-using namespace InstructionAPI;
-using namespace ParseAPI;
-using namespace std;
-long instruction_size(Block * block)
-{
-  map <Offset, Instruction::Ptr> imap;
-  block->getInsns(imap);
-  return (long) imap.begin()->second->size();
-}
-]])], [use_instn_ptr=yes], [use_instn_ptr=no])
-
-  AC_MSG_RESULT([$use_instn_ptr])
-fi
-
-if test "$use_instn_ptr" = yes ; then
-  AC_DEFINE(DYNINST_INSTRUCTION_PTR, 1, [dyninst uses Instruction::Ptr])
-fi
-
-#-------------------------------------------------
-
-# Test if dyninst was built with libdw or libdwarf.
-#
-# There is not a good compile or link test for this, so we fall back
-# on ldd.  But note: ldd only works for dynamic libraries and doesn't
-# work cross-platform.
-
-use_libdw=no
-
-if test "$DYNINST" != no ; then
-  AC_MSG_CHECKING([if dyninst built with libdw.so])
-
-  dyn_dwarf="${DYNINST_LIB_DIR}/libdynDwarf.so"
-
-  ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-  LD_LIBRARY_PATH=
-
-  if test -f "$dyn_dwarf" ; then
-    ldd "$dyn_dwarf" 2>/dev/null | $AWK '{print $1}' | grep -e 'libdw.so' >/dev/null
-    if test $? -eq 0 ; then
-       use_libdw=yes
-    fi
-  fi
-
-  AC_MSG_RESULT([$use_libdw])
-
-  LD_LIBRARY_PATH="$ORIG_LD_LIBRARY_PATH"
-
-  if test "$use_libdw" = yes
-  then dyninst_features="$dyninst_features libdw"
-  else dyninst_features="$dyninst_features libdwarf"
-  fi
-fi
-
-#-------------------------------------------------
-
-# Test if dyninst supports cuda.
-
-use_cuda=no
-
-if test "$DYNINST" != no ; then
-  AC_MSG_CHECKING([if dyninst supports cuda])
-
-  AC_COMPILE_IFELSE([
-  AC_LANG_SOURCE([[
-#include <Symtab.h>
-using namespace Dyninst;
-using namespace SymtabAPI;
-using namespace std;
-long cuda_type()
-{
-  return (long) Dyninst::Arch_cuda;
-}
-]])],
-  [use_cuda=yes ; dyninst_features="$dyninst_features cuda"],
-  [use_cuda=no])
-
-  AC_MSG_RESULT([$use_cuda])
-fi
-
-#-------------------------------------------------
-
-# Test if dyninst was built with openmp support.
-# Again, not really a good test.
-
-dyninst_openmp=no
-
-if test "$DYNINST" != no ; then
-  AC_MSG_CHECKING([if dyninst built with openmp])
-
-  parseapi="${DYNINST_LIB_DIR}/libparseAPI.so"
-
-  ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-  LD_LIBRARY_PATH=
-
-  if test -f "$parseapi" ; then
-    for lib in $openmp_lib_list ; do
-      ldd "$parseapi" 2>/dev/null | $AWK '{print $1}' | grep -e "$lib" >/dev/null
-      if test $? -eq 0 ; then
-        dyninst_openmp=yes
-	dyninst_features="$dyninst_features openmp"
-	break
-      fi
-    done
-  fi
-
-  LD_LIBRARY_PATH="$ORIG_LD_LIBRARY_PATH"
-
-  AC_MSG_RESULT([$dyninst_openmp])
-fi
-
-AC_LANG_POP
-CXXFLAGS="$ORIG_CXXFLAGS"
-
-#-------------------------------------------------
-
-# Temporary option to identify version of dyninst, only necessary if
-# the above tests produce the wrong answer.
-#
-#  old = orig version from externals
-#  libdw = uses libdw instead of libdwarf, but not cuda
-#  cuda = uses libdw and supports cuda
-
-dyninst_type=unset
-
-AC_ARG_WITH([dyninst-type],
-  [AS_HELP_STRING([--with-dyninst-type=TYPE],
-      [temp option for dyninst version (old, libdw, cuda),
-       only needed if autoconf fails to detect correctly])],
-  [dyninst_type="$withval"],
-  [])
-
-if test "$dyninst_type" != unset ; then
-  case "$dyninst_type" in
-    old )   use_libdw=no ;  use_cuda=no ;;
-    libdw ) use_libdw=yes ; use_cuda=no ;;
-    cuda )  use_libdw=yes ; use_cuda=yes ;;
-    * ) AC_MSG_ERROR([bad value for --with-dyninst-type: $dyninst_type]) ;;
-  esac
-
-  AC_MSG_NOTICE([override dyninst-type ($dyninst_type): libdw: $use_libdw, cuda: $use_cuda])
-fi
-
-AM_CONDITIONAL(OPT_DYNINST_LIBDWARF, [test "$use_libdw" = no])
-AM_CONDITIONAL(OPT_DYNINST_LIBDW, [test "$use_libdw" = yes])
-
-if test "$use_libdw" = yes ; then
-  AC_DEFINE(DYNINST_USE_LIBDW, 1, [dyninst built with libdw])
-fi
-
-if test "$use_cuda" = yes ; then
-  AC_DEFINE(DYNINST_USE_CUDA, 1, [dyninst supports cuda])
-fi
-
 
 #-------------------------------------------------
 # Option: --with-elfutils=PATH
@@ -2369,7 +2375,7 @@ AC_MSG_CHECKING([for elfutils])
 LIBELF_INC=no
 LIBELF_LIB=no
 LIBELF_COPY=no
-have_libdw=no
+elf_has_libdw=no
 
 case "$LIBELF" in
   /* )
@@ -2391,7 +2397,7 @@ case "$LIBELF" in
     LIBELF_COPY=yes
 
     if test -f "${LIBELF_LIB}/libdw.so" ; then
-      have_libdw=yes
+      elf_has_libdw=yes
     fi
     num_pkgs=`expr 1 + $num_pkgs`
     ;;
@@ -2403,12 +2409,6 @@ case "$LIBELF" in
 esac
 
 AC_MSG_RESULT([$LIBELF])
-
-if test "$use_libdw" = yes && test "$have_libdw" != yes ; then
-  AC_MSG_WARN([dyninst uses libdw but elfutils is missing libdw])
-  AC_MSG_WARN([dyninst:  $DYNINST])
-  AC_MSG_WARN([elfutils: $LIBELF])
-fi
 
 AC_SUBST([LIBELF_INC])
 AC_SUBST([LIBELF_LIB])
@@ -2788,9 +2788,11 @@ AC_SUBST([LZMA_LIB])
 #
 # Note: we require libmbedcrypto.a to be compiled with -fPIC.
 
+MBEDTLS_COPY=no
 MBEDTLS="$default_mbedtls_prefix"
 MBEDTLS_IFLAGS=
 MBEDTLS_LIBS=
+MBEDTLS_LIB=
 
 AC_ARG_WITH([mbedtls],
   [AS_HELP_STRING([--with-mbedtls=PATH],
@@ -2808,6 +2810,8 @@ case "$MBEDTLS" in
     MBEDTLS_IFLAGS="-I ${MBEDTLS}/include"
     for lib in $multilib_path ; do
       if test -f "${MBEDTLS}/lib/libmbedcrypto.a" ; then
+	MBEDTLS_COPY=yes
+	MBEDTLS_LIB="${MBEDTLS}/lib"
         MBEDTLS_LIBS="${MBEDTLS}/lib/libmbedcrypto.a"
 	break
       fi
@@ -2832,7 +2836,7 @@ AC_MSG_RESULT([$MBEDTLS])
 case "$MBEDTLS" in
   /* )
     AC_MSG_CHECKING([if libmbedcrypto.a was compiled with -fPIC])
-    
+
     ORIG_CFLAGS="$CFLAGS"
     ORIG_LIBS="$LIBS"
     CFLAGS="-shared -fPIC $MBEDTLS_IFLAGS"
@@ -2863,6 +2867,8 @@ my_md5_hash(char *buf, size_t len)
     ;;
 esac
 
+AC_SUBST([MBEDTLS_COPY])
+AC_SUBST([MBEDTLS_LIB])
 AC_SUBST([MBEDTLS_IFLAGS])
 AC_SUBST([MBEDTLS_LIBS])
 
@@ -3694,6 +3700,250 @@ AC_SUBST([ZLIB_COPY])
 
 
 #----------------------------------------------------------------------------
+# Extra Dyninst tests
+#----------------------------------------------------------------------------
+
+# The dyninst compile if/else tests require TBB, so this comes after
+# all the package paths are known.
+
+# Check that ParseAPI includes CFG loop support.
+
+ORIG_CXXFLAGS="$CXXFLAGS"
+CXXFLAGS="${HOST_CXXFLAGS} ${CXXFLAGS} ${BOOST_IFLAGS} ${DYNINST_IFLAGS}"
+CXXFLAGS="${CXXFLAGS} -I${LIBELF_INC} ${TBB_IFLAGS}"
+
+AC_LANG_PUSH([C++])
+
+if test "$DYNINST" != no ; then
+  AC_MSG_CHECKING([for parseapi CFG loop support])
+
+  AC_COMPILE_IFELSE([
+  AC_LANG_SOURCE([[
+#include <vector>
+#include <Symtab.h>
+#include <Function.h>
+#include <CFG.h>
+using namespace Dyninst;
+using namespace SymtabAPI;
+using namespace ParseAPI;
+using namespace std;
+long num_blocks(LoopTreeNode * node)
+{
+  Loop * loop = node->loop;
+  vector <Block *> bvec;
+  loop->getLoopBasicBlocks(bvec);
+  return (long) bvec.size();
+}
+]])],
+  [cfg_loop_support=yes ; dyninst_features="$dyninst_features cfg"],
+  [cfg_loop_support=no])
+
+  AC_MSG_RESULT([$cfg_loop_support])
+
+  if test "$cfg_loop_support" != yes ; then
+    AC_MSG_ERROR([parseAPI does not include CFG loop support])
+  fi
+fi
+
+#-------------------------------------------------
+
+# Test if Block::getInsns() uses Instruction::Ptr or Instruction.
+# 9.3 uses Instruction::Ptr, new-par-par and 10.x use Instruction.
+
+use_instn_ptr=yes
+
+if test "$DYNINST" != no ; then
+  AC_MSG_CHECKING([if parseapi uses Instruction::Ptr])
+
+  AC_COMPILE_IFELSE([
+  AC_LANG_SOURCE([[
+#include <map>
+#include <Symtab.h>
+#include <Function.h>
+#include <Instruction.h>
+#include <CFG.h>
+using namespace Dyninst;
+using namespace InstructionAPI;
+using namespace ParseAPI;
+using namespace std;
+long instruction_size(Block * block)
+{
+  map <Offset, Instruction::Ptr> imap;
+  block->getInsns(imap);
+  return (long) imap.begin()->second->size();
+}
+]])], [use_instn_ptr=yes], [use_instn_ptr=no])
+
+  AC_MSG_RESULT([$use_instn_ptr])
+fi
+
+if test "$use_instn_ptr" = yes ; then
+  AC_DEFINE(DYNINST_INSTRUCTION_PTR, 1, [dyninst uses Instruction::Ptr])
+fi
+
+#-------------------------------------------------
+
+# Test if dyninst was built with libdw or libdwarf.
+#
+# There is not a good compile or link test for this, so we fall back
+# on ldd.  But note: ldd only works for dynamic libraries and doesn't
+# work cross-platform.
+
+use_libdw=no
+
+if test "$DYNINST" != no ; then
+  AC_MSG_CHECKING([if dyninst built with libdw.so])
+
+  dyn_dwarf="${DYNINST_LIB_DIR}/libdynDwarf.so"
+
+  ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+  LD_LIBRARY_PATH=
+
+  if test -f "$dyn_dwarf" ; then
+    ldd "$dyn_dwarf" 2>/dev/null | $AWK '{print $1}' | grep -e 'libdw.so' >/dev/null
+    if test $? -eq 0 ; then
+       use_libdw=yes
+    fi
+  fi
+
+  AC_MSG_RESULT([$use_libdw])
+
+  LD_LIBRARY_PATH="$ORIG_LD_LIBRARY_PATH"
+
+  if test "$use_libdw" = yes
+  then dyninst_features="$dyninst_features libdw"
+  else dyninst_features="$dyninst_features libdwarf"
+  fi
+fi
+
+#-------------------------------------------------
+
+# Test if dyninst supports cuda.
+
+use_cuda=no
+
+if test "$DYNINST" != no ; then
+  AC_MSG_CHECKING([if dyninst supports cuda])
+
+  AC_COMPILE_IFELSE([
+  AC_LANG_SOURCE([[
+#include <Symtab.h>
+using namespace Dyninst;
+using namespace SymtabAPI;
+using namespace std;
+long cuda_type()
+{
+  return (long) Dyninst::Arch_cuda;
+}
+]])],
+  [use_cuda=yes ; dyninst_features="$dyninst_features cuda"],
+  [use_cuda=no])
+
+  AC_MSG_RESULT([$use_cuda])
+fi
+
+#-------------------------------------------------
+
+# Test if symtab and parseapi were built with openmp support.
+# Again, not really a good test.
+
+parse_openmp=no
+symtab_openmp=no
+
+if test "$DYNINST" != no ; then
+  ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+  LD_LIBRARY_PATH=
+
+  AC_MSG_CHECKING([if parseapi built with openmp])
+
+  parseapi="${DYNINST_LIB_DIR}/libparseAPI.so"
+
+  if test -f "$parseapi" ; then
+    for lib in $openmp_lib_list ; do
+      ldd "$parseapi" 2>/dev/null | $AWK '{print $1}' | grep -e "$lib" >/dev/null
+      if test $? -eq 0 ; then
+        parse_openmp=yes
+	dyninst_features="$dyninst_features openmp"
+	break
+      fi
+    done
+  fi
+
+  AC_MSG_RESULT([$parse_openmp])
+
+  AC_MSG_CHECKING([if symtab built with openmp])
+
+  symtabapi="${DYNINST_LIB_DIR}/libsymtabAPI.so"
+
+  if test -f "$symtabapi" ; then
+    for lib in $openmp_lib_list ; do
+      ldd "$symtabapi" 2>/dev/null | $AWK '{print $1}' | grep -e "$lib" >/dev/null
+      if test $? -eq 0 ; then
+        symtab_openmp=yes
+	dyninst_features="$dyninst_features par-symtab"
+	break
+      fi
+    done
+  fi
+
+  AC_MSG_RESULT([$symtab_openmp])
+
+  LD_LIBRARY_PATH="$ORIG_LD_LIBRARY_PATH"
+fi
+
+AC_LANG_POP
+CXXFLAGS="$ORIG_CXXFLAGS"
+
+#-------------------------------------------------
+
+# Temporary option to identify version of dyninst, only necessary if
+# the above tests produce the wrong answer.
+#
+#  old = orig version from externals
+#  libdw = uses libdw instead of libdwarf, but not cuda
+#  cuda = uses libdw and supports cuda
+
+dyninst_type=unset
+
+AC_ARG_WITH([dyninst-type],
+  [AS_HELP_STRING([--with-dyninst-type=TYPE],
+      [temp option for dyninst version (old, libdw, cuda),
+       only needed if autoconf fails to detect correctly])],
+  [dyninst_type="$withval"],
+  [])
+
+if test "$dyninst_type" != unset ; then
+  case "$dyninst_type" in
+    old )   use_libdw=no ;  use_cuda=no ;;
+    libdw ) use_libdw=yes ; use_cuda=no ;;
+    cuda )  use_libdw=yes ; use_cuda=yes ;;
+    * ) AC_MSG_ERROR([bad value for --with-dyninst-type: $dyninst_type]) ;;
+  esac
+
+  AC_MSG_NOTICE([override dyninst-type ($dyninst_type): libdw: $use_libdw, cuda: $use_cuda])
+fi
+
+AM_CONDITIONAL(OPT_DYNINST_LIBDWARF, [test "$use_libdw" = no])
+AM_CONDITIONAL(OPT_DYNINST_LIBDW, [test "$use_libdw" = yes])
+
+if test "$use_libdw" = yes ; then
+  AC_DEFINE(DYNINST_USE_LIBDW, 1, [dyninst built with libdw])
+fi
+
+if test "$use_cuda" = yes ; then
+  AC_DEFINE(DYNINST_USE_CUDA, 1, [dyninst supports cuda])
+fi
+
+#-------------------------------------------------
+
+if test "$use_libdw" = yes && test "$elf_has_libdw" != yes ; then
+  AC_MSG_WARN([dyninst uses libdw but elfutils is missing libdw])
+  AC_MSG_WARN([dyninst:  $DYNINST])
+  AC_MSG_WARN([elfutils: $LIBELF])
+fi
+
+
+#----------------------------------------------------------------------------
 # Options
 #----------------------------------------------------------------------------
 
@@ -3860,39 +4110,47 @@ AM_CONDITIONAL([OPT_ENABLE_HPCSERVER], [test "$enable_hpcserver" = yes])
 # enable-openmp
 #-------------------------------------------------
 
-# Enable openmp support in hpcstruct.  Default is to do what ParseAPI
-# does.
+# Enable openmp support in hpcstruct and fnbounds.  Requires support
+# from ParseAPI and Symtab, so all this really does is disable it, if
+# desired.
+#
+# Note: this only controls openmp pragmas in hpctoolkit.  If dyninst
+# is compiled with openmp, then those pragmas still exist.
 
 AC_ARG_ENABLE([openmp],
   [AS_HELP_STRING([--enable-openmp],
-      [enable openmp support in hpcstruct (default is to test dyninst)])],
+      [enable openmp support in hpcstruct, requires support from dyninst])],
   [],
-  [enable_openmp="$dyninst_openmp"])
+  [enable_openmp="$parse_openmp"])
 
-AC_MSG_CHECKING([whether to enable openmp in hpcstruct])
-AC_MSG_RESULT([$enable_openmp])
+if test "x$enable_openmp" != xyes ; then
+  AC_MSG_NOTICE([disable openmp support in hpcstruct and hpcfnbounds])
+  parse_openmp=no
+  symtab_openmp=no
+fi
 
-case "$enable_openmp" in
-  yes | no ) ;;
-  * ) AC_MSG_WARN([bad value for enable-openmp: $enable_openmp])
-    enable_openmp="$dyninst_openmp"
-    ;;
-esac
+hpcstruct_mesg=serial
+ans=no
 
-if test "$enable_openmp" = yes ; then
-  AC_DEFINE([ENABLE_OPENMP], [1], [Build with openmp support])
+if test "$parse_openmp" = yes ; then
+  AC_DEFINE([ENABLE_OPENMP], [1], [ParseAPI supports openmp (for hpcstruct)])
   hpcstruct_mesg=openmp
+  ans=hpcstruct
 else
   OPENMP_FLAG=
-  hpcstruct_mesg=serial
+  symtab_openmp=no
 fi
 
-if test "x$DYNINST" = xno || test "x$BOOST" = xno || test "x$LIBELF" = xno
-then
-  hpcstruct_mesg=no
+if test "$symtab_openmp" = yes ; then
+  AC_DEFINE([ENABLE_OPENMP_SYMTAB], [1], [Symtab supports openmp (for fnbounds)])
+  hpcstruct_mesg="$hpcstruct_mesg + fnbounds"
+  ans="$ans + fnbounds"
 fi
 
-AM_CONDITIONAL([OPT_ENABLE_OPENMP], [test "$enable_openmp" = yes])
+AC_MSG_NOTICE([openmp support from dyninst: $ans])
+
+AM_CONDITIONAL([OPT_ENABLE_OPENMP], [test "$parse_openmp" = yes])
+AM_CONDITIONAL([OPT_ENABLE_OPENMP_SYMTAB], [test "$symtab_openmp" = yes])
 
 
 #-------------------------------------------------
@@ -4218,183 +4476,170 @@ AC_LANG_POP
 # Option: --with-cuda=PATH
 #-------------------------------------------------
 
-# CUDA support for CPU-GPU-Blame-shifting
-# CUDA default install path is /usr/local/cuda
-# Include files will be in CUDADIR/include
-# CUDA 64 bit libraries under CUDADIR/lib64 and 32 bit in CUDADIR/lib
-# We need CUPTI for callbacks which is in CUDADIR/extras/CUPTI
-# CUPTI 64 bit libraries under CUPTIDIR/lib64 and 32 bit in CUPTIDIR/lib
+# CUDA support for CPU-GPU-Blame-shifting.  Also requires CUPTI,
+# either in CUDA/extras/CUPTI or else in a separate install.
 
-
-if test "${host_sizeof_voidp}" = "4"; then
-    CUDA_LIB_SEARCH_ORDER="lib32 lib"
-else
-    CUDA_LIB_SEARCH_ORDER="lib64 lib"
-fi
-
+CUDA="$default_cuda_prefix"
 
 OPT_HAVE_CUDA=no
-OPT_CUDA=
-OPT_CUDA_INCPATH=
+OPT_CUDA_IFLAGS=
 OPT_CUDA_LDFLAGS=
-OPT_CUDA_LIBPATH=
 
 AC_ARG_WITH([cuda],
-  AS_HELP_STRING([--with-cuda=PATH],
-                 [use given CUDA installation (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     OPT_HAVE_CUDA=yes
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cuda requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUDA=${withval}
-   fi])
+  [AS_HELP_STRING([--with-cuda=PATH],
+      [path to cuda install directory])],
+  [CUDA="$withval"],
+  [])
 
-if test "$OPT_HAVE_CUDA" = "yes" ; then
- AC_ARG_WITH([cuda-include],
-  AS_HELP_STRING([--with-cuda-include=PATH],
-                 [use given CUDA include (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cuda-include requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUDA_INCPATH=${withval}
-  fi],
+AC_MSG_CHECKING([for cuda])
 
-     [if test -f ${OPT_CUDA}/include/cuda.h; then
-         OPT_CUDA_INCPATH=${OPT_CUDA}/include
-     else
-         AC_MSG_ERROR(['${OPT_CUDA}/include/cuda.h' not found])
-     fi])  
-
-  OPT_CUDA_IFLAGS="-I${OPT_CUDA_INCPATH} "
-
-  AC_ARG_WITH([cuda-lib],
-  AS_HELP_STRING([--with-cuda-lib=PATH],
-                 [use given CUDA lib (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cuda-lib requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUDA_LIBPATH=${withval}
-   fi], 
-  
-   [for lib in ${CUDA_LIB_SEARCH_ORDER} ; do
-    if test -f "${OPT_CUDA}/${lib}/libcudart.so" 
-    then
-      OPT_CUDA_LIBPATH="${OPT_CUDA}/${lib}"
-      break
+case "$CUDA" in
+  /* )
+    if test ! -f "${CUDA}/include/cuda.h" ; then
+      AC_MSG_ERROR([unable to find cuda.h in: $CUDA])
     fi
-  done 
-     if test  -z "${OPT_CUDA_LIBPATH}" ; then
-       AC_MSG_ERROR([libcudart.so not found])
-     fi
-   ] )
+    OPT_CUDA_IFLAGS="-I${CUDA}/include"
 
-  OPT_CUDA_LDFLAGS="-L${OPT_CUDA_LIBPATH} -lcudart "
+    for lib in $multilib_path ; do
+      if test -f "${CUDA}/${lib}/libcudart.so" ; then
+        OPT_CUDA_LDFLAGS="-L${CUDA}/${lib} -lcudart"
+        break
+      fi
+    done
+    if test "x$OPT_CUDA_LDFLAGS" = x ; then
+      AC_MSG_ERROR([unable to find libcudart.so in: $CUDA])
+    fi
+    OPT_HAVE_CUDA=yes
+    num_pkgs=`expr 1 + $num_pkgs`
+    ;;
+  no )
+    ;;
+  * )
+    AC_MSG_ERROR([cuda directory must be absolute path: $CUDA])
+    ;;
+esac
 
-fi
+AC_MSG_RESULT([$CUDA])
 
 AM_CONDITIONAL([OPT_ENABLE_CUDA], [test "$OPT_HAVE_CUDA" = yes])
 
-AC_SUBST([OPT_CUDA])
+if test "$OPT_HAVE_CUDA" = yes ; then
+  AC_DEFINE([OPT_HAVE_CUDA], [1], [Have support for cuda])
+fi
+
+AC_DEFINE_UNQUOTED([CUDA_INSTALL_PREFIX],
+  ["$CUDA"], ["Cuda install prefix"])
+
 AC_SUBST([OPT_CUDA_IFLAGS])
 AC_SUBST([OPT_CUDA_LDFLAGS])
 
 #-------------------------------------------------
 # Option: --with-cupti=PATH
 #-------------------------------------------------
+
+# CUPTI is either in CUDA/extras/CUPTI or else specified separately
+# here.
+
+CUPTI=no
+case "$CUDA" in
+  /* ) if test -d "${CUDA}/extras/CUPTI" ; then CUPTI="${CUDA}/extras/CUPTI" ; fi
+       ;;
+esac
+
 OPT_HAVE_CUPTI=no
-OPT_CUPTI=
-OPT_CUPTI_INCPATH=
 OPT_CUPTI_IFLAGS=
 OPT_CUPTI_LDFLAGS=
-OPT_CUPTI_LIBPATH=
-
-if test "${host_sizeof_voidp}" = "4"; then
-    CUPTI_LIB_SEARCH_ORDER="lib32 lib"
-else
-    CUPTI_LIB_SEARCH_ORDER="lib64 lib"
-fi
 
 AC_ARG_WITH([cupti],
-  AS_HELP_STRING([--with-cupti=PATH],
-                 [use given CUDA/CUPTI installation (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     OPT_HAVE_CUPTI=yes
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cupti requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUPTI=${withval}
-   fi])
+  [AS_HELP_STRING([--with-cupti=PATH],
+      [path to cupti install directory, default is from cuda])],
+  [CUPTI="$withval"],
+  [])
 
-#
-# Valid cupti library
-#
-if test "$use_papi_c_cupti" != no; then
-   if test "$OPT_HAVE_CUPTI" = yes; then
-       OPT_CUPTI_IFLAGS="-I$OPT_CUPTI/include"
-       if test "$OPT_HAVE_CUDA" = no; then
-          cuda_dir=$(dirnmame $(dirname $OPT_CUPTI))/include
-	  OPT_CUDA_IFLAGS="-I$cuda_dir"
-       fi
-       OPT_CUPTI_IFLAGS="$OPT_CUDA_IFLAGS $OPT_CUPTI_IFLAGS"
-   else
-      AC_MSG_ERROR([papi-c-cupti specified, but no cupti lib specified!])
-   fi
+AC_MSG_CHECKING([for cupti])
+
+case "$CUPTI" in
+  /* )
+    if test ! -f "${CUPTI}/include/cupti.h" ; then
+      AC_MSG_ERROR([unable to find cupti.h in: $CUPTI])
+    fi
+    OPT_CUPTI_IFLAGS="-I${CUPTI}/include"
+
+    for lib in $multilib_path ; do
+      if test -f "${CUPTI}/${lib}/libcupti.so" ; then
+        OPT_CUPTI_LDFLAGS="-L${CUPTI}/$lib -Wl,-rpath=${CUPTI}/$lib -lcupti"
+        break
+      fi
+    done
+    if test "x$OPT_CUPTI_LDFLAGS" = x ; then
+      AC_MSG_ERROR([unable to find libcupti.so in: $CUPTI])
+    fi
+    OPT_HAVE_CUPTI=yes
+    ;;
+  no )
+    ;;
+  * )
+    AC_MSG_ERROR([cupti directory must be absolute path: $CUPTI])
+    ;;
+esac
+
+AC_MSG_RESULT([$CUPTI])
+
+# CUDA doesn't work without CUPTI.
+if test "$OPT_HAVE_CUDA" = yes && test "$OPT_HAVE_CUPTI" = no ; then
+  AC_MSG_WARN([cuda is configured without cupti])
+  AC_MSG_ERROR([use --with-cupti to provide location of cupti])
 fi
 
-if test "$OPT_HAVE_CUPTI" = "yes" ; then
- AC_ARG_WITH([cupti-include],
-  AS_HELP_STRING([--with-cupti-include=PATH],
-                 [use given CUPTI include (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cupti-include requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUPTI_INCPATH=${withval}
-  fi],
-
-     [if test -f ${OPT_CUPTI}/include/cupti.h; then
-         OPT_CUPTI_INCPATH=${OPT_CUPTI}/include
-         AC_DEFINE(HAVE_CUPTI_H, 1, [cupti include file available])
-     else
-         AC_MSG_ERROR(['${OPT_CUPTI}/include/cupti.h' not found])
-     fi])  
-
-  OPT_CUPTI_IFLAGS="-I${OPT_CUPTI_INCPATH} "
-
-  AC_ARG_WITH([cupti-lib],
-  AS_HELP_STRING([--with-cupti-lib=PATH],
-                 [use given CUPTI lib (absolute path) with hpcrun (default is NO)]),
-  [if test $withval != no; then
-     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
-       AC_MSG_ERROR([--with-cupti-lib requires absolute path as argument; given '${withval}'])
-     fi
-     OPT_CUPTI_LIBPATH=${withval}
-   fi], 
-  
-   [for lib in ${CUPTI_LIB_SEARCH_ORDER} ; do
-    if test -f "${OPT_CUPTI}/${lib}/libcupti.so" 
-    then
-      OPT_CUPTI_LIBPATH="${OPT_CUPTI}/${lib}"
-      break
-    fi
-  done 
-     if test  -z "${OPT_CUPTI_LIBPATH}" ; then
-       AC_MSG_ERROR([libcupti.so not found])
-     fi
-   ] )
-
-  OPT_CUPTI_LDFLAGS="-L${OPT_CUPTI_LIBPATH} -Wl,-rpath=${OPT_CUPTI_LIBPATH} -lcupti "
-
+if test "$OPT_HAVE_CUPTI" = yes ; then
+  AC_DEFINE([HAVE_CUPTI_H], [1], [The <cupti.h> header file is available.])
 fi
 
 AM_CONDITIONAL([OPT_ENABLE_CUPTI], [test "$OPT_HAVE_CUPTI" = yes])
 
+OPT_CUPTI="$CUPTI"
+
+AC_DEFINE_UNQUOTED([CUPTI_INSTALL_PREFIX],
+  ["$CUPTI"], ["CUPTI install prefix"])
+
 AC_SUBST([OPT_CUPTI])
 AC_SUBST([OPT_CUPTI_IFLAGS])
 AC_SUBST([OPT_CUPTI_LDFLAGS])
+
+
+#-------------------------------------------------
+# Option: --with-rocm=PATH
+#-------------------------------------------------
+
+# ROCM default install path is /usr/local/rocm
+
+OPT_ROCM=
+OPT_ROCM_INCPATH=
+OPT_ROCM_LDFLAGS=
+OPT_ROCM_LIBPATH=
+
+AC_ARG_WITH([rocm],
+  AS_HELP_STRING([--with-rocm=PATH],
+                 [use given ROCM installation (absolute path) with hpcrun (default is NO)]),
+  [if test $withval != no; then
+     OPT_HAVE_ROCM=yes
+     if ( echo "${withval}" | grep -v "^/" >/dev/null 2>&1 ); then
+       AC_MSG_ERROR([--with-rocm requires absolute path as argument; given '${withval}'])
+     fi
+     OPT_ROCM=${withval}
+   fi])
+
+if test "$OPT_HAVE_ROCM" = "yes" ; then
+  AC_DEFINE(USE_ROCM, 1, [use ROCM])
+  OPT_ROCM_IFLAGS="-I${OPT_ROCM}/hip -I${OPT_ROCM}/hip/include -I${OPT_ROCM}/roctracer/include -I${OPT_ROCM}/hcc/include -I${OPT_ROCM}/hsa/include "
+fi
+
+AM_CONDITIONAL([OPT_ENABLE_ROCM], [test "$OPT_HAVE_ROCM" = yes])
+
+AC_SUBST([OPT_ROCM])
+AC_SUBST([OPT_ROCM_IFLAGS])
+AC_SUBST([OPT_ROCM_LDFLAGS])
+
 
 #-------------------------------------------------
 # enable-data-centric-tracing: data-centric tracing
@@ -4465,6 +4710,70 @@ AC_MSG_RESULT([${OPT_ENABLE_DEVTOOLS}])
 AM_CONDITIONAL(OPT_ENABLE_DEVTOOLS, test "${OPT_ENABLE_DEVTOOLS}" = "yes")
 
 
+#-------------------------------------------------
+# Option: --with-valgrind=PATH
+#-------------------------------------------------
+
+VALGRIND="$default_valgrind_prefix"
+
+AC_ARG_WITH([valgrind],
+  AS_HELP_STRING([--with-valgrind=PATH],
+                 [path to Valgrind install directory]),
+  [VALGRIND="$withval"],
+  [])
+
+VALGRIND_IFLAGS=
+
+AC_MSG_CHECKING([for Valgrind headers])
+
+case "$VALGRIND" in
+  /* )
+    # valgrind/valgrind.h must exist on the include path
+    if test -f "$VALGRIND"/include/valgrind/valgrind.h; then
+      VALGRIND_IFLAGS=-I"$VALGRIND"/include
+    else
+      AC_MSG_ERROR([unable to find valgrind.h in: $VALGRIND])
+    fi
+    ;;
+  no )
+    ;;
+  * )
+    AC_MSG_ERROR([Valgrind directory must be an absolute path])
+    ;;
+esac
+
+AC_MSG_RESULT([$VALGRIND])
+
+AC_SUBST([VALGRIND_IFLAGS])
+
+
+#-------------------------------------------------
+# Option: --enable-valgrind-annotations
+#-------------------------------------------------
+
+OPT_ENABLE_VG_ANNOTATIONS="no"
+
+AC_ARG_ENABLE([valgrind-annotations],
+  AS_HELP_STRING([--enable-valgrind-annotations],
+                 [Add extra annotations for Valgrind analysis (aids debugging)]),
+  [case "${enableval}" in
+     yes) OPT_ENABLE_VG_ANNOTATIONS="yes" ;;
+     no)  OPT_ENABLE_VG_ANNOTATIONS="no" ;;
+     *) AC_MSG_ERROR([bad value ${enableval} for --enable-valgrind-annotations]) ;;
+   esac],
+  [OPT_ENABLE_VG_ANNOTATIONS=no])
+
+if test x"$OPT_ENABLE_VG_ANNOTATIONS" = xyes; then
+  if test x"$VALGRIND" = xno; then
+    AC_MSG_ERROR([Valgrind annotations requested but valgrind headers not available!])
+  fi
+  AC_DEFINE([ENABLE_VG_ANNOTATIONS], [1],
+            [Add extra annotations for debugging with Valgrind])
+fi
+
+AM_CONDITIONAL(OPT_ENABLE_VG_ANNOTATIONS, test "${OPT_ENABLE_VG_ANNOTATIONS}" = "yes")
+
+
 #----------------------------------------------------------------------------
 # Should we expect statically linked binaries
 #----------------------------------------------------------------------------
@@ -4531,6 +4840,7 @@ hash_value='$hash_value'
 
 VERSION='$PACKAGE_VERSION'
 git_version='$git_version'
+spack_spec='$spack_spec'
 EOF
 
 AC_SUBST_FILE([launch_script_vars])
@@ -4560,6 +4870,7 @@ AC_CONFIG_FILES([ \
   src/Makefile \
   src/tool/Makefile \
   src/tool/hpcfnbounds/Makefile \
+  src/tool/hpcfnbounds2/Makefile \
   src/tool/hpclump/Makefile \
   src/tool/hpcprof/Makefile \
   src/tool/hpcprof-mpi/Makefile \
@@ -4641,6 +4952,7 @@ AC_MSG_NOTICE([HPCToolkit summary])
 AC_MSG_NOTICE([-------------------])
 AC_MSG_NOTICE([  HPCToolkit version: ${PACKAGE_VERSION}])
 AC_MSG_NOTICE([  git version: $git_version])
+AC_MSG_NOTICE([  spack spec:  $spack_spec])
 if test "x$ext_version" != x ; then
   AC_MSG_NOTICE([  externals:   $ext_version])
 fi
@@ -4697,8 +5009,11 @@ AC_MSG_NOTICE([  tbb:          ${TBB}])
 AC_MSG_NOTICE([  xed:          ${XED2}])
 AC_MSG_NOTICE([  xerces:       ${XERCES}])
 AC_MSG_NOTICE([  zlib:         ${ZLIB}])
-AC_MSG_NOTICE([  cuda:         ${OPT_CUDA}])
+AC_MSG_NOTICE([  cuda:         ${CUDA}])
+AC_MSG_NOTICE([  cupti:        ${CUPTI}])
 AC_MSG_NOTICE([  papi-c-cupti: ${use_papi_c_cupti}])
+AC_MSG_NOTICE([  valgrind:     ${VALGRIND}])
+AC_MSG_NOTICE([  valgrind:     annotated: ${OPT_ENABLE_VG_ANNOTATIONS}])
 
 if test "x$mult_spack_pkgs" != x ; then
   mult_spack_pkgs=`echo $mult_spack_pkgs`
@@ -4739,29 +5054,38 @@ if test "$warn_no_perfmon" = yes ; then
   AC_MSG_WARN([Mnemonic names will not be available for perf events.])
 fi
 
-if test "x$with_externals" = xno && test "x$with_spack" = xno  \
-   && test "$num_pkgs" -lt 8
-then
+if test "x$with_spack" = xno && test "$num_pkgs" -lt 8 ; then
   AC_MSG_NOTICE([])
-  AC_MSG_WARN([Not using hpctoolkit externals or spack.])
+  AC_MSG_WARN([Not using --with-spack.])
   AC_MSG_WARN([Unless you're building hpctoolkit only for docs or make dist,])
-  AC_MSG_WARN([this is probably an error.  First, checkout, configure and])
-  AC_MSG_WARN([build externals and then reconfigure hpctoolkit with:])
-  AC_MSG_WARN([--with-externals=/path/to/externals/install/directory])
+  AC_MSG_WARN([this is probably an error.  Rerun configure with:])
+  AC_MSG_WARN([  --with-spack=/path/to/spack/install/gcc-x.y.z])
 fi
 
-if test "$warn_non_gcc" = yes ; then
+if test "$warn_non_gnu" = yes ; then
   AC_MSG_NOTICE([])
-  AC_MSG_WARN([Not using the GNU C or C++ or MPICXX compiler.])
+  AC_MSG_WARN([Not using the GNU compiler for: $warn_non_gnu_mesg])
   AC_MSG_WARN([This is not necessarily an error, but some parts of hpctoolkit])
   AC_MSG_WARN([may not compile cleanly without gcc or g++.  If the build fails,])
   AC_MSG_WARN([try using GNU gcc and g++ before reporting an error.])
+
+elif test "$warn_identify_compiler" = yes ; then
+  AC_MSG_NOTICE([])
+  AC_MSG_WARN([Unable to identify the compiler version for: $warn_identify_compiler_mesg])
+  AC_MSG_WARN([Check that CC, CXX and the compiler for the spack prereqs are])
+  AC_MSG_WARN([all GNU and the same version.])
+
+elif test "$warn_old_gnu" = yes ; then
+  AC_MSG_NOTICE([])
+  AC_MSG_WARN([The CC/CXX compiler is too old: $CC_VERSION])
+  AC_MSG_WARN([Please use GNU gcc/g++ version 5.x or later.])
 fi
 
 if test "$warn_compiler_mismatch" = yes ; then
   AC_MSG_NOTICE([])
-  AC_MSG_WARN([Mismatched C or C++ compiler.])
-  AC_MSG_WARN([The C or C++ compiler does not match the one used to build])
-  AC_MSG_WARN([hpctoolkit-externals.  Check the externals configure summary])
-  AC_MSG_WARN([and try again with the same compilers.])
+  AC_MSG_WARN([The CC/CXX and spack compilers are not the same version.])
+  AC_MSG_WARN([Check that CC, CXX and the compiler for the spack prereqs are])
+  AC_MSG_WARN([all GNU and the same version.])
+  AC_MSG_WARN([CC/CXX:  $CC_VERSION])
+  AC_MSG_WARN([Spack:   $with_spack])
 fi

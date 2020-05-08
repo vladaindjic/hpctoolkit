@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2014, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -363,22 +363,35 @@ hpcrun_ompt_is_thread_master_of_the_innermost_region
 );
 
 
+void
+ompt_idle_begin
+(
+ void
+);
+
+void
+ompt_idle_end
+(
+ void
+);
+
 //-----------------------------------------------------------------------------
+// just in case, vi3 keeps this after merging ompt-blame to
+// openmp-gpu-vi3-eager-callpath-collection
 // NVIDIA GPU pc sampling support
 //-----------------------------------------------------------------------------
 
-void 
+void
 ompt_pc_sampling_enable
-(
-  void 
-);
-
-
-void 
-ompt_pc_sampling_disable
 (
   void
 );
 
+
+void
+ompt_pc_sampling_disable
+(
+  void
+);
 
 #endif // _OMPT_INTERFACE_H_

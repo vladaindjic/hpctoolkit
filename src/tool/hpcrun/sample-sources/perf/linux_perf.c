@@ -9,7 +9,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -90,6 +90,7 @@
 #include "sample-sources/common.h"
 #include "sample-sources/ss-errno.h"
  
+#include <hpcrun/main.h>
 #include <hpcrun/cct_insert_backtrace.h>
 #include <hpcrun/files.h>
 #include <hpcrun/hpcrun_stats.h>
@@ -210,13 +211,6 @@ static event_info_t  *event_desc = NULL;
 static struct event_threshold_s default_threshold = {DEFAULT_THRESHOLD, FREQUENCY};
 
 static kind_info_t *lnux_kind;
-
-
-/******************************************************************************
- * external thread-local variables
- *****************************************************************************/
-extern __thread bool hpcrun_thread_suppress_sample;
-
 
 //******************************************************************************
 // private operations 
@@ -559,12 +553,22 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
   // ----------------------------------------------------------------------------
   sampling_info_t info = {.sample_clock = 0, .sample_data = mmap_data};
 
+#if 1
   *sv = hpcrun_sample_callpath(context, current->event->hpcrun_metric_id,
-        (hpcrun_metricVal_t) {.r=counter},
+        (hpcrun_metricVal_t) {.r = counter},
         0/*skipInner*/, 0/*isSync*/, &info);
+#else
+  *sv = hpcrun_sample_callpath(context, current->event->hpcrun_metric_id,
+        (hpcrun_metricVal_t) {.r = scale_f},
+        0/*skipInner*/, 0/*isSync*/, &info);
+#endif
 
-  blame_shift_apply(current->event->hpcrun_metric_id, sv->sample_node, 
-                    counter /*metricIncr*/);
+  if (sv->sample_node) {
+    float blame = counter; 
+    if (current->event->attr.freq==0) blame *= current->event->attr.sample_period;
+    blame_shift_apply(current->event->hpcrun_metric_id, sv->sample_node, 
+		      blame /*metricIncr*/);
+  }
 
   return sv;
 }
@@ -851,7 +855,7 @@ METHOD_FN(process_event_list, int lush_metrics)
     if (event_desc[i].metric_custom != NULL) {
       if (event_desc[i].metric_custom->register_fn != NULL) {
     	// special registration for customized event
-        event_desc[i].metric_custom->register_fn( &event_desc[i] );
+        event_desc[i].metric_custom->register_fn( lnux_kind, &event_desc[i] );
         METHOD_CALL(self, store_event, event_desc[i].attr.config, threshold);
         continue;
       }
@@ -888,20 +892,24 @@ METHOD_FN(process_event_list, int lush_metrics)
 
     char *name_dup = strdup(name); // we need to duplicate the name of the metric until the end
                                    // since the OS will free it, we don't have to do it in hpcrun
-    // set the metric for this perf event
-    event_desc[i].hpcrun_metric_id = hpcrun_set_new_metric_info_and_period(lnux_kind, name_dup,
-            MetricFlags_ValFmt_Real, threshold, prop);
-   
+    const char *desc = pfmu_getEventDescription(name);
+
     // ------------------------------------------------------------
     // if we use frequency (event_type=1) then the period is not deterministic,
     // it can change dynamically. In this case, the period is 1
     // ------------------------------------------------------------
-    if (!is_period) {
+    int metric_period = 1;
+    if (is_period) {
       // using frequency : the threshold is always 1, 
       //                   since the period is determine dynamically
-      threshold = 1;
+      metric_period = threshold;
     }
-    METHOD_CALL(self, store_event, event_attr->config, threshold);
+
+    // set the metric for this perf event
+    event_desc[i].hpcrun_metric_id = hpcrun_set_new_metric_desc_and_period(lnux_kind, name_dup,
+            desc, MetricFlags_ValFmt_Real, metric_period, prop);
+   
+    METHOD_CALL(self, store_event, event_attr->config, metric_period);
     free(name);
   }
   while (i--) {
@@ -916,6 +924,11 @@ METHOD_FN(process_event_list, int lush_metrics)
     perf_init();
 }
 
+
+static void
+METHOD_FN(finalize_event_list)
+{
+}
 
 // --------------------------------------------------------------------------
 // --------------------------------------------------------------------------
@@ -1080,7 +1093,9 @@ perf_event_handler(
   // check #2:
   // if sampling disabled explicitly for this thread, skip all processing
   // ----------------------------------------------------------------------------
-  if (hpcrun_thread_suppress_sample) {
+  if (hpcrun_suppress_sample()) {
+    perf_start_all(nevents, event_thread);
+    hpcrun_safe_exit();
     HPCTOOLKIT_APPLICATION_ERRNO_RESTORE();
 
     return 0; // tell monitor that the signal has been handled

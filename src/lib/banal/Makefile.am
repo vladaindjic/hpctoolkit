@@ -12,7 +12,7 @@
 ## HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 ## --------------------------------------------------------------------------
 ##
-## Copyright ((c)) 2002-2019, Rice University
+## Copyright ((c)) 2002-2020, Rice University
 ## All rights reserved.
 ##
 ## Redistribution and use in source and binary forms, with or without
@@ -56,6 +56,7 @@ DYNINST_IFLAGS = @DYNINST_IFLAGS@
 LIBDWARF_INC = @LIBDWARF_INC@
 LIBELF_INC = @LIBELF_INC@
 TBB_IFLAGS = @TBB_IFLAGS@
+VALGRIND_IFLAGS = @VALGRIND_IFLAGS@
 
 if OPT_DYNINST_LIBDWARF
 DWARF_IFLAGS = -I$(LIBDWARF_INC)
@@ -69,10 +70,6 @@ MYSOURCES = \
 	cuda/CudaBlock.cpp  \
 	cuda/CudaCodeSource.cpp  \
 	cuda/ReadCubinCFG.cpp \
-	ElfHelper.cpp \
-	Fatbin.cpp \
-	InputFile.cpp \
-	RelocateCubin.cpp \
 	Struct.cpp  \
 	Struct-Inline.cpp  \
 	Struct-Output.cpp
@@ -87,7 +84,8 @@ MYCXXFLAGS = \
 	$(DWARF_IFLAGS)  \
 	-I$(LIBELF_INC)  \
 	$(DYNINST_IFLAGS)  \
-	$(TBB_IFLAGS)
+	$(TBB_IFLAGS)    \
+	$(VALGRIND_IFLAGS)
 
 MYLIBADD = @HOST_LIBTREPOSITORY@
 

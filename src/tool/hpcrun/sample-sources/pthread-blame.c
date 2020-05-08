@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -68,8 +68,10 @@
 #include "sample_source_obj.h"
 #include "common.h"
 #include "pthread-blame.h"
+
 #include <sample-sources/blame-shift/blame-shift.h>
 #include <sample-sources/blame-shift/blame-map.h>
+#include <sample-sources/blame-shift/metric_info.h>
 
 #include <hpcrun/cct2metrics.h>
 #include <hpcrun/metrics.h>
@@ -181,7 +183,7 @@ get_blame_metric_id(void)
 
 static inline
 void
-add_blame(uint64_t obj, uint32_t value)
+add_blame(uint64_t obj, float value)
 {
   if (! pthread_blame_table) {
     EMSG("Attempted to add pthread blame before initialization");
@@ -192,7 +194,7 @@ add_blame(uint64_t obj, uint32_t value)
 
 
 static inline
-uint64_t
+float
 get_blame(uint64_t obj)
 {
   if (! pthread_blame_table) {
@@ -204,32 +206,34 @@ get_blame(uint64_t obj)
 
 
 static void 
-process_directed_blame_for_sample(void* arg, int metric_id, cct_node_t* node, int metric_incr)
+process_directed_blame_for_sample
+(
+ void* arg, 
+ int metric_id, 
+ cct_node_t* node, 
+ float blame
+)
 {
   TMSG(LOCKWAIT, "Processing directed blame");
-  metric_desc_t* metric_desc = hpcrun_id2metric(metric_id);
- 
-#ifdef LOCKWAIT_FIX
+
   // Only blame shift idleness for time and cycle metrics. 
-  if ( ! (metric_desc->properties.time | metric_desc->properties.cycles) ) 
-    return;
-#endif // LOCKWAIT_FIX
-  
-  uint32_t metric_value = (uint32_t) (metric_desc->period * metric_incr);
+  if (!metric_is_timebase(metric_id)) return;
 
   uint64_t obj_to_blame = get_blame_target();
   if(obj_to_blame) {
-    TMSG(LOCKWAIT, "about to add %d to blame object %d", metric_incr, obj_to_blame);
-    add_blame(obj_to_blame, metric_value);
+    TMSG(LOCKWAIT, "about to add %d to blame object %d", blame, obj_to_blame);
+    add_blame(obj_to_blame, blame);
+
     // update appropriate wait metric as well
-    int wait_metric = (pthread_blame.state == Blocked) ? blockwait_metric_id : spinwait_metric_id;
+    int wait_metric = (pthread_blame.state == Blocked) ? 
+      blockwait_metric_id : spinwait_metric_id;
+
     TMSG(LOCKWAIT, "about to add %d to %s-waiting in node %d",
-	 metric_incr, state2str(pthread_blame.state),
-	 hpcrun_cct_persistent_id(node));
+	 blame, state2str(pthread_blame.state), hpcrun_cct_persistent_id(node));
+
     metric_data_list_t* metrics = hpcrun_reify_metric_set(node, metric_id);
-    hpcrun_metric_std_inc(wait_metric,
-			  metrics,
-			  (cct_metric_data_t) {.i = metric_incr});
+    hpcrun_metric_std_inc(wait_metric, metrics, 
+			  (cct_metric_data_t) {.r = blame});
   }
 }
 
@@ -357,9 +361,15 @@ METHOD_FN(process_event_list, int lush_metrics)
   blame_shift_register(&bs_entry);
 
   kind_info_t *pthr_kind = hpcrun_metrics_new_kind();
-  blame_metric_id = hpcrun_set_new_metric_info(pthr_kind, PTHREAD_BLAME_METRIC);
-  blockwait_metric_id = hpcrun_set_new_metric_info(pthr_kind, PTHREAD_BLOCKWAIT_METRIC);
-  spinwait_metric_id = hpcrun_set_new_metric_info(pthr_kind, PTHREAD_SPINWAIT_METRIC);
+  blame_metric_id = 
+    hpcrun_set_new_metric_info_and_period(pthr_kind, PTHREAD_BLAME_METRIC,
+					  MetricFlags_ValFmt_Real, 1, metric_property_none);
+  blockwait_metric_id = 
+    hpcrun_set_new_metric_info_and_period(pthr_kind, PTHREAD_BLOCKWAIT_METRIC,
+					  MetricFlags_ValFmt_Real, 1, metric_property_none);
+  spinwait_metric_id = 
+    hpcrun_set_new_metric_info_and_period(pthr_kind, PTHREAD_SPINWAIT_METRIC,
+					  MetricFlags_ValFmt_Real, 1, metric_property_none);
   hpcrun_close_kind(pthr_kind);
   metric_id_set = true;
 
@@ -367,6 +377,10 @@ METHOD_FN(process_event_list, int lush_metrics)
   if (! pthread_blame_table) pthread_blame_table = blame_map_new();
 }
 
+static void
+METHOD_FN(finalize_event_list)
+{
+}
 
 static void
 METHOD_FN(gen_event_set,int lush_metrics)
@@ -395,7 +409,7 @@ METHOD_FN(display_events)
 
 #include <stdio.h>
 
-#define ss_name directed_blame
+#define ss_name pthread_blame
 #define ss_cls SS_SOFTWARE
 #define ss_sort_order  90
 

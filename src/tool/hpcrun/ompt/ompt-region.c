@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -380,11 +380,14 @@ ompt_implicit_task_internal_begin
   }
 
   cct_node_t *prefix = region_data->call_path;
+  // allocate ompt_task_data_t structure to store needed info
+  ompt_task_data_t *ompt_task_data =
+      ompt_task_acquire(prefix, ompt_task_implicit);
 
   // Only full call path can be memoized.
   if (ompt_eager_context_p()) {
     // region_depth is not important in this situation
-    task_data_set_cct(task_data, prefix);
+    task_data_set_cct(ompt_task_data, prefix);
   }
 
   if (!ompt_eager_context_p()) {
@@ -394,7 +397,7 @@ ompt_implicit_task_internal_begin
         typed_random_access_stack_top_index_get(region)(region_stack));
 #endif
     // connect task_data with region_data
-    task_data_set_depth(task_data, region_data->depth);
+    task_data_set_depth(ompt_task_data, region_data->depth);
     // mark that thread has finished waiting on the last implicit barrier
     // of the previous region
     waiting_on_last_implicit_barrier = false;
@@ -403,6 +406,7 @@ ompt_implicit_task_internal_begin
     attr_idleness2outermost_ctx();
   }
 
+  task_data->ptr = ompt_task_data;
 #if VI3_DEBUG == 1
   printf("implicit_task_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
          &region_stack, region_data, region_data->region_id, hpcrun_ompt_get_thread_num(0));
@@ -460,6 +464,7 @@ ompt_implicit_task_internal_end
     }
 #endif
   }
+  ompt_task_release(task_data);
 }
 
 

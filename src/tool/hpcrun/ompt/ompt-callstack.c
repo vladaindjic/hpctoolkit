@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -441,7 +441,7 @@ ompt_elide_runtime_frame(
     ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
     cct_node_t *omp_task_context = NULL;
     if (task_data)
-      omp_task_context = task_data->ptr;
+      omp_task_context = ompt_task_callpath(task_data);
     
     void *low_sp = (*bt_inner)->cursor.sp;
     void *high_sp = (*bt_outer)->cursor.sp;

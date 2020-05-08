@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -220,7 +220,7 @@ hpcrun_generate_backtrace_no_trampoline(backtrace_info_t* bt,
       hpcrun_unw_drop();
     }
 
-    else if (hpcrun_trampoline_at_entry(ip)) {
+    else if (ENABLED(USE_TRAMP) && hpcrun_trampoline_at_entry(ip)) {
       if (ret == STEP_ERROR){
 	// we are about to enter the trampoline code to synchronously 
 	// record a return. for now, simply do nothing ...

@@ -1,5 +1,5 @@
 /*
- * include/50/omp-tools.h.var
+ * include/omp-tools.h.var
  */
 
 //===----------------------------------------------------------------------===//
@@ -155,6 +155,16 @@
                                                                                                                          \
     macro (ompt_callback_dispatch,          ompt_callback_dispatch_t,          32) /* dispatch of work                */
 
+#define FOREACH_OMPT_TARGET_CALLBACK(macro) \
+  macro(ompt_callback_device_initialize)    \
+  macro(ompt_callback_device_finalize)      \
+  macro(ompt_callback_device_load)          \
+  macro(ompt_callback_device_unload)        \
+  macro(ompt_callback_target)               \
+  macro(ompt_callback_target_map)           \
+  macro(ompt_callback_target_data_op)       \
+  macro(ompt_callback_target_submit)
+
 /*****************************************************************************
  * implementation specific types
  *****************************************************************************/
@@ -255,7 +265,7 @@ typedef enum ompt_sync_region_t {
   ompt_sync_region_taskwait               = 5,
   ompt_sync_region_taskgroup              = 6,
   ompt_sync_region_reduction              = 7,
-  ompt_sync_region_barrier_implicit_final = 8,
+  ompt_sync_region_barrier_implicit_final = 8
 } ompt_sync_region_t;
 
 typedef enum ompt_target_data_op_t {
@@ -372,7 +382,7 @@ typedef enum ompt_frame_flag_t {
   ompt_frame_cfa            = 0x10,
   ompt_frame_framepointer   = 0x20,
   ompt_frame_stackaddress   = 0x30
-} ompt_frame_flag_t; 
+} ompt_frame_flag_t;
 
 typedef enum ompt_state_t {
   ompt_state_work_serial                      = 0x000,
@@ -721,14 +731,14 @@ typedef void (*ompt_callback_dispatch_t) (
   ompt_data_t *parallel_data,
   ompt_data_t *task_data,
   ompt_dispatch_t kind,
-  ompt_data_t instance 
+  ompt_data_t instance
 );
 
 typedef struct ompt_record_dispatch_t {
   ompt_id_t parallel_id;
   ompt_id_t task_id;
   ompt_dispatch_t kind;
-  ompt_data_t instance; 
+  ompt_data_t instance;
 } ompt_record_dispatch_t;
 
 typedef void (*ompt_callback_task_create_t) (
@@ -920,6 +930,7 @@ typedef void (*ompt_callback_device_unload_t) (
 );
 
 typedef void (*ompt_callback_target_data_op_t) (
+  ompt_scope_endpoint_t endpoint,
   ompt_id_t target_id,
   ompt_id_t host_op_id,
   ompt_target_data_op_t optype,
@@ -982,6 +993,7 @@ typedef struct ompt_record_target_map_t {
 } ompt_record_target_map_t;
 
 typedef void (*ompt_callback_target_submit_t) (
+  ompt_scope_endpoint_t endpoint,
   ompt_id_t target_id,
   ompt_id_t host_op_id,
   unsigned int requested_num_teams

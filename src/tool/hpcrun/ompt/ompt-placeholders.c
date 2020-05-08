@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2014, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,7 @@
 //***************************************************************************
 
 #include <assert.h>
+#include <stdlib.h>
 
 
 
@@ -79,7 +80,7 @@
   }
 
 #define declare_placeholder_function(fn)	\
-  void fn(void) { }
+  void fn(void) { abort(); }
 
 
 
@@ -159,11 +160,11 @@ ompt_init_placeholders_internal
   // protect against receiving a sample here. if we do, we may get 
   // deadlock trying to acquire a lock associated with 
   // fnbounds_enclosing_addr
-  hpcrun_safe_enter();
+  //   hpcrun_safe_enter();
 
   FOREACH_OMPT_PLACEHOLDER_FN(initialize_placeholder)
 
-  hpcrun_safe_exit();
+  // hpcrun_safe_exit();
 }
 
 

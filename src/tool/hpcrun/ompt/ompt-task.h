@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2014, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -54,10 +54,33 @@
 
 #include "omp-tools.h"
 
+typedef struct ompt_task_data_t ompt_task_data_t;
 
 //*****************************************************************************
 // interface operations
 //*****************************************************************************
+
+ompt_task_data_t*
+ompt_task_acquire
+(
+ cct_node_t *callpath,
+ ompt_task_flag_t task_type
+);
+
+
+void
+ompt_task_release
+(
+ ompt_data_t *t
+);
+
+
+cct_node_t *
+ompt_task_callpath
+(
+ ompt_data_t *task_data
+);
+
 
 void 
 ompt_task_register_callbacks
@@ -76,7 +99,7 @@ task_data_get_info(
 void
 task_data_set_cct
 (
-  ompt_data_t *task_data,
+  ompt_task_data_t *ompt_task_data,
   cct_node_t *cct
 );
 
@@ -84,7 +107,7 @@ task_data_set_cct
 void
 task_data_set_depth
 (
-  ompt_data_t *task_data,
+  ompt_task_data_t *ompt_task_data,
   int region_depth
 );
 
@@ -101,7 +124,7 @@ task_data_set_info
 char
 task_data_value_get_info
 (
-  void *task_data_content,
+  void *ompt_task_data_content,
   cct_node_t **cct,
   int *region_depth
 );
