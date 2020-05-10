@@ -88,6 +88,29 @@ ompt_task_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 );
 
+
+void
+ompt_task_data_callpath_set
+(
+  ompt_task_data_t *ompt_task_data,
+  cct_node_t *callpath,
+  void *callpath_owner_id
+);
+
+
+cct_node_t *
+ompt_task_data_callpath_get
+(
+  ompt_task_data_t *ompt_task_data
+);
+
+cct_node_t *
+ompt_task_data_callpath_insert_and_get
+(
+  ompt_task_data_t *ompt_task_data
+);
+
+
 char
 task_data_get_info(
   ompt_data_t *task_data,

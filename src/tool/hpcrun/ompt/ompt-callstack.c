@@ -292,6 +292,8 @@ ompt_elide_runtime_frame(
   // invalidate omp_task_context of previous sample
   // FIXME vi3 >>> It should be ok to do this.
   TD_GET(omp_task_context) = 0;
+  // invalidate omp_task_data of previous sample
+  omp_task_data = NULL;
 
   vi3_idle_collapsed = false;
   frame_t **bt_outer = &bt->last;
@@ -429,6 +431,8 @@ ompt_elide_runtime_frame(
     // frames at top of stack elided. continue with the rest
   }
 
+  ompt_task_data_t *_omp_task_data = NULL;
+
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
     frame_t *exit0 = NULL, *reenter1 = NULL;
@@ -440,9 +444,11 @@ ompt_elide_runtime_frame(
 
     ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
     cct_node_t *omp_task_context = NULL;
-    if (task_data)
+    if (task_data) {
       omp_task_context = ompt_task_callpath(task_data);
-    
+      _omp_task_data = (ompt_task_data_t *)task_data->ptr;
+    }
+
     void *low_sp = (*bt_inner)->cursor.sp;
     void *high_sp = (*bt_outer)->cursor.sp;
 
@@ -471,8 +477,9 @@ ompt_elide_runtime_frame(
       }
     }
 
-    if (exit0_flag && omp_task_context) {
+    if (exit0_flag && omp_task_context && _omp_task_data) {
       TD_GET(omp_task_context) = omp_task_context;
+      omp_task_data = _omp_task_data;
       *bt_outer = exit0 - 1;  // FIXME vi3 ??? why - 1???
       break;
     }
@@ -567,6 +574,7 @@ ompt_elide_runtime_frame(
       // and delete its context here.
       // Because of that we are going to unnecessarily go into provider.
       TD_GET(omp_task_context) = 0;
+      omp_task_data = NULL;
       collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
     }
   }
@@ -2539,6 +2547,7 @@ ompt_cct_cursor_finalize
 #endif
 #endif
 
+#if 0
   if (ompt_eager_context_p()) {
     // old implementation that should be revised
     if (info_type == 0) {
@@ -2573,7 +2582,27 @@ ompt_cct_cursor_finalize
 
     return finalize_cursor_lazy(cct, bt, cct_cursor, omp_task_context, region_depth, info_type);
   }
+#endif
 
+  if (ompt_eager_context_p()) {
+    if (omp_task_data) {
+      // Frames below task are clipped by ompt_elide_runtime_frame_function.
+      // Use task prefix as a cursor.
+      return check_and_return_non_null(
+          ompt_task_data_callpath_insert_and_get(omp_task_data),
+          cct_cursor, 2590);
+    }
+    // No omp_task_data has been stored by ompt_elide_runtime_frame_function.
+    // This means that one of the following options is possible:
+    // 1. thread is executing sequential code
+    // 2. an edge case has been detected
+    //    (see ompt_elide_runtime_frame for more).
+    // Use thread_root as a cursor.
+    return check_and_return_non_null(cct_cursor, cct_cursor, 904);
+  } else {
+
+    return finalize_cursor_lazy(cct, bt, cct_cursor, omp_task_context, region_depth, info_type);
+  }
 }
 
 

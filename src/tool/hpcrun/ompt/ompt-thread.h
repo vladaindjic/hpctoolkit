@@ -53,6 +53,7 @@
 //******************************************************************************
 
 #include "ompt-types.h"
+#include "ompt-task.h"
 
 
 
@@ -99,6 +100,9 @@ extern __thread int vi3_last_to_register;
 extern __thread bool vi3_idle_collapsed;
 // place where all idle samples will be put before resolving
 extern __thread cct_node_t *local_idle_placeholder;
+
+// maintained by ompt_elide_runtime_frame and ompt_cct_cursor_finalize functions
+extern __thread ompt_task_data_t *omp_task_data;
 
 #if FREELISTS_ENABLED
 #if FREELISTS_DEBUG

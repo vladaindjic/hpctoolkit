@@ -72,10 +72,14 @@
 
 
 struct ompt_task_data_t {
+  struct ompt_task_data_t *next;
   ompt_task_flag_t task_type;
   cct_node_t *callpath;
-  struct ompt_task_data_t *next;
-}; 
+  // Address of region_freelist_channel mimics id of thread which CCT contains
+  // task (prefix) callpath.
+  // FIXME vi3: Any other thread local variable may be used.
+  void *callpath_owner_id;
+};
 
 static __thread ompt_task_data_t *task_free_list = 0;
 
@@ -196,8 +200,10 @@ ompt_task_begin_internal
     zero_metric_incr_metricVal.i = 0;
     cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal,
         1, 1, NULL).sample_node;
-    // store cct_node in task_data
-    task_data_set_cct(ompt_task_data, cct_node);
+    // Memoize full task context.
+    // Current thread is the owner of the task prefix/context.
+    ompt_task_data_callpath_set(ompt_task_data, cct_node,
+        &region_freelist_channel);
   } else {
     // FIXME vi3: Use top of the stack of active regions (if decide to keep stack
     //   for synchronous version of call path assembling)
@@ -207,8 +213,11 @@ ompt_task_begin_internal
     typed_stack_elem_ptr(region) region_data = (typed_stack_elem_ptr(region)) parallel_info->ptr;
     cct_node = region_data->call_path;
     if (cct_node) {
-      // set cct_node, if available (in case of eagerly collecting region context)
-      task_data_set_cct(ompt_task_data, cct_node);
+      // Memoize cct_node (task prefix), if available (in case of eagerly
+      // collecting region call paths, but no full task context is needed)
+      // Master of the current region is the owner of task prefix.
+      ompt_task_data_callpath_set(ompt_task_data, cct_node,
+                                  region_data->owner_free_region_channel);
     } else {
       // otherwise, store depth of the innermost region
 #if 0
@@ -317,6 +326,55 @@ ompt_task_register_callbacks
   retval = ompt_set_callback_fn(ompt_callback_task_schedule,
                                 (ompt_callback_t)ompt_task_schedule);
   assert(ompt_event_may_occur(retval));
+}
+
+
+void
+ompt_task_data_callpath_set
+(
+  ompt_task_data_t *ompt_task_data,
+  cct_node_t *callpath,
+  void *callpath_owner_id
+)
+{
+  ompt_task_data->callpath = callpath;
+  ompt_task_data->callpath_owner_id = callpath_owner_id;
+}
+
+
+cct_node_t *
+ompt_task_data_callpath_get
+(
+  ompt_task_data_t *ompt_task_data
+)
+{
+  return ompt_task_data->callpath;
+}
+
+// This functions checks if callpath stored in ompt_task_data belongs to the
+// current thread. If so, it returns it. Otherwise, it copies callpath
+// by inserting it inside thread's CCT and returns the aforementioned copy.
+cct_node_t *
+ompt_task_data_callpath_insert_and_get
+(
+  ompt_task_data_t *ompt_task_data
+)
+{
+  if (ompt_task_data->callpath_owner_id == (void*)(&region_freelist_channel)) {
+    // ompt_task_data->callpath is present in current thread's CCT
+    return ompt_task_data->callpath;
+  }
+
+  // ompt_task_data->callpath is not present in current thread's CCT,
+  // so insert and memoize it.
+  ompt_task_data->callpath =
+      hpcrun_cct_insert_path_return_leaf(
+          hpcrun_get_thread_epoch()->csdata.thread_root,
+          ompt_task_data->callpath);
+  // Update owner of memoized callpath.
+  ompt_task_data->callpath_owner_id = &region_freelist_channel;
+  // return callpath
+  return ompt_task_data->callpath;
 }
 
 

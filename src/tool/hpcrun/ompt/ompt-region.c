@@ -386,8 +386,10 @@ ompt_implicit_task_internal_begin
 
   // Only full call path can be memoized.
   if (ompt_eager_context_p()) {
-    // region_depth is not important in this situation
-    task_data_set_cct(ompt_task_data, prefix);
+    // Store implicit task prefix.
+    // Master of the current parallel region is the owner of the prefix.
+    ompt_task_data_callpath_set(ompt_task_data, prefix,
+        region_data->owner_free_region_channel);
   }
 
   if (!ompt_eager_context_p()) {
