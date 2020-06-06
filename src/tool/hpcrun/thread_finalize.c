@@ -35,6 +35,7 @@ thread_finalize
   int is_process
 )
 {
+  // printf("Thread finalize\n");
  thread_finalize_entry_t *e = finalizers;
   while (e) {
     e->fn(is_process);

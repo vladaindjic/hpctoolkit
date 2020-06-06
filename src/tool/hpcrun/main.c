@@ -429,9 +429,17 @@ dump_interval_handler(int sig, siginfo_t* info, void* ctxt)
 // process level 
 //------------------------------------
 
+// vi3: Measure execution time
+#include <hpcrun/utilities/timer.h>
+
+struct timespec vi3_start_time;
+struct timespec vi3_start_time_full_scope;
+
 void
 hpcrun_init_internal(bool is_child)
 {
+  timer_start(&vi3_start_time_full_scope);
+
   hpcrun_initLoadmap();
 
   hpcrun_memory_reinit();
@@ -577,6 +585,11 @@ hpcrun_init_internal(bool is_child)
 
   // FIXME: this isn't in master-gpu-trace. how is it managed?
   // stream_tracing_init();
+  
+  // vi3: start measuring execution time
+  timer_start(&vi3_start_time);
+
+  // printf("hpcrun_init_internal\n");
 }
 
 #define GET_NEW_AUX_CLEANUP_NODE(node_ptr) do {                               \
@@ -660,6 +673,11 @@ static void hpcrun_process_aux_cleanup_action()
 void
 hpcrun_fini_internal()
 {
+  // printf("hpcrun_fini_internal - begin\n");
+  // vi3: Finishing with measuring execution time.
+  double vi3_execution_time = timer_elapsed(&vi3_start_time);
+  printf("eager <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  
   hpcrun_disable_sampling();
 
   TMSG(FINI, "process");
@@ -693,7 +711,11 @@ hpcrun_fini_internal()
     hpcrun_process_aux_cleanup_action();
 
     int is_process = 1;
+    // printf("hpcrun_fini_internal - before thread_finalize\n");
     thread_finalize(is_process);
+    // printf("hpcrun_fini_internal - after thread_finalize\n");
+    vi3_execution_time = timer_elapsed(&vi3_start_time);
+    printf("eager (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 
 // FIXME: this isn't in master-gpu-trace. how is it managed?
     // stream_tracing_fini();
@@ -705,6 +727,13 @@ hpcrun_fini_internal()
     hpcrun_stats_print_summary();
     messages_fini();
   }
+
+  vi3_execution_time = timer_elapsed(&vi3_start_time);
+  printf("eager (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  // printf("hpcrun_fini_internal - end\n");
+
+  double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
+  printf("eager (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 }
 
 
@@ -740,6 +769,7 @@ logit(cct_node_t* n, cct_op_arg_t arg, size_t l)
 void*
 hpcrun_thread_init(int id, local_thread_data_t* local_thread_data) // cct_ctxt_t* thr_ctxt)
 {
+  // printf("hpcrun_thread_init\n");
   cct_ctxt_t* thr_ctxt = local_thread_data ? local_thread_data->thr_ctxt : NULL;
 
   hpcrun_mmap_init();
@@ -788,6 +818,8 @@ hpcrun_thread_init(int id, local_thread_data_t* local_thread_data) // cct_ctxt_t
 void
 hpcrun_thread_fini(epoch_t *epoch)
 {
+  // printf("hpcrun_thread_fini\n");
+
   TMSG(FINI,"thread fini");
 
   // take no action if this thread is suppressed
