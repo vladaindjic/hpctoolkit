@@ -859,6 +859,7 @@ check_and_return_non_null
   }
 
   if (!to_return) {
+    // FIXME vi3 >>> collect turn on
     printf("***************** Why this happens: ompt-callstack.c:%d\n", line_of_code);
     return default_value;
   }
@@ -1915,7 +1916,8 @@ vi3_regions_may_not_be_active_debug
   // <<<<<<<<<<Debug>>>>>>>>>>
   if (info_type == 1) {
     // never happened
-    printf("Elider says this should be attributed to somewhere\n");
+    // FIXME vi3 >>> omp20120
+    // printf("Elider says this should be attributed to somewhere\n");
   }
   // <<<<<<<<<<Debug>>>>>>>>>>
 
@@ -1954,6 +1956,7 @@ vi3_regions_may_not_be_active_debug
       // just for debug purposes
       if (hpcrun_ompt_get_current_region_execution_phase() != ompt_region_execution_phase_last_implicit_barrier_exit) {
         // never happened
+        // FIXME vi3 >>> collect turn on
         printf("Unpredicted region execution phase: %d\n",
                ompt_region_execution_phase_last_implicit_barrier_exit);
       }
