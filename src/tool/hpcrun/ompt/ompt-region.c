@@ -630,6 +630,7 @@ ompt_parallel_region_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 )
 {
+#if 0
   int retval;
   retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
                     (ompt_callback_t)ompt_parallel_begin);
@@ -646,4 +647,5 @@ ompt_parallel_region_register_callbacks
   retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
                                 (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
+#endif
 }

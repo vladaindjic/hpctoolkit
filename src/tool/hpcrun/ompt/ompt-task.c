@@ -161,10 +161,12 @@ ompt_task_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 )
 {
+#if 0
   int retval;
   retval = ompt_set_callback_fn(ompt_callback_task_create,
                                 (ompt_callback_t)ompt_task_create);
   assert(ompt_event_may_occur(retval));
+#endif
 }
 
 

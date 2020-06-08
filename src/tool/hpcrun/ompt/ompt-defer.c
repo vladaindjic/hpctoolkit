@@ -3335,6 +3335,7 @@ ompt_resolve_region_contexts
  int is_process
 )
 {
+  return;
   // If any idle samples remained from the previous parallel region,
   // attribute them to the outermost context
   attr_idleness2outermost_ctx();
