@@ -237,6 +237,7 @@ ompt_parallel_end_internal
 
   if (!ompt_eager_context_p()){
 #if DEBUG_BARRIER_CNT
+    printf("Ima me ovde\n");
     // Debug only
     // Mark that this region is finished
     int old_value = atomic_fetch_add(&region_data->barrier_cnt, MAX_THREAD_IN_TEAM);
