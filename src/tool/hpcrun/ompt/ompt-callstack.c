@@ -860,7 +860,7 @@ check_and_return_non_null
 
   if (!to_return) {
     // FIXME vi3 >>> collect turn on
-    printf("***************** Why this happens: ompt-callstack.c:%d\n", line_of_code);
+    // printf("***************** Why this happens: ompt-callstack.c:%d\n", line_of_code);
     return default_value;
   }
 
@@ -1549,8 +1549,9 @@ vi3_regions_active_no_omp_task_context_provided_by_elider_debug
       // FIXME vi3: Assume this should be put underneath thread_root
       if (vi3_idle_collapsed) {
         // never happened
-        printf("Why is stack collapsed to idle? initial master, rd: %d, ph: %d\n",
-               top_el->region_data->depth, top_el->exec_phase);
+        // FIXME vi3 >>> epcc (arrabech_1)
+//        printf("Why is stack collapsed to idle? initial master, rd: %d, ph: %d\n",
+//               top_el->region_data->depth, top_el->exec_phase);
 
         // happened once initial master, region_depth: 3, phase: 4 (ompt_region_execution_phase_last_implicit_barrier_enter)
         // FIXME vi3 debug this.
@@ -1957,8 +1958,8 @@ vi3_regions_may_not_be_active_debug
       if (hpcrun_ompt_get_current_region_execution_phase() != ompt_region_execution_phase_last_implicit_barrier_exit) {
         // never happened
         // FIXME vi3 >>> collect turn on
-        printf("Unpredicted region execution phase: %d\n",
-               ompt_region_execution_phase_last_implicit_barrier_exit);
+//        printf("Unpredicted region execution phase: %d\n",
+//               ompt_region_execution_phase_last_implicit_barrier_exit);
       }
       // <<<<<<<<<<Debug>>>>>>>>>>
     }
@@ -2058,7 +2059,7 @@ finalize_cursor_lazy
   int info_type
 )
 {
-  if (registration_safely_applied) {
+  if (registration_safely_applied && safe_to_register_for_active_regions()) {
     // register_to_all_regions function guarantees that all regions present on
     // the stack are active.
 
@@ -2067,6 +2068,12 @@ finalize_cursor_lazy
       // (is TD_GET(omp_task_context) provided or not)
       // The sample is going to be attributed to the unresolved_cct of the
       // region present at region_depth on the stack.
+#if 0
+      // FIXME vi3 >>> collect turn on
+      if (typed_random_access_stack_get(region)(region_stack, region_depth)->unresolved_cct == NULL) {
+        printf("Why???\n");
+      }
+#endif
       return check_and_return_non_null(
           typed_random_access_stack_get(region)(region_stack, region_depth)->unresolved_cct,
           cct_cursor, 1982);

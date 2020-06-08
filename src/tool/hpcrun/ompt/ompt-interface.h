@@ -381,4 +381,10 @@ ompt_pc_sampling_disable
 );
 
 
+bool
+safe_to_register_for_active_regions
+    (
+        void
+    );
+
 #endif // _OMPT_INTERFACE_H_

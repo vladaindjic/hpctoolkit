@@ -962,71 +962,71 @@ least_common_ancestor
 }
 
 
-bool
-safe_to_register_for_active_regions
-(
-  void
-)
-{
-  if (!hpcrun_ompt_is_thread_part_of_team()) {
-    // Thread is not part of any team, so there's no region to register.
-    return false;
-  }
-
-  // NOTE: innermost region == region on the top of the stack
-
-  // Thread is master of the innermost region, which means that all regions
-  // on the stack are active and is safe to register for their call paths.
-  if (hpcrun_ompt_is_thread_master_of_the_innermost_region()) {
-    return true;
-  }
-
-  // Thread is the worker in the innermost region.
-  ompt_region_execution_phase_t exec_phase =
-      hpcrun_ompt_get_current_region_execution_phase();
-
-  if (exec_phase == ompt_region_execution_phase_implicit_task_begin) {
-    // Thread took sample while executing implicit task,
-    // which means that innermost region and all enclosing regions are active.
-    // Safe to register for all active regions.
-    return true;
-  } else if (exec_phase == ompt_region_execution_phase_last_implicit_barrier_enter) {
-    // thread entered last implicit barrier
-    int task_type_flags, thread_num;
-    ompt_data_t *task_data =
-        vi3_hpcrun_ompt_get_task_data(0, &task_type_flags, &thread_num);
-    if (!task_data) {
-      // thread cannot be sure if executing task that belongs to the innermost
-      // region. Not safe to register
-      return false;
-    }
-
-    if (task_type_flags & ompt_task_explicit) {
-      // Thread is executing explicit task while waiting on last implicit barrier.
-      // Innermost region and all enclosing regions are still active.
-      // Safe to register.
-      return true;
-    }
-
-    // task_data belongs to implicit task. Thread cannot be sure if
-    // innermost region or any of enclosing regions are still active.
-    // (The following scenario may happen: While thread is waiting on
-    // the last implicit barrier for more work, the innermost region's team
-    // was torn apart. Also, enclosing regions may be finished too.)
-    // Not safe to register.
-    return false;
-  } else {
-    // Thread finished with waiting on the last implicit barrier of the
-    // innermost region.
-    // It should either be finalized or become part of the team that belongs
-    // to the next parallel region.
-    // Region present on the top of the stack should have been finished.
-    // Obviously, it is not safe to register for that region or any of
-    // enclosing regions, because they might be finished too.
-    return false;
-  }
-
-}
+//bool
+//safe_to_register_for_active_regions
+//(
+//  void
+//)
+//{
+//  if (!hpcrun_ompt_is_thread_part_of_team()) {
+//    // Thread is not part of any team, so there's no region to register.
+//    return false;
+//  }
+//
+//  // NOTE: innermost region == region on the top of the stack
+//
+//  // Thread is master of the innermost region, which means that all regions
+//  // on the stack are active and is safe to register for their call paths.
+//  if (hpcrun_ompt_is_thread_master_of_the_innermost_region()) {
+//    return true;
+//  }
+//
+//  // Thread is the worker in the innermost region.
+//  ompt_region_execution_phase_t exec_phase =
+//      hpcrun_ompt_get_current_region_execution_phase();
+//
+//  if (exec_phase == ompt_region_execution_phase_implicit_task_begin) {
+//    // Thread took sample while executing implicit task,
+//    // which means that innermost region and all enclosing regions are active.
+//    // Safe to register for all active regions.
+//    return true;
+//  } else if (exec_phase == ompt_region_execution_phase_last_implicit_barrier_enter) {
+//    // thread entered last implicit barrier
+//    int task_type_flags, thread_num;
+//    ompt_data_t *task_data =
+//        vi3_hpcrun_ompt_get_task_data(0, &task_type_flags, &thread_num);
+//    if (!task_data) {
+//      // thread cannot be sure if executing task that belongs to the innermost
+//      // region. Not safe to register
+//      return false;
+//    }
+//
+//    if (task_type_flags & ompt_task_explicit) {
+//      // Thread is executing explicit task while waiting on last implicit barrier.
+//      // Innermost region and all enclosing regions are still active.
+//      // Safe to register.
+//      return true;
+//    }
+//
+//    // task_data belongs to implicit task. Thread cannot be sure if
+//    // innermost region or any of enclosing regions are still active.
+//    // (The following scenario may happen: While thread is waiting on
+//    // the last implicit barrier for more work, the innermost region's team
+//    // was torn apart. Also, enclosing regions may be finished too.)
+//    // Not safe to register.
+//    return false;
+//  } else {
+//    // Thread finished with waiting on the last implicit barrier of the
+//    // innermost region.
+//    // It should either be finalized or become part of the team that belongs
+//    // to the next parallel region.
+//    // Region present on the top of the stack should have been finished.
+//    // Obviously, it is not safe to register for that region or any of
+//    // enclosing regions, because they might be finished too.
+//    return false;
+//  }
+//
+//}
 
 void
 register_to_all_regions
