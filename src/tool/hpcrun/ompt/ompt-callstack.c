@@ -2060,6 +2060,7 @@ finalize_cursor_lazy
 )
 {
   if (registration_safely_applied && safe_to_register_for_active_regions()) {
+//  if (registration_safely_applied) {
     // register_to_all_regions function guarantees that all regions present on
     // the stack are active.
 
