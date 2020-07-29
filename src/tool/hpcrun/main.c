@@ -404,9 +404,18 @@ dump_interval_handler(int sig, siginfo_t* info, void* ctxt)
 // process level 
 //------------------------------------
 
+// vi3: Measure execution time
+#include <hpcrun/utilities/timer.h>
+
+struct timespec vi3_start_time;
+struct timespec vi3_start_time_full_scope;
+
+
 void
 hpcrun_init_internal(bool is_child)
 {
+  timer_start(&vi3_start_time_full_scope);
+
   hpcrun_initLoadmap();
 
   hpcrun_memory_reinit();
@@ -546,6 +555,9 @@ hpcrun_init_internal(bool is_child)
   }
 
   hpcrun_is_initialized_private = true;
+
+  // vi3: Start measuring execution time
+  timer_start(&vi3_start_time);
 }
 
 #define GET_NEW_AUX_CLEANUP_NODE(node_ptr) do {                               \
@@ -629,6 +641,10 @@ static void hpcrun_process_aux_cleanup_action()
 void
 hpcrun_fini_internal()
 {
+  // vi3: Finishing with measuring execution time.
+  double vi3_execution_time = timer_elapsed(&vi3_start_time);
+  printf("stack-lazy <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+
   hpcrun_disable_sampling();
 
   TMSG(FINI, "process");
@@ -664,6 +680,10 @@ hpcrun_fini_internal()
     int is_process = 1;
     thread_finalize(is_process);
 
+    vi3_execution_time = timer_elapsed(&vi3_start_time);
+    printf("stack-lazy (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+
+
     // write all threads' profile data and close trace file
     hpcrun_threadMgr_data_fini(hpcrun_get_thread_data());
 
@@ -671,6 +691,14 @@ hpcrun_fini_internal()
     hpcrun_stats_print_summary();
     messages_fini();
   }
+
+  vi3_execution_time = timer_elapsed(&vi3_start_time);
+  printf("stack-lazy (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  // printf("hpcrun_fini_internal - end\n");
+
+  double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
+  printf("stack-lazy (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+
 }
 
 
