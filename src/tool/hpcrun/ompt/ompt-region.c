@@ -588,6 +588,8 @@ ompt_sync
   const void *codeptr_ra
 )
 {
+#if 0
+
 #if VI3_DEBUG == 1
   if (kind == ompt_sync_region_barrier_implicit_last) {
     printf("ompt_sync_region_barrier_implicit_last: region_stack: %p, reg_id: %lx, Thread id = %d, \tBarrier %s\n",
@@ -605,6 +607,8 @@ ompt_sync
     // thread starts waiting on the last implicit barrier
     if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
   }
+
+#endif
 }
 
 //*****************************************************************************
