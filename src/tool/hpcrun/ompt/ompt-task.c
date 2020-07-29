@@ -139,10 +139,11 @@ ompt_task_create
   hpcrun_safe_enter();
 
   new_task_data->ptr = NULL;
-
+#if 0
   if (type != ompt_task_initial) {
     ompt_task_begin_internal(new_task_data);
   }
+#endif
 
   hpcrun_safe_exit();
 }

@@ -323,7 +323,9 @@ ompt_parallel_begin
 {
   hpcrun_safe_enter();
 
+#if 0
   ompt_parallel_begin_internal(parallel_data, flags);
+#endif
 
   hpcrun_safe_exit();
 }
@@ -353,7 +355,9 @@ ompt_parallel_end
        parent_region_id);
 #endif
 
+#if 0
   ompt_parallel_end_internal(parallel_data, flag);
+#endif
 
   hpcrun_safe_exit();
 }
@@ -475,6 +479,7 @@ ompt_implicit_task
 
   hpcrun_safe_enter();
 
+#if 0
   if (endpoint == ompt_scope_begin) {
     ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
   } else if (endpoint == ompt_scope_end) {
@@ -482,6 +487,7 @@ ompt_implicit_task
   } else {
     // should never occur. should we add a message to the log?
   }
+#endif
 
   hpcrun_safe_exit();
 }

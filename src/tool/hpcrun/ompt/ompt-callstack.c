@@ -286,6 +286,8 @@ ompt_elide_runtime_frame(
   int isSync
 )
 {
+  return;
+#if 0
   // invalidate omp_task_context of previous sample
   // FIXME vi3 >>> It should be ok to do this.
   TD_GET(omp_task_context) = 0;
@@ -610,6 +612,8 @@ ompt_elide_runtime_frame(
 
  return_label:
     return;
+
+#endif
 }
 
 
@@ -1519,7 +1523,8 @@ ompt_cct_cursor_finalize
  cct_node_t *cct_cursor
 )
 {
-
+  return cct_cursor;
+#if 0
   // Put region path under the unresolved root
   if (!ompt_eager_context_p() && ending_region) {
     // At the end of the region, master of the team is responsible for providing region's call path.
@@ -1938,6 +1943,8 @@ ompt_cct_cursor_finalize
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);
+
+#endif
 }
 
 

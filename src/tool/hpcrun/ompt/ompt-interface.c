@@ -386,6 +386,7 @@ ompt_thread_begin
   ompt_thread_type_set(thread_type);
   undirected_blame_thread_start(&omp_idle_blame_info);
 
+#if 0
   // initialize freelist
   notification_freelist_head = NULL;
   typed_channel_init(notification)(&thread_notification_channel);
@@ -405,6 +406,8 @@ ompt_thread_begin
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
   runtime_master_region_stack =
       typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
+#endif
+
 #endif
 }
 
@@ -1164,3 +1167,4 @@ typed_random_access_stack_impl(region);
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
 typed_random_access_stack_impl(runtime_region);
 #endif
+
