@@ -321,6 +321,8 @@ ompt_parallel_begin
  const void *codeptr_ra
 )
 {
+#if 0
+
   hpcrun_safe_enter();
 
 #if 0
@@ -328,6 +330,8 @@ ompt_parallel_begin
 #endif
 
   hpcrun_safe_exit();
+
+#endif
 }
 
 
@@ -340,6 +344,7 @@ ompt_parallel_end
  const void *codeptr_ra
 )
 {
+#if 0
   hpcrun_safe_enter();
 
 #if 0
@@ -360,6 +365,8 @@ ompt_parallel_end
 #endif
 
   hpcrun_safe_exit();
+
+#endif
 }
 
 
@@ -472,6 +479,8 @@ ompt_implicit_task
  int flags
 )
 {
+#if 0
+
   if (flags == ompt_thread_initial && parallel_data == NULL)  {
     // implicit task for implicit parallel region. nothing to do here.
     return;
@@ -490,6 +499,8 @@ ompt_implicit_task
 #endif
 
   hpcrun_safe_exit();
+
+#endif
 }
 
 
