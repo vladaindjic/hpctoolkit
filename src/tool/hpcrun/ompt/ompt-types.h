@@ -86,16 +86,12 @@
 // and then check if all region_data are freed
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1
 
-// code wrapped around with this pragma will use upper bits of generated unique
-// parallel region id to check if the thread is the master (owner/creator)
-// of the parallel region
-#define THREAD_MASTER_CHECK 1
 // keep pointer to parent region so we can get information about outer/ancestor
 // regions that runtime is not able to provide.
-#define KEEP_PARENT_REGION_RELATIONSHIP 1
+#define KEEP_PARENT_REGION_RELATIONSHIP 0
 // It seems that runtime may ended (passed to the ompt_parallel_end_callback)
 // some regions multiple times, while other regions won't be ended.
-#define ENDING_REGION_MULTIPLE_TIMES_BUG_FIX 1
+#define ENDING_REGION_MULTIPLE_TIMES_BUG_FIX 0
 
 // Barrier_cnt is used as indication of parallel region activity.
 // If value is greater or equal to zero, then region is active,

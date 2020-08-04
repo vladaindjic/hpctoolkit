@@ -768,7 +768,8 @@ least_common_ancestor
   int td_region_depth
 )
 {
-  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(0);
+  int ancestor_level = 0;
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
   if (!innermost_reg) {
     // There is no parallel region active.
     // Thread should be executing sequential code.
@@ -778,9 +779,15 @@ least_common_ancestor
 
   if (td_region_depth >= 0) {
     // skip regions deeper than td_region_depth
-    while(innermost_reg->depth > td_region_depth)
+    while(innermost_reg->depth > td_region_depth) {
+#if KEEP_PARENT_REGION_RELATIONSHIP
       // skip me by using my parent
       innermost_reg = typed_stack_next_get(region, sstack)(innermost_reg);
+#else
+      // skip this region and access to parent
+      innermost_reg = hpcrun_ompt_get_region_data(++ancestor_level);
+#endif
+    }
   } else {
     if (td_region_depth != -1) {
       printf("Some invalid value: %d.\n", td_region_depth);
@@ -797,7 +804,7 @@ least_common_ancestor
   // thread took previous sample
   lca_args_t args;
   // Assume that thread is not worker
-  args.level = 0;
+  args.level = ancestor_level;
   args.region_data = innermost_reg;
   *lca = typed_random_access_stack_forall(region)(region_stack,
                                                   lca_el_fn,
@@ -1598,6 +1605,7 @@ resolve_one_region_context
 
     if (prefix != unresolved_cct) {
       // prefix node should change the unresolved_cct
+      // FIXME vi3: Some cct nodes lost theirs parents.
       hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
       // delete unresolved_cct from parent
       hpcrun_cct_delete_self(unresolved_cct);

@@ -106,11 +106,6 @@ extern __thread long notification_used;
 #endif
 #endif
 
-#if THREAD_MASTER_CHECK == 1
-extern __thread uint64_t my_upper_bits;
-extern __thread uint64_t upper_bits_mask;
-#endif
-
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
 extern __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack;
 #endif

@@ -135,7 +135,7 @@ ompt_parallel_begin_internal
 (
  ompt_data_t *parallel_data,
  int flags
-) 
+)
 {
   typed_stack_elem_ptr(region) region_data =
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);

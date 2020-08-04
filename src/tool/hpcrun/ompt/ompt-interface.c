@@ -398,10 +398,6 @@ ompt_thread_begin
   atomic_exchange(&region_freelist_channel.region_used, 0);
 #endif
 
-#if THREAD_MASTER_CHECK == 1
-  my_upper_bits = hpcrun_ompt_get_unique_id() & upper_bits_mask;
-#endif
-
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
   runtime_master_region_stack =
       typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
@@ -1062,13 +1058,7 @@ hpcrun_ompt_is_thread_region_owner
   typed_stack_elem(region) *region_data
 )
 {
-#if THREAD_MASTER_CHECK
-  // If thread generated region id, then it is owner/master of the region.
-  return (region_data->region_id & upper_bits_mask) == my_upper_bits;
-#else
-  // FIXME vi3 >>> Any better approach?
-  return false;
-#endif
+  return region_data->owner_free_region_channel == &region_freelist_channel;
 }
 
 
