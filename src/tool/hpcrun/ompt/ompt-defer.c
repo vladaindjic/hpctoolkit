@@ -1516,6 +1516,7 @@ register_to_all_regions
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
                                            &omp_task_context, &region_depth);
 
+#if DETECT_IDLENESS_LAST_BARRIER
   if (waiting_on_last_implicit_barrier) {
     // check if thread_data is available and contains any useful information
     if (info_type == 2) {
@@ -1527,7 +1528,14 @@ register_to_all_regions
       return;
     }
   }
-
+#else
+  // FIXME vi3: Any information get from runtime that may help?
+  if (info_type == 2) {
+    // If elider cannot find task data, I guess it is safe to skip registering,
+    // unless we get some secure information from runtime
+    return;
+  }
+#endif
 
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
@@ -1652,6 +1660,7 @@ try_resolve_one_region_context
   return 1;
 }
 
+#if DETECT_IDLENESS_LAST_BARRIER
 bool
 any_idle_samples_remained
 (
@@ -1719,7 +1728,7 @@ attr_idleness2region_at
     attr_idleness2_cct_node(hpcrun_ompt_get_top_unresolved_cct_on_stack());
   }
 }
-
+#endif
 
 void
 update_unresolved_node
@@ -1800,9 +1809,11 @@ ompt_resolve_region_contexts
  int is_process
 )
 {
+#if DETECT_IDLENESS_LAST_BARRIER
   // If any idle samples remained from the previous parallel region,
   // attribute them to the outermost context
   attr_idleness2outermost_ctx();
+#endif
 
   struct timespec start_time;
 

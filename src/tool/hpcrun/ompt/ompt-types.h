@@ -78,7 +78,7 @@
 //******************************************************************************
 
 // freelists of region_data and notification structures
-#define FREELISTS_ENABLED 1
+#define FREELISTS_ENABLED 0
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
 #define FREELISTS_DEBUG FREELISTS_ENABLED && 0
@@ -100,6 +100,10 @@
 // The code wrapped around with this pragma is used for debug purposes only.
 #define DEBUG_BARRIER_CNT 0
 
+// Try to detect idle samples taken while thread is waiting on the last implicit
+// barirer. After that, decide whether the idle samples sould be attributed to
+// parallel region or to the outermost context.
+#define DETECT_IDLENESS_LAST_BARRIER 0
 
 struct ompt_region_data_s;
 struct ompt_notification_s;

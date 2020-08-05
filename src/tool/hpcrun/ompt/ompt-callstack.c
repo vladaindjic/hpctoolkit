@@ -1496,6 +1496,7 @@ handle_idle_sample
   cct_node_t *cct_cursor
 )
 {
+#if DETECT_IDLENESS_LAST_BARRIER
   if (typed_random_access_stack_empty(region)(region_stack)) {
     // No regions are present on the stack
     // It can be assumed that thread is executing the sequential code.
@@ -1508,6 +1509,9 @@ handle_idle_sample
   }
   // return local idle placeholder
   return local_idle_placeholder;
+#else
+  return cct_cursor;
+#endif
 }
 
 
@@ -1785,9 +1789,12 @@ ompt_cct_cursor_finalize
              vi3_last_to_register, region_depth);
     }
 #endif
+
+#if DETECT_IDLENESS_LAST_BARRIER
     // If any idle samples have been previously taken inside this region,
     // attribute them to it.
     attr_idleness2region_at(vi3_last_to_register);
+#endif
     return check_and_return_non_null(typed_random_access_stack_get(region)(
         region_stack, region_depth)->unresolved_cct, cct_cursor, 901);
   } else {
@@ -1915,6 +1922,9 @@ ompt_cct_cursor_finalize
 
     }
 #endif
+
+
+#if DETECT_IDLENESS_LAST_BARRIER
     if (!ompt_eager_context_p()) {
       if (!waiting_on_last_implicit_barrier) {
         // Since thread still hasn't reached the last implicit barrier,
@@ -1934,7 +1944,11 @@ ompt_cct_cursor_finalize
       // put either to thread local placeholder or to the outermost context.
       return check_and_return_non_null(handle_idle_sample(cct_cursor),
                                        cct_cursor, 1936);
+      // FIXME vi3: Anything better if region is still active???
+      //   Can we rely on thread state or any other runtime info.
+      //   Review the output.
     }
+#endif
   }
 
   return check_and_return_non_null(cct_cursor, cct_cursor, 904);

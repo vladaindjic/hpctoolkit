@@ -396,12 +396,14 @@ ompt_implicit_task_internal_begin
 #endif
     // connect task_data with region_data
     task_data_set_depth(task_data, region_data->depth);
+#if DETECT_IDLENESS_LAST_BARRIER
     // mark that thread has finished waiting on the last implicit barrier
     // of the previous region
     waiting_on_last_implicit_barrier = false;
     // If any idle samples remained from the previous parallel region,
     // attribute them to the outermost context
     attr_idleness2outermost_ctx();
+#endif
   }
 
 #if VI3_DEBUG == 1
@@ -572,6 +574,7 @@ ompt_region_release
 }
 
 
+#if DETECT_IDLENESS_LAST_BARRIER
 static void
 ompt_sync
 (
@@ -600,6 +603,7 @@ ompt_sync
     if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
   }
 }
+#endif
 
 //*****************************************************************************
 // interface operations
@@ -635,7 +639,9 @@ ompt_parallel_region_register_callbacks
                                 (ompt_callback_t)ompt_implicit_task);
   assert(ompt_event_may_occur(retval));
 
+#if DETECT_IDLENESS_LAST_BARRIER
   retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
                                 (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
+#endif
 }
