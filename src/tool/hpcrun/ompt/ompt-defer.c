@@ -604,7 +604,7 @@ thread_take_sample
   // Check if the address that corresponds to the region
   // has already been inserted in parent_cct subtree.
   // This means that thread took sample in this region before.
-  cct_addr_t *region_addr = &ADDR2(UNRESOLVED,el->region_data->region_id);
+  cct_addr_t *region_addr = &ADDR2(UNRESOLVED, el->region_id);
   cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
   if (found_cct) {
     // Region was on the stack previously, so the thread does not need
@@ -723,7 +723,7 @@ lca_el_fn
   if (el->region_data) {
     // If the region has not been change since the last sample was taken,
     // then the least common ancestor is found,
-    if (el->region_data->region_id == reg->region_id) {
+    if (el->region_id == reg->region_id) {
       // indicator to stop processing stack elements
       return 1;
     }
@@ -731,6 +731,8 @@ lca_el_fn
   // update stack element
   // store region
   el->region_data = reg;
+  // store region_id as persistent field
+  el->region_id = reg->region_id;
   // check if thread is the master (owner) of the reg
   el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
   // invalidate previous values

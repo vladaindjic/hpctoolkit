@@ -78,7 +78,7 @@
 //******************************************************************************
 
 // freelists of region_data and notification structures
-#define FREELISTS_ENABLED 0
+#define FREELISTS_ENABLED 1
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
 #define FREELISTS_DEBUG FREELISTS_ENABLED && 0
@@ -208,6 +208,7 @@ typedef struct old_region_s {
 typedef struct region_stack_el_s {
   // region at depth equal to index on the stack
   typed_stack_elem_ptr(region) region_data;
+  uint64_t region_id;
   // placeholder that keeps call paths of samples attributed to region_data
   cct_node_t *unresolved_cct;
   bool took_sample;
