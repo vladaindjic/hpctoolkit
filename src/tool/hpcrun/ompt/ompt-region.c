@@ -322,7 +322,7 @@ ompt_parallel_begin
 )
 {
   hpcrun_safe_enter();
-
+  printf("Callbacks have been registered\n");
   // ompt_parallel_begin_internal(parallel_data, flags);
 
   hpcrun_safe_exit();

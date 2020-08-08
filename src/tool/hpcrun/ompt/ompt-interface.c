@@ -696,6 +696,7 @@ ompt_finalize
 }
 
 
+#if 0
 ompt_start_tool_result_t *
 ompt_start_tool
 (
@@ -718,6 +719,7 @@ ompt_start_tool
 
   return &init;
 }
+#endif
 
 
 int 
