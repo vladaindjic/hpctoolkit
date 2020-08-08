@@ -643,7 +643,7 @@ hpcrun_fini_internal()
 {
   // vi3: Finishing with measuring execution time.
   double vi3_execution_time = timer_elapsed(&vi3_start_time);
-  printf("stack-lazy <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  printf("hpcrun_safe_enter_exit_only <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 
   hpcrun_disable_sampling();
 
@@ -681,7 +681,7 @@ hpcrun_fini_internal()
     thread_finalize(is_process);
 
     vi3_execution_time = timer_elapsed(&vi3_start_time);
-    printf("stack-lazy (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+    printf("hpcrun_safe_enter_exit_only (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 
 
     // write all threads' profile data and close trace file
@@ -693,11 +693,11 @@ hpcrun_fini_internal()
   }
 
   vi3_execution_time = timer_elapsed(&vi3_start_time);
-  printf("stack-lazy (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  printf("hpcrun_safe_enter_exit_only (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
   // printf("hpcrun_fini_internal - end\n");
 
   double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
-  printf("stack-lazy (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+  printf("hpcrun_safe_enter_exit_only (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 
 }
 
