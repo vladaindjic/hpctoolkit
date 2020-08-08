@@ -323,7 +323,7 @@ ompt_parallel_begin
 {
   hpcrun_safe_enter();
 
-  ompt_parallel_begin_internal(parallel_data, flags);
+  // ompt_parallel_begin_internal(parallel_data, flags);
 
   hpcrun_safe_exit();
 }
@@ -353,7 +353,7 @@ ompt_parallel_end
        parent_region_id);
 #endif
 
-  ompt_parallel_end_internal(parallel_data, flag);
+  // ompt_parallel_end_internal(parallel_data, flag);
 
   hpcrun_safe_exit();
 }
@@ -470,20 +470,20 @@ ompt_implicit_task
  int flags
 )
 {
-  if (flags == ompt_thread_initial && parallel_data == NULL)  {
-    // implicit task for implicit parallel region. nothing to do here.
-    return;
-  }
+  // if (flags == ompt_thread_initial && parallel_data == NULL)  {
+  //   // implicit task for implicit parallel region. nothing to do here.
+  //   return;
+  // }
 
   hpcrun_safe_enter();
 
-  if (endpoint == ompt_scope_begin) {
-    ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
-  } else if (endpoint == ompt_scope_end) {
-    ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
-  } else {
-    // should never occur. should we add a message to the log?
-  }
+  // if (endpoint == ompt_scope_begin) {
+  //   ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
+  // } else if (endpoint == ompt_scope_end) {
+  //   ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
+  // } else {
+  //   // should never occur. should we add a message to the log?
+  // }
 
   hpcrun_safe_exit();
 }

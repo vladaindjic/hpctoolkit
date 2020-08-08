@@ -386,22 +386,22 @@ ompt_thread_begin
   ompt_thread_type_set(thread_type);
   undirected_blame_thread_start(&omp_idle_blame_info);
 
-  // initialize freelist
-  notification_freelist_head = NULL;
-  typed_channel_init(notification)(&thread_notification_channel);
-  typed_channel_init(region)(&region_freelist_channel);
-  // FIXME vi3: get the max active levels of nesting from omp
-  // initialize random access stack of active parallel regions
-  region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
-  unresolved_cnt = 0;
-#if FREELISTS_DEBUG
-  atomic_exchange(&region_freelist_channel.region_used, 0);
-#endif
+//   // initialize freelist
+//   notification_freelist_head = NULL;
+//   typed_channel_init(notification)(&thread_notification_channel);
+//   typed_channel_init(region)(&region_freelist_channel);
+//   // FIXME vi3: get the max active levels of nesting from omp
+//   // initialize random access stack of active parallel regions
+//   region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
+//   unresolved_cnt = 0;
+// #if FREELISTS_DEBUG
+//   atomic_exchange(&region_freelist_channel.region_used, 0);
+// #endif
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-  runtime_master_region_stack =
-      typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
-#endif
+// #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
+//   runtime_master_region_stack =
+//       typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
+// #endif
 }
 
 
