@@ -431,7 +431,7 @@ dump_interval_handler(int sig, siginfo_t* info, void* ctxt)
 
 // vi3: Measure execution time
 #include <hpcrun/utilities/timer.h>
-
+#define VI3_USE_LOGGER_INSTEAD_OF_PRINT 1
 struct timespec vi3_start_time;
 struct timespec vi3_start_time_full_scope;
 
@@ -676,8 +676,11 @@ hpcrun_fini_internal()
   // printf("hpcrun_fini_internal - begin\n");
   // vi3: Finishing with measuring execution time.
   double vi3_execution_time = timer_elapsed(&vi3_start_time);
-  printf("eager <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
-  
+#if VI3_USE_LOGGER_INSTEAD_OF_PRINT
+  AMSG("eager <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+#else
+   printf("eager <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+#endif
   hpcrun_disable_sampling();
 
   TMSG(FINI, "process");
@@ -715,7 +718,11 @@ hpcrun_fini_internal()
     thread_finalize(is_process);
     // printf("hpcrun_fini_internal - after thread_finalize\n");
     vi3_execution_time = timer_elapsed(&vi3_start_time);
-    printf("eager (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+#if VI3_USE_LOGGER_INSTEAD_OF_PRINT
+    AMSG("eager (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+#else
+     printf("eager (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+#endif
 
 // FIXME: this isn't in master-gpu-trace. how is it managed?
     // stream_tracing_fini();
@@ -724,16 +731,26 @@ hpcrun_fini_internal()
     hpcrun_threadMgr_data_fini(hpcrun_get_thread_data());
 
     fnbounds_fini();
+
+    vi3_execution_time = timer_elapsed(&vi3_start_time);
+#if VI3_USE_LOGGER_INSTEAD_OF_PRINT
+    AMSG("eager (very end) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+#else
+    printf("eager (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+#endif
+    // printf("hpcrun_fini_internal - end\n");
+    double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
+#if VI3_USE_LOGGER_INSTEAD_OF_PRINT
+    AMSG("eager (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+#else
+    printf("eager (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+#endif
+
     hpcrun_stats_print_summary();
     messages_fini();
   }
 
-  vi3_execution_time = timer_elapsed(&vi3_start_time);
-  printf("eager (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
-  // printf("hpcrun_fini_internal - end\n");
 
-  double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
-  printf("eager (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 }
 
 
