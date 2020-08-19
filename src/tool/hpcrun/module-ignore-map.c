@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -64,7 +64,17 @@
 #include <fcntl.h>   // open
 #include <dlfcn.h>  // dlopen
 #include <limits.h>  // PATH_MAX
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
+
+//#include <stdlib.h>
+//#include <unistd.h>
+
+#include	<elf.h>
+#include	<libelf.h>
+#include	<gelf.h>
 
 
 //***************************************************************************
@@ -117,54 +127,25 @@ static const char *NVIDIA_FNS[NUM_FNS] = {
 static module_ignore_entry_t modules[NUM_FNS];
 static pfq_rwlock_t modules_lock;
 
-
-
-//***************************************************************************
-// private operations
-//***************************************************************************
-
-static bool
-lm_contains_fn
+int
+pseudo_module_p
 (
- const char *lm, 
- const char *fn
-) 
+  char *name
+)
 {
-  char resolved_path[PATH_MAX];
-  bool load_handle = false;
+    // last character in the name
+    char lastchar = 0;  // get the empty string case right
 
-  char *lm_real = realpath(lm, resolved_path);
-  void *handle = monitor_real_dlopen(lm_real, RTLD_NOLOAD);
-  // At the start of a program, libs are not loaded by dlopen
-  if (handle == NULL) {
-    handle = monitor_real_dlopen(lm_real, RTLD_LAZY);
-    load_handle = handle ? true : false;
-  }
-  PRINT("query path = %s\n", lm_real);
-  PRINT("query fn = %s\n", fn);
-  PRINT("handle = %p\n", handle);
-  bool result = false;
-  if (handle && lm_real) {
-    void *fp = dlsym(handle, fn);
-    PRINT("fp = %p\n", fp);
-    if (fp) {
-      Dl_info dlinfo;
-      int res = dladdr(fp, &dlinfo);
-      if (res) {
-        char dli_fname_buf[PATH_MAX];
-        char *dli_fname = realpath(dlinfo.dli_fname, dli_fname_buf);
-        result = (strcmp(lm_real, dli_fname) == 0);
-        PRINT("original path = %s\n", dlinfo.dli_fname);
-        PRINT("found path = %s\n", dli_fname);
-        PRINT("symbol = %s\n", dlinfo.dli_sname);
-      }
+    while (*name) {
+      lastchar = *name;
+      name++;
     }
-  }
-  // Close the handle it is opened here
-  if (load_handle) {
-    monitor_real_dlclose(handle);
-  }
-  return result;
+
+    // pseudo modules have [name] in /proc/self/maps
+    // because we store [vdso] in hpctooolkit's measurement directory,
+    // it actually has the name /path/to/measurement/directory/[vdso].
+    // checking the last character tells us it is a virtual shared library.
+    return lastchar == ']'; 
 }
 
 
@@ -255,32 +236,101 @@ module_ignore_map_lookup
   return result;
 }
 
+int
+serach_functions_in_module(Elf *e, GElf_Shdr* secHead, Elf_Scn *section)
+{
+  Elf_Data *data;
+  char *symName;
+  uint64_t count;
+  GElf_Sym curSym;  
+  uint64_t i, ii,symType, symBind;
+  // char *marmite;
+  
+  data = elf_getdata(section, NULL);           // use it to get the data
+  if (data == NULL || secHead->sh_entsize == 0) return -1;
+  count = (secHead->sh_size)/(secHead->sh_entsize);
+  for (ii=0; ii<count; ii++) {
+    gelf_getsym(data, ii, &curSym);
+    symName = elf_strptr(e, secHead->sh_link, curSym.st_name);
+    symType = GELF_ST_TYPE(curSym.st_info);
+    symBind = GELF_ST_BIND(curSym.st_info);
+
+    // the .dynsym section can contain undefined symbols that represent imported symbols.
+    // We need to find functions defined in the module.
+    if ( (symType == STT_FUNC) && (symBind == STB_GLOBAL) && (curSym.st_value != 0)) {
+      for (i = 0; i < NUM_FNS; ++i) {
+        if (modules[i].empty && (strcmp(symName, NVIDIA_FNS[i]) == 0)) {
+          return i;          
+        }
+      }
+    }
+	}
+  return -1;
+}
 
 bool
 module_ignore_map_ignore
 (
- void *start, 
- void *end
+  load_module_t* lm
 )
 {
   // Update path
   // Only one thread could update the flag,
-  // Guarantee dlopen modules before notification are updated.
-  size_t i;
+  // Guarantee dlopen modules before notification are updated.  
   bool result = false;
   pfq_rwlock_node_t me;
   pfq_rwlock_write_lock(&modules_lock, &me);
-  for (i = 0; i < NUM_FNS; ++i) {
-    if (modules[i].empty == true) {
-      load_module_t *module = hpcrun_loadmap_findByAddr(start, end);
-      if (lm_contains_fn(module->name, NVIDIA_FNS[i])) {
-        modules[i].module = module;
-        modules[i].empty = false;
+
+
+  load_module_t *module = lm;
+
+  if (!pseudo_module_p(module->name)) {
+    // Ignore the module if cannot resolve the path
+    char resolved_path[PATH_MAX];
+    if (realpath(module->name, resolved_path) == NULL) {
+      pfq_rwlock_write_unlock(&modules_lock, &me);
+      return result;
+    }
+
+    int fd = open (resolved_path, O_RDONLY);
+    if (fd < 0) {
+      pfq_rwlock_write_unlock(&modules_lock, &me);
+      return false;
+    }
+    struct stat stat;
+    if (fstat (fd, &stat) < 0) {
+      close(fd);
+      pfq_rwlock_write_unlock(&modules_lock, &me);
+      return false;
+    }
+
+    char* buffer = (char*) mmap (NULL, stat.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (buffer == NULL) {
+      close(fd);
+      pfq_rwlock_write_unlock(&modules_lock, &me);
+      return false;
+    }
+    elf_version(EV_CURRENT);
+    Elf *elf = elf_memory(buffer, stat.st_size);
+    Elf_Scn *scn = NULL;
+    GElf_Shdr secHead;
+
+    while ((scn = elf_nextscn(elf, scn)) != NULL) {
+      gelf_getshdr(scn, &secHead);
+      // Only search .dynsym section
+      if (secHead.sh_type != SHT_DYNSYM) continue;
+      int module_ignore_index = serach_functions_in_module(elf, &secHead, scn);
+      if (module_ignore_index != -1) {
+        modules[module_ignore_index].module = module;
+        modules[module_ignore_index].empty = false;
         result = true;
         break;
       }
     }
+    munmap(buffer, stat.st_size);
+    close(fd);
   }
+
   pfq_rwlock_write_unlock(&modules_lock, &me);
   return result;
 }
@@ -289,10 +339,12 @@ module_ignore_map_ignore
 bool
 module_ignore_map_delete
 (
- void *start, 
- void *end
+ load_module_t* lm
 )
 {
+  if (lm == NULL || lm->dso_info == NULL) return false;
+  void* start = lm->dso_info->start_addr;
+  void* end = lm->dso_info->end_addr;
   size_t i;
   bool result = false;
   pfq_rwlock_node_t me;

@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -92,7 +92,6 @@
 #include "hpcrun_options.h"
 #include "hpcrun_return_codes.h"
 #include "hpcrun_stats.h"
-#include "hpcrun_flag_stacks.h"
 #include "name.h"
 #include "start-stop.h"
 #include "custom-init.h"
@@ -115,7 +114,6 @@
 #include "device-finalizers.h"
 #include "module-ignore-map.h"
 #include "control-knob.h"
-#include "addr_to_module.h"
 #include "epoch.h"
 #include "thread_data.h"
 #include "threadmgr.h"
@@ -128,7 +126,7 @@
 
 #include <memory/hpcrun-malloc.h>
 #include <memory/mmap.h>
-
+#include <tool/hpcrun/sample-sources/gpu/stream-tracing.h>
 #include <monitor-exts/monitor_ext.h>
 
 #include <cct/cct.h>
@@ -148,11 +146,38 @@
 #include <messages/messages.h>
 #include <messages/debug-flag.h>
 
+#include <loadmap.h>
 
+// Gotcha only applies to the dynamic case.
+// If this grows, then move to a separate file.
+#ifndef HPCRUN_STATIC_LINK
+#include <gotcha/gotcha.h>
+
+static const char* library_to_intercept = "libunwind.so";
+static gotcha_wrappee_handle_t wrappee_dl_iterate_phdr_handle;
+struct gotcha_binding_t wrap_actions [] = {
+  { "dl_iterate_phdr", hpcrun_loadmap_iterate, &wrappee_dl_iterate_phdr_handle}    
+};
+#endif
+  
 extern void hpcrun_set_retain_recursion_mode(bool mode);
 #ifndef USE_LIBUNW
 extern void hpcrun_dump_intervals(void* addr);
 #endif // ! USE_LIBUNW
+
+
+
+//***************************************************************************
+// macros
+//***************************************************************************
+
+#define MONITOR_INITIALIZE 1
+
+#if  MONITOR_INITIALIZE == 0
+#define monitor_initialize() \
+    assert(0 && "entry into hpctoolkit prior to initialization");
+#endif
+
 
 //***************************************************************************
 // local data types. Primarily for passing data between pre_PHASE, PHASE, and post_PHASE
@@ -201,7 +226,8 @@ int lush_metrics = 0; // FIXME: global variable for now
 /******************************************************************************
  * (public declaration) thread-local variables
  *****************************************************************************/
- __thread bool hpcrun_thread_suppress_sample = true;
+ static __thread bool hpcrun_thread_suppress_sample = true;
+ static __thread int hpcrun_thread_dl_operation = 0;
 
 
 //***************************************************************************
@@ -224,6 +250,37 @@ static spinlock_t hpcrun_aux_cleanup_lock = SPINLOCK_UNLOCKED;
 static hpcrun_aux_cleanup_t * hpcrun_aux_cleanup_list_head = NULL;
 static hpcrun_aux_cleanup_t * hpcrun_aux_cleanup_free_list_head = NULL;
 static char execname[PATH_MAX] = {'\0'};
+
+//***************************************************************************
+// Interface functions for suppressing samples
+//***************************************************************************
+
+static spinlock_t dl_op_lock = SPINLOCK_UNLOCKED;
+
+void hpcrun_dlfunction_begin()
+{
+  if (hpcrun_thread_dl_operation == 0)
+    spinlock_lock(&dl_op_lock);
+  hpcrun_thread_dl_operation += 1;
+}
+
+void hpcrun_dlfunction_end()
+{
+  hpcrun_thread_dl_operation -= 1;
+  if (hpcrun_thread_dl_operation == 0)
+    spinlock_unlock(&dl_op_lock);
+}
+
+bool hpcrun_dlfunction_is_active()
+{
+  return hpcrun_thread_dl_operation > 0;
+}
+
+bool hpcrun_suppress_sample()
+{
+  return hpcrun_dlfunction_is_active() || hpcrun_thread_suppress_sample;
+}
+
 
 //
 // Local functions
@@ -415,6 +472,11 @@ void
 hpcrun_init_internal(bool is_child)
 {
   timer_start(&vi3_start_time_full_scope);
+#ifndef HPCRUN_STATIC_LINK
+  gotcha_filter_libraries_by_name(library_to_intercept);
+  gotcha_wrap(wrap_actions, sizeof(wrap_actions)/sizeof(struct gotcha_binding_t), "hpctoolkit");
+  gotcha_restore_library_filter_func();
+#endif
 
   hpcrun_initLoadmap();
 
@@ -425,6 +487,8 @@ hpcrun_init_internal(bool is_child)
   // must initialize unwind recipe map before initializing fnbounds
   // because mapping of load modules affects the recipe map.
   hpcrun_unw_init();
+
+  hpcrun_save_vdso();
 
   // init callbacks for each device
   hpcrun_initializer_init();
@@ -505,6 +569,7 @@ hpcrun_init_internal(bool is_child)
   //
   if (! is_child) {
     SAMPLE_SOURCES(process_event_list, lush_metrics);
+    SAMPLE_SOURCES(finalize_event_list);
     hpcrun_metrics_data_finalize();
   }
   SAMPLE_SOURCES(gen_event_set, lush_metrics);
@@ -558,6 +623,8 @@ hpcrun_init_internal(bool is_child)
 
   // vi3: Start measuring execution time
   timer_start(&vi3_start_time);
+  // FIXME: this isn't in master-gpu-trace. how is it managed?
+  // stream_tracing_init();
 }
 
 #define GET_NEW_AUX_CLEANUP_NODE(node_ptr) do {                               \
@@ -690,6 +757,8 @@ hpcrun_fini_internal()
 #else
      printf("stack-lazy (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
+// FIXME: this isn't in master-gpu-trace. how is it managed?
+    // stream_tracing_fini();
 
     // write all threads' profile data and close trace file
     hpcrun_threadMgr_data_fini(hpcrun_get_thread_data());
@@ -765,10 +834,14 @@ hpcrun_thread_init(int id, local_thread_data_t* local_thread_data) // cct_ctxt_t
 
   td->inside_hpcrun = 1;  // safe enter, disable signals
 
-  if (! thr_ctxt) EMSG("Thread id %d passes null context", id);
   
-  if (ENABLED(THREAD_CTXT))
-    hpcrun_walk_path(thr_ctxt->context, logit, (cct_op_arg_t) (intptr_t) id);
+  if (ENABLED(THREAD_CTXT)) {
+    if (thr_ctxt) {
+      hpcrun_walk_path(thr_ctxt->context, logit, (cct_op_arg_t) (intptr_t) id);
+    } else {
+      EMSG("Thread id %d passes null context", id);
+    }
+  }
 
   epoch_t* epoch = TD_GET(core_profile_trace_data.epoch);
 
@@ -819,8 +892,9 @@ hpcrun_thread_fini(epoch_t *epoch)
   // inform thread manager that we are terminating the thread
   // thread manager may enqueue the thread_data (in compact mode)
   // or flush the data into hpcrun file
+  int add_separator = 0;
   thread_data_t* td = hpcrun_get_thread_data();
-  hpcrun_threadMgr_data_put(epoch, td);
+  hpcrun_threadMgr_data_put(epoch, td, add_separator);
 
   TMSG(PROCESS, "End of thread");
 }
@@ -944,6 +1018,7 @@ monitor_init_process(int *argc, char **argv, void* data)
     STDERR_MSG("Std Err message appears");
   }
 
+
   hpcrun_safe_exit();
 
   return data;
@@ -970,9 +1045,10 @@ static fork_data_t from_fork;
 void*
 monitor_pre_fork(void)
 {
-  if (! hpcrun_is_initialized()) {
-    return NULL;
+  if (!hpcrun_is_initialized()) {
+    monitor_initialize();
   }
+
   hpcrun_safe_enter();
 
   TMSG(PRE_FORK,"pre_fork call");
@@ -1027,6 +1103,10 @@ monitor_post_fork(pid_t child, void* data)
 void
 monitor_mpi_pre_init(void)
 {
+  if (!hpcrun_is_initialized()) {
+    monitor_initialize();
+  }
+
   hpcrun_safe_enter();
 
   TMSG(MPI, "Pre MPI_Init");
@@ -1629,17 +1709,12 @@ MONITOR_EXT_WRAP_NAME(pthread_cond_broadcast)(pthread_cond_t* cond)
 void
 monitor_pre_dlopen(const char* path, int flags)
 {
-  if (! hpcrun_dlopen_forced) {
-    if (! hpcrun_is_initialized()) {
-      hpcrun_dlopen_flags_push(false);
-      return;
-    }
-    if (! hpcrun_safe_enter()) {
-      hpcrun_dlopen_flags_push(false);
-      return;
-    }
+  if (!hpcrun_is_initialized()) {
+    monitor_initialize();
   }
-  hpcrun_dlopen_flags_push(true);
+
+  hpcrun_dlfunction_begin();
+  hpcrun_safe_enter();
   hpcrun_pre_dlopen(path, flags);
   hpcrun_safe_exit();
 }
@@ -1648,30 +1723,17 @@ monitor_pre_dlopen(const char* path, int flags)
 void
 monitor_dlopen(const char *path, int flags, void* handle)
 {
-  if (!hpcrun_dlopen_flags_pop()) {
-    return;
-  }
-  if (! hpcrun_dlopen_forced) {
-    if (! hpcrun_is_initialized()) {
-      return;
-    }
-    if (! hpcrun_safe_enter()) {
-      return;
-    }
-  }
+  hpcrun_safe_enter();
   hpcrun_dlopen(path, flags, handle);
   hpcrun_safe_exit();
+  hpcrun_dlfunction_end();
 }
 
 
 void
 monitor_dlclose(void* handle)
 {
-  if (! hpcrun_is_initialized()) {
-    hpcrun_dlclose_flags_push(false);
-    return;
-  }
-  hpcrun_dlclose_flags_push(true);
+  hpcrun_dlfunction_begin();
   hpcrun_safe_enter();
   hpcrun_dlclose(handle);
   hpcrun_safe_exit();
@@ -1681,15 +1743,30 @@ monitor_dlclose(void* handle)
 void
 monitor_post_dlclose(void* handle, int ret)
 {
-  if (! hpcrun_dlclose_flags_pop()) {
-    return;
-  }
-  if (! hpcrun_is_initialized()) {
-    return;
-  }
   hpcrun_safe_enter();
   hpcrun_post_dlclose(handle, ret);
   hpcrun_safe_exit();
+  hpcrun_dlfunction_end();
 }
 
 #endif /* ! HPCRUN_STATIC_LINK */
+
+
+//----------------------------------------------------------------------
+
+// FIXME: Add a weak symbol for cplus_demangle() for hpclink in the
+// static case.  Something is pulling in hpctoolkit_demangle() and
+// thus cplus_demangle() into libhpcrun.o and this breaks hpclink,
+// even though nothing actually uses them.  But the real fix should be
+// in the lib Makefiles.
+
+#ifdef HPCRUN_STATIC_LINK
+
+char * __attribute__ ((weak))
+cplus_demangle(char *str, int opts)
+{
+  return strdup(str);
+}
+
+#endif
+

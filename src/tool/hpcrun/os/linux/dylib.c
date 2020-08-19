@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -57,6 +57,7 @@
 #include <dlfcn.h> // dladdr
 
 
+
 //*****************************************************************************
 // local includes
 //*****************************************************************************
@@ -64,7 +65,9 @@
 #include "dylib.h"
 #include "fnbounds_interface.h"
 
+#include <lib/prof-lean/vdso.h>
 #include <messages/messages.h>
+
 
 
 //*****************************************************************************
@@ -78,6 +81,12 @@ struct dylib_seg_bounds_s {
 
 struct dylib_fmca_s {
   void *addr;
+  const char *module_name;
+  struct dylib_seg_bounds_s bounds;
+};
+
+
+struct dylib_fmbn_s {
   const char *module_name;
   struct dylib_seg_bounds_s bounds;
 };
@@ -109,6 +118,11 @@ dylib_map_open_dsos_callback(struct dl_phdr_info *info,
 			     size_t size, void *);
 
 static int 
+dylib_find_module_bounds_by_name_callback(struct dl_phdr_info *info, 
+					  size_t size, void *fargs_v);
+
+
+static int 
 dylib_find_module_containing_addr_callback(struct dl_phdr_info *info, 
 					   size_t size, void *fargs_v);
 
@@ -124,21 +138,20 @@ dylib_find_module_containing_addr_callback(struct dl_phdr_info *info,
 void 
 dylib_map_open_dsos()
 {
-  dl_iterate_phdr(dylib_map_open_dsos_callback, (void *)0);
+  char *vdso_start = (char *) vdso_segment_addr();
+  dl_iterate_phdr(dylib_map_open_dsos_callback, (void *) vdso_start);
+  if (vdso_start) {
+    char *vdso_end = vdso_start + vdso_segment_len();
+    // create a real file for vdso in our measurements directory and
+    // process bounds on that
+    fnbounds_ensure_mapped_dso(get_saved_vdso_path(), vdso_start, vdso_end, NULL);
+  }
 }
 
 
 //------------------------------------------------------------------
 // ensure bounds information computed for the executable
 //------------------------------------------------------------------
-
-void 
-dylib_map_executable()
-{
-  const char *executable_name = "/proc/self/exe";
-  fnbounds_ensure_mapped_dso(executable_name, NULL, NULL);
-}
-
 
 int 
 dylib_addr_is_mapped(void *addr) 
@@ -148,6 +161,37 @@ dylib_addr_is_mapped(void *addr)
   // initialize arg structure
   arg.addr = addr;
   return dl_iterate_phdr(dylib_find_module_containing_addr_callback, &arg);
+}
+
+
+int 
+dylib_find_executable_bounds(void** start, void** end)
+{
+  // executable name in map is empty string; don't know why
+  return dylib_find_module_bounds_by_name("", start, end);
+}
+
+
+int 
+dylib_find_module_bounds_by_name(char* module_name,
+				 void** start, 
+				 void** end)
+{
+  int retval = 0; // not found
+  struct dylib_fmbn_s arg;
+
+  arg.module_name = module_name;
+
+  if (dl_iterate_phdr(dylib_find_module_bounds_by_name_callback, &arg)) {
+    //-------------------------------------
+    // return callback results into arguments
+    //-------------------------------------
+    *start = arg.bounds.start;
+    *end = arg.bounds.end;
+    retval = 1;
+  }
+
+  return retval;
 }
 
 
@@ -276,12 +320,31 @@ dylib_get_segment_bounds(struct dl_phdr_info *info,
 
 static int
 dylib_map_open_dsos_callback(struct dl_phdr_info *info, size_t size, 
-			     void *unused)
+			     void *vdso_start)
 {
-  if (strcmp(info->dlpi_name,"") != 0) {
-    struct dylib_seg_bounds_s bounds;
-    dylib_get_segment_bounds(info, &bounds);
-    fnbounds_ensure_mapped_dso(info->dlpi_name, bounds.start, bounds.end);
+  struct dylib_seg_bounds_s bounds;
+  dylib_get_segment_bounds(info, &bounds);
+
+  // the file name provided by dl_iterate_phdr for the vdso segment 
+  // is a pseudo-file, so we can't process it directly below, which 
+  // expects a real file
+  if (bounds.start != vdso_start) {
+    fnbounds_ensure_mapped_dso(info->dlpi_name, bounds.start, bounds.end, info);
+  }
+
+  return 0;
+}
+
+
+static int
+dylib_find_module_bounds_by_name_callback(struct dl_phdr_info* info, 
+					  size_t size, void* fargs_v)
+{
+  struct dylib_fmbn_s* fargs = (struct dylib_fmbn_s*) fargs_v;
+
+  if (strcmp(info->dlpi_name, fargs->module_name) == 0) {
+    dylib_get_segment_bounds(info, &fargs->bounds);
+    return 1;
   }
 
   return 0;

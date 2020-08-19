@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -111,7 +111,7 @@ static const char HPCPROF_TmpFnmSfx[] = "tmp";
 // N.B.: The header string is 24 bytes of character data
 
 static const char HPCRUN_FMT_Magic[]   = "HPCRUN-profile____"; // 18 bytes
-static const char HPCRUN_FMT_Version[] = "02.00";              // 5 bytes
+static const char HPCRUN_FMT_Version[] = "03.00";              // 5 bytes
 static const char HPCRUN_FMT_Endian[]  = "b";                  // 1 byte
 
 static const int HPCRUN_FMT_MagicLen   = (sizeof(HPCRUN_FMT_Magic) - 1);
@@ -162,6 +162,11 @@ hpcrun_fmt_hdr_free(hpcrun_fmt_hdr_t* hdr, hpcfmt_free_fn dealloc);
 #define HPCRUN_FMT_NV_traceMinTime "trace-min-time"
 #define HPCRUN_FMT_NV_traceMaxTime "trace-max-time"
 
+#define HPCRUN_FMT_METRIC_HIDE            0
+#define HPCRUN_FMT_METRIC_SHOW            1
+#define HPCRUN_FMT_METRIC_SHOW_INCLUSIVE  2
+#define HPCRUN_FMT_METRIC_SHOW_EXCLUSIVE  3
+#define HPCRUN_FMT_METRIC_INVISIBLE       4
 
 //***************************************************************************
 // epoch-hdr
@@ -436,6 +441,10 @@ void
 hpcrun_fmt_metric_set_value_real( hpcrun_metricFlags_t *flags,
    hpcrun_metricVal_t *metric, double value);
 
+void
+hpcrun_fmt_metric_set_format(metric_desc_t *metric_desc, char *format);
+
+
 //***************************************************************************
 // loadmap
 //***************************************************************************
@@ -658,17 +667,16 @@ hpctrace_fmt_hdr_fprint(hpctrace_fmt_hdr_t* hdr, FILE* fs);
 // [hpctrace] trace record/datum
 //***************************************************************************
 
-// Time and dLCA is stored in one 64-bit integer
+// Time and dLCA is stored in one 64-bit integer (not true at present)
 
-// Time in microseconds is stored in lower HPCTRACE_FMT_TIME_BITS bits,
-// supporting up to year 2540 AD.
-#define HPCTRACE_FMT_TIME_BITS 54 // Use 54 bits to store timestamp, which is enough for next 500+ years.
-#define HPCTRACE_FMT_TIME_MAX ((1ULL << HPCTRACE_FMT_TIME_BITS) - 1) // 54 bits of 1s
+// Time in nanoseconds is stored in lower HPCTRACE_FMT_TIME_BITS bits.
+#define HPCTRACE_FMT_TIME_BITS 64 
+#if 0
+#define HPCTRACE_FMT_TIME_MAX ((~(0ULL)) >> (64 - HPCTRACE_FMT_TIME_BITS)) 
 #define HPCTRACE_FMT_GET_TIME(bits) \
   (bits & HPCTRACE_FMT_TIME_MAX)
 #define HPCTRACE_FMT_SET_TIME(bits, time) \
   bits = (bits & (~HPCTRACE_FMT_TIME_MAX)) | (time & HPCTRACE_FMT_TIME_MAX)
-
 // dLCA = distance of previous sample's leaf call frame to 
 // the Least Common Ancestor (LCA) with this sample in the CCT.
 // dLCA is only valid when trampoline is used. 
@@ -680,6 +688,14 @@ hpctrace_fmt_hdr_fprint(hpctrace_fmt_hdr_t* hdr, FILE* fs);
 #define HPCTRACE_FMT_SET_DLCA(bits, dLCA) \
   bits = (bits & (~(HPCTRACE_FMT_DLCA_NULL << HPCTRACE_FMT_TIME_BITS))) \
          | ((((uint64_t)dLCA) & HPCTRACE_FMT_DLCA_NULL) << HPCTRACE_FMT_TIME_BITS)
+
+#else
+#define HPCTRACE_FMT_GET_TIME(bits) (bits & ~0ULL)
+#define HPCTRACE_FMT_SET_TIME(bits, time) bits = time
+#define HPCTRACE_FMT_GET_DLCA(bits) (0ULL)
+#define HPCTRACE_FMT_SET_DLCA(bits, dLCA) ;
+#define HPCTRACE_FMT_DLCA_NULL  (0ULL)
+#endif
 
 #define HPCTRACE_FMT_MetricId_NULL (INT_MAX) // for Java, no UINT32_MAX
 

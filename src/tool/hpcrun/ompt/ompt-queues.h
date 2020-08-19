@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -60,8 +60,13 @@
 // local includes
 //*****************************************************************************
 
+#define ISOLATE_TEST 0
+
+#if ISOLATE_TEST == 0
 #include <lib/prof-lean/stdatomic.h>
-//#include <stdatomic.h>
+#else
+#include <stdatomic.h>
+#endif
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -85,7 +90,7 @@
 
 // routine name for a stack operation
 #define stack_op(qtype, op) \
-  qtype ## _ ## op
+  vi3_ ## qtype ## _ ## op  // avoid name collision with original stack.c
 
 // typed stack pointer
 #define typed_stack_elem_ptr(type) \
@@ -99,7 +104,7 @@
 
 // routine name for a typed stack operation
 #define typed_stack_op(type, qtype, op) \
-  type ## _ ## qtype ## _ ## op
+  vi3_ ## type ## _ ## qtype ## _ ## op  // avoid name collision with original stack.c
 
 // ptr set routine name for a typed stack
 #define typed_stack_elem_ptr_set(type, qtype) \
@@ -342,7 +347,7 @@ typedef void (*stack_forall_fn_t)(s_element_t *e, void *arg);
 //-----------------------------------------------------------------------------
 
 void
-sstack_ptr_set
+vi3_sstack_ptr_set
 (
   s_element_ptr_t *e,
   s_element_t *v
@@ -350,7 +355,7 @@ sstack_ptr_set
 
 
 s_element_t *
-sstack_ptr_get
+vi3_sstack_ptr_get
 (
   s_element_ptr_t *e
 );
@@ -358,7 +363,7 @@ sstack_ptr_get
 
 // set q->next to point to e and return old value of q->next
 s_element_t *
-sstack_swap
+vi3_sstack_swap
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -367,7 +372,7 @@ sstack_swap
 
 // push a singleton e or a chain beginning with e onto q
 void
-sstack_push
+vi3_sstack_push
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -376,7 +381,7 @@ sstack_push
 
 // pop a singlegon from q or return 0
 s_element_t *
-sstack_pop
+vi3_sstack_pop
 (
   s_element_ptr_t *q
 );
@@ -384,7 +389,7 @@ sstack_pop
 
 // steal the entire chain rooted at q
 s_element_t *
-sstack_steal
+vi3_sstack_steal
 (
   s_element_ptr_t *q
 );
@@ -392,7 +397,7 @@ sstack_steal
 
 // reverse the entire chain rooted at q and set q to be the previous tail
 void
-sstack_reverse
+vi3_sstack_reverse
 (
   s_element_ptr_t *q
 );
@@ -400,7 +405,7 @@ sstack_reverse
 
 // iterate over each element e in the stack, call fn(e, arg)
 void
-sstack_forall
+vi3_sstack_forall
 (
   s_element_ptr_t *q,
   stack_forall_fn_t fn,
@@ -408,13 +413,13 @@ sstack_forall
 );
 
 s_element_t*
-sstack_next_get
+vi3_sstack_next_get
 (
   s_element_t* e
 );
 
 void
-sstack_next_set
+vi3_sstack_next_set
 (
   s_element_t* e,
   s_element_t* next_e
@@ -425,7 +430,7 @@ sstack_next_set
 //-----------------------------------------------------------------------------
 
 void
-cstack_ptr_set
+vi3_cstack_ptr_set
 (
   s_element_ptr_t *e,
   s_element_t *v
@@ -433,7 +438,7 @@ cstack_ptr_set
 
 
 s_element_t *
-cstack_ptr_get
+vi3_cstack_ptr_get
 (
   s_element_ptr_t *e
 );
@@ -441,7 +446,7 @@ cstack_ptr_get
 
 // set q->next to point to e and return old value of q->next
 s_element_t *
-cstack_swap
+vi3_cstack_swap
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -450,7 +455,7 @@ cstack_swap
 
 // push a singleton e or a chain beginning with e onto q
 void
-cstack_push
+vi3_cstack_push
 (
   s_element_ptr_t *q,
   s_element_t *e
@@ -459,7 +464,7 @@ cstack_push
 
 // pop a singlegon from q or return 0
 s_element_t *
-cstack_pop
+vi3_cstack_pop
 (
   s_element_ptr_t *q
 );
@@ -467,7 +472,7 @@ cstack_pop
 
 // steal the entire chain rooted at q
 s_element_t *
-cstack_steal
+vi3_cstack_steal
 (
   s_element_ptr_t *q
 );
@@ -476,7 +481,7 @@ cstack_steal
 // iterate over each element e in the stack, call fn(e, arg)
 // note: unsafe to use concurrently with cstack_steal or cstack_pop
 void
-cstack_forall
+vi3_cstack_forall
 (
   s_element_ptr_t *q,
   stack_forall_fn_t fn,
@@ -484,13 +489,13 @@ cstack_forall
 );
 
 s_element_t*
-cstack_next_get
+vi3_cstack_next_get
 (
   s_element_t* e
 );
 
 void
-cstack_next_set
+vi3_cstack_next_set
 (
   s_element_t* e,
   s_element_t* next_e

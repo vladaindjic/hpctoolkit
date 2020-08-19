@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -136,7 +136,7 @@ hpcrun_is_cold_code(xed_decoded_inst_t *xptr, interval_arg_t *iarg)
 	   " %p (location in routine = %p)",iarg->beg,ins);
 
       unwindr_info_t unwr_info;
-      if( !uw_recipe_map_lookup(branch_target, NATIVE_UNWINDER, &unwr_info) ) {
+      if( !uw_recipe_map_lookup_noinsert(branch_target, NATIVE_UNWINDER, &unwr_info) ) {
         EMSG("Weird result! jmp @ %p branch_target %p has no function bounds",
               ins, branch_target);
         return false;

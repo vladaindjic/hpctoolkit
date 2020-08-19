@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -436,6 +436,20 @@ hpcrun_cct_children(cct_node_t* x)
     return x? x->children : NULL;
 }
 
+cct_node_t*
+hpcrun_leftmost_child(cct_node_t* x)
+{
+  cct_node_t *leftmost = x->children;
+  if (leftmost != NULL) {
+    for (;;) {
+      cct_node_t *more_left = leftmost->left;
+      if (more_left == NULL) break;
+      leftmost = more_left;
+    }
+  }
+  return leftmost;
+}
+
 int32_t
 hpcrun_cct_persistent_id(cct_node_t* x)
 {
@@ -484,6 +498,20 @@ hpcrun_cct_is_dummy(cct_node_t* node)
 //
 // ********** Mutator functions: modify a given cct
 //
+
+cct_node_t*
+hpcrun_cct_insert_ip_norm(cct_node_t* node, ip_normalized_t ip_norm)
+{
+  cct_addr_t frm;
+
+  memset(&frm, 0, sizeof(cct_addr_t));
+  frm.ip_norm = ip_norm;
+
+  cct_node_t *child = hpcrun_cct_insert_addr(node, &frm);
+
+  return child;
+}
+
 
 //
 // Fundamental mutation operation: insert a given addr into the
@@ -1035,8 +1063,6 @@ cct_disjoint_union_cached(cct_node_t* target, cct_node_t* src)
   target->children = src;
   src->parent = target;
 }
-
-
 
 
 // FIXME: only temporary function, until hpcrun_merge is repaired
