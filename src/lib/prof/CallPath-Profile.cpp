@@ -596,10 +596,11 @@ writeXML_help(std::ostream& os, const char* entry_nm,
     std::string pretty_filename;
     const char* nm = NULL;
 
-    bool fake_procedure = false;
+    int type_procedure = 0;
 
     if (type == 1) { // LoadModule
-      nm = Prof::LoadMap::LM::pretty_name(strct->name()).c_str(); 
+      pretty_filename = Prof::LoadMap::LM::pretty_name(strct->name());
+      nm = pretty_filename.c_str(); 
       // check load module duplicates
       std::map<std::string, uint>::iterator it = m_mapLoadModules.find(nm);
 
@@ -647,11 +648,11 @@ writeXML_help(std::ostream& os, const char* entry_nm,
       }
     }
     else if (type == 3) { // Proc
-      const char *proc_name = strct->name().c_str();
-      nm = normalize_name(proc_name, fake_procedure);
+      pretty_filename = Prof::LoadMap::LM::pretty_file_name(strct->name());
+      nm = normalize_name(pretty_filename.c_str(), type_procedure);
 
       if (remove_redundancy && 
-          proc_name != Prof::Struct::Tree::UnknownProcNm)
+          pretty_filename != Prof::Struct::Tree::UnknownProcNm)
       {  
         // -------------------------------------------------------
         // avoid redundancy in XML procedure dictionary
@@ -669,6 +670,16 @@ writeXML_help(std::ostream& os, const char* entry_nm,
         completProcName.append(file_key);
         completProcName.append(":");
 
+        if ((strct->type() == Prof::Struct::ANode::TyAlien) &&
+            strct->name().compare("<inline>")==0) {
+          Prof::Struct::ANode *parent = strct->parent();
+          if (parent) {
+            char buffer[128];
+            sprintf(buffer, "%d:", parent->id());
+            completProcName.append(buffer);
+          }
+        }
+
         const char *lnm;
 
         // a procedure name within the same file has to be unique.
@@ -679,7 +690,7 @@ writeXML_help(std::ostream& os, const char* entry_nm,
         {
           if (proc->linkName().empty()) {
             // the proc has no mangled name
-            lnm = proc_name;
+            lnm = pretty_filename.c_str();
           } else
           { // get the mangled name
             lnm = proc->linkName().c_str();
@@ -716,8 +727,8 @@ writeXML_help(std::ostream& os, const char* entry_nm,
     os << "    <" << entry_nm << " i" << MakeAttrNum(id)
            << " n" << MakeAttrStr(nm);
 
-    if (fake_procedure) {
-      os << " f" << MakeAttrNum(1); 
+    if (type_procedure != 0) {
+      os << " f" << MakeAttrNum(type_procedure); 
     }
 
     if (type == 3) { // Procedure
@@ -778,6 +789,7 @@ Profile::writeXML_hdr(std::ostream& os, uint metricBeg, uint metricEnd,
     // Metric
     os << "    <Metric i" << MakeAttrNum(i)
        << " n" << MakeAttrStr(m->name())
+       << " o" << MakeAttrNum(m->order())
        << " v=\"" << m->toValueTyStringXML() << "\""
        << " md=\"" << m->description()      << "\""
        << " em=\"" << m->isMultiplexed()    << "\""
@@ -787,12 +799,19 @@ Profile::writeXML_hdr(std::ostream& os, uint metricBeg, uint metricEnd,
     if (m->partner()) {
       os << " partner" << MakeAttrNum(m->partner()->id());
     }
-    os << " show=\"" << ((m->isVisible()) ? "1" : "0")  << "\""
+    if (!m->format().empty()) {
+      os << " fmt" << MakeAttrStr(m->format());
+    }
+    os << " show=\"" << m->visibility()  << "\""
        << " show-percent=\"" << ((m->doDispPercent()) ? "1" : "0") << "\""
        << ">\n";
 
     // MetricFormula
-    if (isDrvd) {
+    if (!m->formula().empty()) {
+    	os << "      <MetricFormula t=\"view\""
+	   << " frm=\"" <<  m->formula() << "\"/>\n";
+    }
+    else if (isDrvd) {
 
       // 0. retrieve combine formula (each DerivedIncrDesc corresponds
       // to an 'accumulator')
@@ -1331,6 +1350,8 @@ Profile::fmt_epoch_fread(Profile* &prof, FILE* infs, uint rFlags,
       new Metric::SampledDesc(nm, desc, mdesc.period, true/*isUnitsEvents*/,
 			      profFileName, profRelId, "HPCRUN", mdesc.flags.fields.show, false,
             mdesc.flags.fields.showPercent);
+    
+    m->order((int)i);
 
     if (doMakeInclExcl) {
       m->type(Metric::ADesc::TyIncl);
@@ -1349,7 +1370,7 @@ Profile::fmt_epoch_fread(Profile* &prof, FILE* infs, uint rFlags,
     m->flags(mdesc.flags);
     
     // ----------------------------------------
-    // 1b. Update the additional perf event attributes
+    // 1b. Update the additional attributes
     // ----------------------------------------
 
     Prof::Metric::SamplingType_t sampling_type = mdesc.is_frequency_metric ?
@@ -1359,6 +1380,9 @@ Profile::fmt_epoch_fread(Profile* &prof, FILE* infs, uint rFlags,
     m->isMultiplexed(current_aux_info.is_multiplexed);
     m->periodMean   (current_aux_info.threshold_mean);
     m->num_samples  (current_aux_info.num_samples);
+
+    m->formula      (mdesc.formula);
+    m->format       (mdesc.format);
 
     // ----------------------------------------
     // 1c. add to the list of metric
@@ -1379,7 +1403,9 @@ Profile::fmt_epoch_fread(Profile* &prof, FILE* infs, uint rFlags,
       if (!m_sfx.empty()) {
 	mSmpl->nameSfx(m_sfx);
       }
-      mSmpl->flags(mdesc.flags);
+      mSmpl->flags  (mdesc.flags);
+      mSmpl->formula(mdesc.formula);
+      mSmpl->format (mdesc.format);
       
       prof->metricMgr()->insert(mSmpl);
     }
@@ -1499,7 +1525,9 @@ Profile::fmt_cct_fread(Profile& prof, FILE* infs, uint rFlags,
     (hpcrun_metricVal_t*)alloca(numMetricsSrc * sizeof(hpcrun_metricVal_t))
     : NULL;
 
+#if 0
   ExprEval eval;
+#endif
 
   for (uint i = 0; i < numNodes; ++i) {
     // ----------------------------------------------------------
@@ -1513,6 +1541,7 @@ Profile::fmt_cct_fread(Profile& prof, FILE* infs, uint rFlags,
       hpcrun_fmt_cct_node_fprint(&nodeFmt, outfs, prof.m_flags,
 				 &metricTbl, "  ");
     }
+#if 0
     // ------------------------------------------
     // check if the metric contains a formula
     //  if this is the case, we'll compute the metric based on the formula
@@ -1533,6 +1562,7 @@ Profile::fmt_cct_fread(Profile& prof, FILE* infs, uint rFlags,
       	hpcrun_fmt_metric_set_value(m_lst[i], &nodeFmt.metrics[i], res);
       }
     }
+#endif
 
     int nodeId   = (int)nodeFmt.id;
     int parentId = (int)nodeFmt.id_parent;

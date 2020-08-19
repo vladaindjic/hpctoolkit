@@ -1,7 +1,13 @@
 /* src/include/hpctoolkit-config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* binutils version 2.34 or later */
+#undef BINUTILS_234
+
 /* "Cuda install prefix" */
 #undef CUDA_INSTALL_PREFIX
+
+/* "CUPTI install prefix" */
+#undef CUPTI_INSTALL_PREFIX
 
 /* Data-centric tracing */
 #undef DATACENTRIC_TRACE
@@ -21,8 +27,14 @@
 /* Support for CLOCK_REALTIME and SIGEV_THREAD_ID */
 #undef ENABLE_CLOCK_REALTIME
 
-/* Build with openmp support */
+/* ParseAPI supports openmp (for hpcstruct) */
 #undef ENABLE_OPENMP
+
+/* Symtab supports openmp (for fnbounds) */
+#undef ENABLE_OPENMP_SYMTAB
+
+/* Add extra annotations for debugging with Valgrind */
+#undef ENABLE_VG_ANNOTATIONS
 
 /* Support for AMD XOP instructions */
 #undef ENABLE_XOP
@@ -129,8 +141,14 @@
 /* IBM Blue Gene support */
 #undef HOST_SYSTEM_IBM_BLUEGENE
 
+/* Git branch and commit hash, if known. */
+#undef HPCTOOLKIT_GIT_VERSION
+
 /* HPCToolkit install prefix */
 #undef HPCTOOLKIT_INSTALL_PREFIX
+
+/* Spack version and variants, if known. */
+#undef HPCTOOLKIT_SPACK_SPEC
 
 /* HPCToolkit version */
 #undef HPCTOOLKIT_VERSION
