@@ -65,8 +65,6 @@
 #include "frame.h"
 #include <unwind/common/backtrace_info.h>
 #include <unwind/common/fence_enum.h>
-#include <ompt/ompt-defer.h>
-#include <ompt/ompt-callstack.h>
 
 #include "cct_insert_backtrace.h"
 #include "cct_backtrace_finalize.h"
@@ -109,8 +107,6 @@ cct_insert_raw_backtrace(cct_node_t* cct,
      return cct_backtrace_null_handler(cct);
   }
 #endif
-
-  // FIXME: POGLEDAJ KOLIKO ON PUTA KROZ OVO PRODJE
 
   ip_normalized_t parent_routine = ip_normalized_NULL;
   for(; path_beg >= path_end; path_beg--){
@@ -197,9 +193,6 @@ hpcrun_cct_insert_backtrace_w_metric(cct_node_t* treenode,
 				     cct_metric_data_t datum, void *data_aux)
 {
   cct_node_t* path = hpcrun_cct_insert_backtrace(treenode, path_beg, path_end);
-  // vi3: memoize the call path before eventually extension
-  // with cct nodes that correspond to the kernel's functions
-  cct_path_before_kernel_extension = path;
 
   if (hpcrun_kernel_callpath) {
     path = hpcrun_kernel_callpath(path, data_aux);

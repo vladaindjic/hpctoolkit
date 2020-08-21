@@ -108,7 +108,10 @@ ompt_task_begin_internal
     typed_stack_elem_ptr(region) region_data = (typed_stack_elem_ptr(region)) parallel_info->ptr;
     cct_node = region_data->call_path;
 
-    if (cct_node) {
+    // Only if we're providing the call path eagerly, then store it
+    // in task data. In lazy implementation, connect task with corresponding
+    // parallel region by storing region depth
+    if (ompt_eager_context_p() && cct_node) {
       // set cct_node, if available (in case of eagerly collecting region context)
       task_data_set_cct(task_data, cct_node);
     } else {

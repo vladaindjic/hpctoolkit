@@ -800,12 +800,33 @@ hpcrun_ompt_get_task_frame
     ompt_data_t *parallel_data = NULL;
     ompt_frame_t *task_frame = NULL;
     int thread_num = 0;
-
+    // FIXME vi3 (08/18): Shouldn't I check the return value
     ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
     //printf("Task frame pointer = %p\n", task_frame);
     return task_frame;
   }
   return NULL;
+}
+
+int
+hpcrun_ompt_get_task_flags
+(
+  int level
+)
+{
+  if (ompt_initialized) {
+    int task_type_flags;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    ompt_frame_t *task_frame = NULL;
+    int thread_num = 0;
+    // FIXME vi3 (08/18): Shouldn't I check the return value
+    ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    //printf("Task frame pointer = %p\n", task_frame);
+    return task_type_flags;
+  }
+  return NULL;
+
 }
 
 

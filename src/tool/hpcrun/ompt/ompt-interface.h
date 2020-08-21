@@ -135,6 +135,12 @@ hpcrun_ompt_get_task_frame
 );
 
 
+int
+hpcrun_ompt_get_task_flags
+(
+  int level
+);
+
 int 
 hpcrun_ompt_get_thread_num
 (

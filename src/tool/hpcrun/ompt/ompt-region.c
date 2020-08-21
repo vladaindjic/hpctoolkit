@@ -256,6 +256,7 @@ ompt_parallel_end_internal
     // Some thread from the team took a sample in the region.
     if (!region_data->call_path &&
           (stack_el || to_notify)) {
+      printf("Providing at the end of the region\n");
       // the region has not been provided before, so we will do that now
       region_data->call_path = ompt_region_context_eager(region_data->region_id, ompt_scope_end,
                                flags & ompt_parallel_invoker_program);
