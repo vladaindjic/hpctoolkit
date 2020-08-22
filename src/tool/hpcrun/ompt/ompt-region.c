@@ -256,14 +256,18 @@ ompt_parallel_end_internal
     // Some thread from the team took a sample in the region.
     if (!region_data->call_path &&
           (stack_el || to_notify)) {
-      printf("Providing at the end of the region\n");
+      //printf("Providing at the end of the region\n");
       // the region has not been provided before, so we will do that now
       region_data->call_path = ompt_region_context_eager(region_data->region_id, ompt_scope_end,
                                flags & ompt_parallel_invoker_program);
     }
 
     // If master took a sample in this region, it needs to resolve its call path.
-    if (stack_el) {
+    if (stack_el
+#if EARLY_PROVIDE_REGION_PREFIX
+          && stack_el->unresolved_cct
+#endif
+                ) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
       resolve_one_region_context(region_data, stack_el->unresolved_cct);

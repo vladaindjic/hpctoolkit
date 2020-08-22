@@ -825,7 +825,7 @@ hpcrun_ompt_get_task_flags
     //printf("Task frame pointer = %p\n", task_frame);
     return task_type_flags;
   }
-  return NULL;
+  return 0;
 
 }
 

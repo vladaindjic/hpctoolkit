@@ -105,6 +105,10 @@
 // parallel region or to the outermost context.
 #define DETECT_IDLENESS_LAST_BARRIER 0
 
+#define EARLY_PROVIDE_REGION_PREFIX 1
+#define ONLY_FULL_PREFIX_PROVIDE 1
+
+
 struct ompt_region_data_s;
 struct ompt_notification_s;
 struct mpsc_channel_region_s;
@@ -215,6 +219,10 @@ typedef struct region_stack_el_s {
   // should be safe to remove this
   bool team_master;
   old_region_t *old_region_list;
+#if EARLY_PROVIDE_REGION_PREFIX
+  bool full_prefix_avail;
+  cct_node_t *cct_node;
+#endif
 } typed_random_access_stack_elem(region);
 // declare pointer to previous struct
 typed_random_access_stack_declare_type(region);

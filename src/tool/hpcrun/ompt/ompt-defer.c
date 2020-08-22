@@ -546,6 +546,7 @@ register_to_region
   cct_node_t *unresolved_cct
 )
 {
+  //printf("Registracija\n");
   // get new notification
   typed_stack_elem_ptr(notification) notification =
       help_notification_alloc(region_data, unresolved_cct);
@@ -582,7 +583,23 @@ register_to_region
   unresolved_cnt++;
 }
 
+#if EARLY_PROVIDE_REGION_PREFIX
+typedef struct thread_take_sample_args_s {
+  cct_node_t *parent_cct;
+  bool all_prefixes_available;
+  bool parent_prefix_has_been_changed;
+} thread_take_sample_args_t;
+#endif
 
+typedef struct lca_args_s {
+  int level;
+  typed_stack_elem(region) *region_data;
+#if EARLY_PROVIDE_REGION_PREFIX
+  bool all_prefixes_avail;
+#endif
+} lca_args_t;
+
+#if EARLY_PROVIDE_REGION_PREFIX == 0
 bool
 thread_take_sample
 (
@@ -643,71 +660,6 @@ thread_take_sample
     return 0;
   };
 }
-
-#if 0
-bool
-least_common_ancestor
-(
-  typed_random_access_stack_elem(region) *el,
-  void *arg
-)
-{
-  int *level_ptr = (int *) arg;
-  int level = *level_ptr;
-
-  typed_stack_elem(region) *runtime_reg = hpcrun_ompt_get_region_data(level);
-  typed_stack_elem(region) *stack_reg = el->region_data;
-
-  if (!runtime_reg) {
-    // FIXME vi3 >>> debug this case
-    goto return_label;
-  }
-
-  if (stack_reg->depth > runtime_reg->depth) {
-    // stack_reg is probably not active, so skip it
-    return 0;
-  } else if (stack_reg->depth < runtime_reg->depth) {
-    // there are fewer regions on the stack than in runtime
-    // try to find corresponding
-    level = runtime_reg->depth - stack_reg->depth;
-    runtime_reg = hpcrun_ompt_get_region_data(level);
-  }
-
-  if (!runtime_reg) {
-    goto return_label;
-  }
-
-  // NOTE: debugging only
-  if (stack_reg->depth != runtime_reg->depth) {
-    msg_deferred_resolution_breakpoint("Depths of stack_reg and runtime_reg are different\n");
-  }
-
-  // NOTE: debugging only
-  if (stack_reg != runtime_reg) {
-    // FIXME vi3 >>> for-nested-regions.c after adding waiting for region_used to be zero
-    msg_deferred_resolution_breakpoint("Stack_reg and runtime_reg are different\n");
-  }
-
-  // thread has already taken sample inside this region
-  if (el->unresolved_cct) {
-    // least common ancestor is found
-    return 1;
-  }
-
-  return_label:
-  // continue processing outer regions that are present on stack
-  *level_ptr = level + 1;
-
-  return 0;
-}
-#endif
-
-
-typedef struct lca_args_s {
-  int level;
-  typed_stack_elem(region) *region_data;
-} lca_args_t;
-
 
 bool
 lca_el_fn
@@ -814,7 +766,287 @@ least_common_ancestor
   // thread is inside parallel region
   return true;
 }
+#else
 
+bool
+thread_take_sample
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  thread_take_sample_args_t *args = (thread_take_sample_args_t*) arg;
+  // cct node which corresponds to the parent region
+  cct_node_t *parent_cct = args->parent_cct;
+  bool all_prefixes_available = args->all_prefixes_available;
+  bool parent_prefix_has_been_change = args->parent_prefix_has_been_changed;
+
+  if (el->cct_node == NULL) {
+    // Sample may be taken for the first time in this region
+    if (el->region_data->call_path == NULL ||
+          (el->region_data->call_path && !all_prefixes_available)) {
+      // Not all region prefixes are available at the moment.
+      // create unresolved_cct node if needed
+      // Check if the address that corresponds to the region
+      // has already been inserted in parent_cct subtree.
+      // This means that thread took sample in this region before,
+      // but the region was swapped from the stack in the meantime
+      cct_addr_t *region_addr = &ADDR2(UNRESOLVED, el->region_id);
+      cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
+      if (found_cct) {
+        // Region was on the stack previously, so the thread does not need
+        // neither to insert cct nor to register itself for the region's call path.
+        // Mark that thread took a sample, store found_cct in el and skip the region.
+        el->unresolved_cct = found_cct;
+        el->cct_node = el->unresolved_cct;
+        goto return_label;
+      }
+      // insert node placeholder
+      el->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
+      el->cct_node = el->unresolved_cct;
+      // notify child that prefix has been changed
+      parent_prefix_has_been_change = true;
+      // register for region prefix if needed
+      if (!el->team_master) {
+        // Worker thread should register for the region's call path
+        register_to_region(el->region_data, el->unresolved_cct);
+      } else {
+        // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
+        unresolved_cnt++;
+      }
+      // process child region
+      goto return_label;
+    } else if (el->region_data->call_path && all_prefixes_available) {
+      // All region prefixes are available at the moment
+      // insert region prefix
+      el->cct_node =
+          hpcrun_cct_insert_path_return_leaf(parent_cct, el->region_data->call_path);
+      // notify child that prefix has been changed
+      parent_prefix_has_been_change = true;
+      // full prefix for this region is available
+      el->full_prefix_avail = true;
+      // This region is resolved, to no need for registration.
+      // Continue processing children regions
+     // printf("Ima li ovde???\n");
+      goto return_label;
+    }
+  } else if (el->region_data->call_path && all_prefixes_available &&
+              (parent_prefix_has_been_change ||
+                (uint64_t) hpcrun_cct_addr(el->cct_node)->ip_norm.lm_id
+                  == UNRESOLVED)) {
+    // If parent prefix has been changed or if
+    // el->cct_node is unresolved, then insert region prefix.
+
+    // insert region prefix
+    el->cct_node =
+        hpcrun_cct_insert_path_return_leaf(parent_cct, el->region_data->call_path);
+    // notify child that prefix has been changed
+    parent_prefix_has_been_change = true;
+    // full prefix for this region is available
+    el->full_prefix_avail = true;
+    // This region is resolved, to no need for registration.
+    // Continue processing children regions
+    printf("Ima li dole???\n");
+    goto return_label;
+  }
+
+#if 0
+  // FIXME vi3 >>> If we use this approach, then field took_sample is not needed
+  // thread took a sample in this region before
+  if (el->took_sample) {
+    // skip this region, and go to the inner one
+    goto return_label;
+  }
+
+  // Check if the address that corresponds to the region
+  // has already been inserted in parent_cct subtree.
+  // This means that thread took sample in this region before.
+  cct_addr_t *region_addr = &ADDR2(UNRESOLVED, el->region_id);
+  cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
+  if (found_cct) {
+    // Region was on the stack previously, so the thread does not need
+    // neither to insert cct nor to register itself for the region's call path.
+    // Mark that thread took a sample, store found_cct in el and skip the region.
+    el->took_sample = true;
+    el->unresolved_cct = found_cct;
+    goto return_label;
+  }
+  // mark that thread took sample in this region for the first time
+  el->took_sample = true;
+  // insert cct node with region_addr in the parent_cct's subtree
+  el->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
+
+  if (!el->team_master) {
+    // Worker thread should register for the region's call path
+    register_to_region(el->region_data, el->unresolved_cct);
+  } else {
+    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
+    unresolved_cnt++;
+  }
+#endif
+
+  return_label: {
+    if (el->unresolved_cct == NULL && el->cct_node == NULL) {
+      printf("Imamo problem izgleda\n");
+    }
+    // If region is marked as the last to register (see function register_to_all_regions),
+    // then stop further processing.
+    // FIXME vi3 >>> this should be removed.
+    if (el->region_data->depth >= vi3_last_to_register) {
+      // Indication that processing of active regions should stop.
+      return 1;
+    }
+    // mark that sample is taken inside this region
+    el->took_sample = true;
+    // continue processing descendants
+    // store new parent_cct node for the inner region
+    args->parent_cct = el->cct_node;
+    args->all_prefixes_available = all_prefixes_available;
+    args->parent_prefix_has_been_changed = parent_prefix_has_been_change;
+    // Indication that processing of active regions should continue
+    return 0;
+  };
+}
+
+bool
+lca_el_fn
+(
+  typed_random_access_stack_elem(region) *el,
+  void *arg
+)
+{
+  lca_args_t *args = (lca_args_t *)arg;
+  int level = args->level;
+  typed_stack_elem(region) *reg = args->region_data;
+  // If all regions on he stack have theirs preixes available
+  bool all_prefixes_avail = args->all_prefixes_avail;
+  // The sample may have been taken in this region
+  if (el->region_data) {
+    // If the region has not been change since the last sample was taken,
+    // then it may represent the least common ancestor
+    // (must use region_id, since it is unique value, and el->region_data
+    //   may have been reused)
+    if (el->region_id == reg->region_id) {
+      if (el->full_prefix_avail) {
+        // If the full prefix of the region is available,
+        // then it represents the least common ancestor
+        // indicator to stop processing stack elements
+        return 1;
+      } else {
+        if (el->region_data->call_path == NULL) {
+          // If the prefix of the region is not present, then notify the parent.
+          all_prefixes_avail = false;
+        }
+        // Information about the region is valid.
+        goto return_label;
+      }
+    }
+  }
+
+  // el's fileds are outdated, so update them
+
+  // update stack element
+  // store region
+  el->region_data = reg;
+  // store region_id as persistent field
+  el->region_id = reg->region_id;
+  // check if thread is the master (owner) of the reg
+  el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
+  // invalidate previous values
+  el->unresolved_cct = NULL;
+  el->took_sample = false;
+
+  #if EARLY_PROVIDE_REGION_PREFIX
+  el->full_prefix_avail = false;
+  el->cct_node = NULL;
+#endif
+
+  return_label:
+  {
+    // update arguments
+    args->level = level + 1;
+#if KEEP_PARENT_REGION_RELATIONSHIP
+    // In order to prevent NULL values get from hpcrun_ompt_get_region_data,
+    // use parent as next region to process.
+    args->region_data = typed_stack_next_get(region, sstack)(reg);
+#else
+    args->region_data = hpcrun_ompt_get_region_data(args->level);
+#endif
+    args->all_prefixes_avail = all_prefixes_avail;
+    // indicator to continue processing stack element
+    return 0;
+  };
+}
+
+// return value:
+// false - no active parallel regions (sequential code)
+// true - thread is inside parallel region
+// td_region_depth - region_depth stored at TD(omp_task_context)
+// Possible values:
+// -1   - thread not waiting on the barrier, but some edge case found in
+//        ompt_elide_runtime_frame function. The sample should be attributed
+//        to the innermost region
+// >= 0 - depth of the region to which sample should be attributed.
+//        Ignore all regions deeper than td_region_depth
+bool
+least_common_ancestor
+(
+  typed_random_access_stack_elem(region) **lca,
+  int td_region_depth,
+  bool *all_prefixes_avail
+)
+{
+  int ancestor_level = 0;
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
+  if (!innermost_reg) {
+    // There is no parallel region active.
+    // Thread should be executing sequential code.
+    *lca = NULL;
+    return false;
+  }
+
+  if (td_region_depth >= 0) {
+    // skip regions deeper than td_region_depth
+    while(innermost_reg->depth > td_region_depth) {
+#if KEEP_PARENT_REGION_RELATIONSHIP
+      // skip me by using my parent
+      innermost_reg = typed_stack_next_get(region, sstack)(innermost_reg);
+#else
+      // skip this region and access to parent
+      innermost_reg = hpcrun_ompt_get_region_data(++ancestor_level);
+#endif
+    }
+  } else {
+    if (td_region_depth != -1) {
+      printf("Some invalid value: %d.\n", td_region_depth);
+    }
+  }
+
+
+  // update top of the stack
+  typed_random_access_stack_top_index_set(region)(innermost_reg->depth, region_stack);
+  // update the last region that should be checked during registration process
+  vi3_last_to_register = innermost_reg->depth;
+
+  // update stack of active regions and try to find region in which
+  // thread took previous sample
+  lca_args_t args;
+  // Assume that thread is not worker
+  args.level = ancestor_level;
+  args.region_data = innermost_reg;
+  args.all_prefixes_avail = true;
+  *lca = typed_random_access_stack_forall(region)(region_stack,
+                                                  lca_el_fn,
+                                                  &args);
+
+  // information about availability of all prefixes
+  *all_prefixes_avail = args.all_prefixes_avail;
+
+  // thread is inside parallel region
+  return true;
+}
+
+#endif
 
 void
 register_to_all_regions
@@ -1542,7 +1774,8 @@ register_to_all_regions
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
-  if (!least_common_ancestor(&lca, region_depth)) {
+  bool all_prefixes_available = true;
+  if (!least_common_ancestor(&lca, region_depth, &all_prefixes_available)) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
     return;
@@ -1555,7 +1788,11 @@ register_to_all_regions
     // Optimization: Thread will register for regions nested
     // inside lca->region_data
     start_from = lca->region_data->depth;
+#if EARLY_PROVIDE_REGION_PREFIX
+    parent_cct = lca->cct_node;
+#else
     parent_cct = lca->unresolved_cct;
+#endif
   } else {
     // Thread must register for all active region,
     // starting from the outermost one.
@@ -1568,6 +1805,13 @@ register_to_all_regions
         start_from, lca->region_data->region_id, lca->unresolved_cct);
   }
 
+#if EARLY_PROVIDE_REGION_PREFIX
+  thread_take_sample_args_t args;
+  args.parent_cct = parent_cct;
+  args.all_prefixes_available = all_prefixes_available;
+  args.parent_prefix_has_been_changed = false;
+#endif
+
   // registration process
   // start_from: thread will register for regions which
   //   depths are >= "start_from"
@@ -1576,7 +1820,12 @@ register_to_all_regions
   typed_random_access_stack_reverse_iterate_from(region)(start_from,
                                                          region_stack,
                                                          thread_take_sample,
-                                                         &parent_cct);
+#if EARLY_PROVIDE_REGION_PREFIX
+                                                         &args
+#else
+                                                         &parent_cct
+#endif
+                                                          );
   // NOTE vi3 >>> I put this function call inside ompt_cct_cursor_finalize function
   //   since I'm still not sure why/how thread_data can change its value while
   //   our tool is in the middle of sample processing.
