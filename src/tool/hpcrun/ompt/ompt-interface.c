@@ -695,7 +695,7 @@ ompt_finalize
   hpcrun_safe_exit();
 }
 
-
+#if 0
 ompt_start_tool_result_t *
 ompt_start_tool
 (
@@ -718,7 +718,7 @@ ompt_start_tool
 
   return &init;
 }
-
+#endif
 
 int 
 hpcrun_omp_state_is_overhead
