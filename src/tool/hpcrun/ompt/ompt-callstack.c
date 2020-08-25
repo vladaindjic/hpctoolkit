@@ -634,6 +634,7 @@ next_region_matching_task
   if (!td) {
     // have no idea what to do
     printf("vi3 provide: No task data: \n");
+    // TODO: this is also possible
     return;
   }
 
@@ -704,6 +705,11 @@ next_region_matching_task
     local_child_region = local_parent_region;
     local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
     goto return_label;
+  } else if (local_parent_region->depth == td_depth ) {
+    // Task corresponds to the region, do nothing.
+  } else if (td_depth > local_parent_region->depth) {
+    // TODO for-nested-functions (USE_NESTED_TASKS)
+    // This makes no sense.
   } else {
     printf("vi3 provide: Something wasn't done properly before: flags: %x,"
            " td_depth: %d, parent_depth: %d\n",
@@ -869,18 +875,94 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   }
 #endif
 
+  bool processed_it = false;
   while ((fp_enter(frame0) == 0) &&
          (fp_exit(frame0) == 0)) {
-    if (thread_state != ompt_state_wait_barrier_implicit_parallel) {
+
+    if (thread_state == ompt_state_work_parallel
+        && i == 0 && (flags0 & ompt_task_implicit)) {
+      // TODO vi3: Something similar to this can be added to condition
+      //  which calls this function for providing. I think that if we check this,
+      //  then worker who's creating the new region, or master (outer worker)
+      //  who's destroying the region ca be found.
+      if (reg_anc_lev == -1) {
+        // Thread is creating the new region
+        // Innermost parallel data should be present
+        child_region = parent_region;
+        parent_region = hpcrun_ompt_get_region_data(++reg_anc_lev);
+        // TODO vi3 (08/23/2020): how about checking parent_region->depth,
+        //  not sure if this is enough
+        if (!parent_region) {
+          printf("vi3: Parallel data hasn't set yet");
+          return -3;
+        }
+        // task_data hasn't been filled yet, since implicit task hasn't
+        // been called. This should happen between ompt_callback_parallel_begin
+        // and ompt_implicit_task_begin.
+      } else if (parent_region) {
+        // Thread is destroying the parent_region
+        // Task_data is not deleted yet, which means it contains depth of
+        // the parent_region.
+        // Just skip this frame and provide call path for the parent_region.
+        // This happens before ompt_callback_parallel_end and team hasn't been
+        // torn apart. FIXME vi3 hopes.
+      } else {
+        printf("vi3: Thread is not creating nor "
+               "destroying the region\n");
+        return -4;
+      }
+    } else if (thread_state == ompt_state_work_parallel
+               && i == 0 && (flags0 & ompt_task_explicit)) {
+      if (reg_anc_lev == -1) {
+        // Thread is creating new explicit task. I think parent_region
+        // should be present, so get it. After that, skip frame.
+        child_region = parent_region;
+        parent_region = hpcrun_ompt_get_region_data(++reg_anc_lev);
+        if (!parent_region) {
+          printf("vi3 provide: Why is parallel data unavailable?\n");
+          return -5;
+        }
+      } else if (parent_region) {
+        // Thread is either creating a new task (task frame),
+        // or is destroying the suspended one (task_frames invalidated).
+        // Skip this frame.
+      } else {
+        printf("vi3 provide: Thread is not creating nor"
+               "destroying explicit task.\n");
+        return -6;
+      }
+    } else if (thread_state == ompt_state_wait_barrier_implicit_parallel
+               && i == 1 && (flags0 & ompt_task_implicit)
+               && parent_region && !child_region) {
+      // Task at level 1 represent implicit task that corresponds
+      // to the parent_region. This task has been suspended and thread
+      // is waiting on the last implicit barrier probably finishing the
+      // explicit task (at level 0). Skip this task, and try to
+      // provide prefix for the parent_region
+      processed_it = true;
+    } else if (thread_state == ompt_state_work_parallel && i == 1
+               && (flags0 & ompt_task_implicit)
+               && parent_region && !child_region) {
+      // The same as previous, but thread_state of the master
+      // thread hasn't been chnged yet.
+      processed_it = true;
+    } else if (thread_state != ompt_state_wait_barrier_implicit_parallel
+        && thread_state != ompt_state_overhead) {
       // Handle only samples taken while waiting on the last implicit barrier.
       //printf("vi3 provide: No innermost frame\n");
+      // TODO for-nested-functions (USE_NESTED_TASKS)
       return 6;
     }
 
-    if (i > 0 && thread_state == ompt_state_wait_barrier_implicit_parallel) {
-      printf("vi3: This should not happen -3\n");
-      return -3;
+    if (i > 0 && !processed_it) {
+      // Assume for now that all outer task frames are set properly
+      //printf("vi3: More than one empty task_frames\n");
+      // FIXME vi3: for-nested-tasks (USE_NESTED_FRAMES)
+      return -7;
     }
+
+    // Innermost task has been suspended,
+    // corresponding parallel region is still active, so try to provide prefix.
 
     // corner case: the top frame has been set up,
     // but not filled in. ignore this frame.
@@ -895,14 +977,22 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       // corner case: the innermost task (if any) has no frame info.
       goto clip_base_frames;
     }
-    // TODO vi3: when this happens
+
     next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
   }
 
   if (fp_exit(frame0) &&
       (((uint64_t) fp_exit(frame0)) <
        ((uint64_t) (*bt_inner)->cursor.sp))) {
-    return 7;
+    if (i == 0 && parent_region) {
+      // parent_region matches this new innermost task
+      // (task belongs to this region).
+      // Skip task and then try to provide call path for the parent region.
+    } else {
+      // I suppose that the innermost region will match task at level i+1.
+      // But wait for this to happen to be sure.
+      return 7;
+    }
     //printf("vi3 provide: No call to user code has been made\n");
     // corner case: the top frame has been set up, exit frame has been filled in;
     // however, exit_frame.ptr points beyond the top of stack. the final call
@@ -954,13 +1044,56 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
           //   tests to run:
           //      - simple.c (with for loop)
           if (thread_state == ompt_state_wait_barrier_implicit_parallel) {
+            // i == 1 if innermost task is suspended implicit
+            // i == 2 if innermost task is suspended explicit
+            assert(i == 1 || i == 2);
             assert(child_region != NULL);
             // level of child_region
             assert(reg_anc_lev - 1 == 0);
             // innermost frame of the child region (should be the innermost region)
             child_prefix_inner = it;
           } else {
-            printf("vi3 provide: Think good about taking sample inside runtime frames\n");
+            if (i == 0 && parent_region && !child_region) {
+              // Thread left user code of the innermost task (corresponds to the
+              // parent_region). I think it is going either to create a new task
+              // or it has suspended nested task which is not on the stack anymore.
+              // Since children_region is not set, or it has been removed, cannot
+              // provide prefix for it. Just skip this case.
+            } else if (i == 0 && parent_region && child_region) {
+              // The same as previous, but children_region has been set,
+              // or it's not removed ye, so provide prefix for children_region.
+              child_prefix_inner = it;
+            } else if (i == 1 && parent_region && child_region) {
+              // Similar to previous two with difference that task innermost task
+              // (that corresponds to the child_region) is either created,
+              // but not filled yet, or it has been suspended, but still
+              // not removed from the stack.
+              // Since child_region exists, prefix can be provided.
+              child_prefix_inner = it;
+            } else if (i == 1 && parent_region &&
+                      !child_region && (flags0 & ompt_task_explicit)) {
+              // Inside runtime code called from explicit task. Since child_region
+              // is not found, cannot provide its prefix.
+            } else if (i == 1 && parent_region && !child_region
+                      && (flags0 & ompt_task_implicit)) {
+              // Sample is taken inside runtime code called from
+              // implicit tasks that matches parent_region.
+              // In order to provide prefix for the parent_region,
+              // set child_region to match parent_region (only in this case).
+              child_region = parent_region;
+              child_prefix_inner = it;
+            } else if (i == 2 && parent_region && child_region
+                      && (flags0 & ompt_task_implicit)){
+              // Task frame at level 0 should be new/suspended explicit task.
+              // Task frame at level 1 should be suspended implicit task.
+              // We can provide prefix for the child region
+              child_prefix_inner = it;
+            } else{
+              // TODO for-nested-functions (USE_NESTED_TASKS)
+              printf("vi3 provide: Think good about taking"
+                     " sample inside runtime frames: %d, %p, %p\n", i, parent_region, child_region);
+
+            };
           }
 
         }
@@ -1056,10 +1189,47 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     if (!frame1) break;
 
     next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
-    // If thread is not the master of child region, it should stop providing
-    if (child_region && !hpcrun_ompt_is_thread_region_owner(child_region)) {
+    // If thread is not the master of child region, it should stop providing.
+    // No need to provide call path if its already provided.
+    if (child_region &&
+        (!hpcrun_ompt_is_thread_region_owner(child_region) || child_region->call_path)) {
       break;
     }
+
+#if 0
+    if (fp_enter(frame1) == 0 && fp_exit(frame1) == 0 && (flags1 & ompt_task_implicit)) {
+      // skip finished implicit task, since its frame is invalidated
+      frame1 = hpcrun_ompt_get_task_frame(++i);
+      flags1 = hpcrun_ompt_get_task_flags(i);
+      if (!frame1) break;
+      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
+      // If thread is not the master of child region, it should stop providing.
+      // No need to provide call path if its already provided.
+      if (child_region &&
+          (!hpcrun_ompt_is_thread_region_owner(child_region) || child_region->call_path)) {
+        break;
+      }
+    }
+#endif
+
+    // FIXME vi3 (08/22/2020) It is possible that and frame1->enter=frame0->enter=0
+    //  The question is is this ok to happen???
+    //  Run region-in-task3.c
+    while (fp_enter(frame1) == 0) {
+      // skip frame1, since I don't think this should happen.
+      frame1 = hpcrun_ompt_get_task_frame(++i);
+      flags1 = hpcrun_ompt_get_task_flags(i);
+      if (!frame1) break;
+      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
+      // If thread is not the master of child region, it should stop providing.
+      // No need to provide call path if its already provided.
+      if (child_region &&
+          (!hpcrun_ompt_is_thread_region_owner(child_region)
+             || child_region->call_path)) {
+        goto break_the_inner_loop;
+      }
+    }
+
     //-------------------------------------------------------------------------
     //  frame1 points into the stack above the task frame (in the
     //  runtime from the outer task's perspective). frame0 points into
@@ -1073,35 +1243,6 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       // I think it should be child innermost frame
       child_prefix_inner = it;
       continue;
-    }
-
-    if (fp_enter(frame1) == 0 && fp_exit(frame1) == 0 && (flags1 & ompt_task_implicit)) {
-      // skip finished implicit task, since its frame is invalidated
-      frame1 = hpcrun_ompt_get_task_frame(++i);
-      flags1 = hpcrun_ompt_get_task_flags(i);
-      if (!frame1) break;
-      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
-      // If thread is not the master of child region, it should stop providing
-      if (child_region && !hpcrun_ompt_is_thread_region_owner(child_region)) {
-        break;
-      }
-    }
-
-    // FIXME vi3 (08/22/2020) It is possible that and frame1->enter=frame0->enter=0
-    //  The question is is this ok to happen???
-    //  Run region-in-task3.c
-    while (fp_enter(frame1) == 0) {
-      //&& fp_exit(frame1) == fp_exit(frame0)) {
-      // printf("vi3 provide: frame1->enter == 0\n");
-      // skip frame1, since I don't think this should happen.
-      frame1 = hpcrun_ompt_get_task_frame(++i);
-      flags1 = hpcrun_ompt_get_task_flags(i);
-      if (!frame1) break;
-      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
-      // If thread is not the master of child region, it should stop providing
-      if (child_region && !hpcrun_ompt_is_thread_region_owner(child_region)) {
-        break;
-      }
     }
 
 
@@ -1168,10 +1309,33 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       //   This happens in the following examples:
       //      - simple-task.c (sample taken in loop2)
       //      - region-in-task3.c
-      printf("vi3 provide: Can this happen???\n");
+      //      - for-nested-functions (USE_NESTED_TASKS 1)
+      if (fp_enter(frame1) < low_sp) {
+        // Have no idea how is this even possible.
+        // TODO vi3:
+        //   - for-nested-functions (USE_NESTED_TASKS 1)
+        // This frame is upper on the stack than lower bound.
+      } else if (parent_region && child_region
+                 && !hpcrun_ompt_is_thread_region_owner(parent_region)){
+        // Thread is not the owner of the parent region,
+        // so frame1->enter may not ne on thread's stack.
+        // It's possible to have untied implicit task
+      } else if (parent_region
+                 && hpcrun_ompt_is_thread_region_owner(parent_region)
+                 && fp_enter(frame1) > high_sp) {
+        // TODO vi3:
+        //   - for-nested-functions (USE_NESTED_TASKS 1)
+        // Why this happens???
+      } else {
+        // never happened
+        printf("vi3 provide: Can this happen??? %p\n", fp_enter(frame1));
+      }
+      // TODO: 0x6000002 for task?
       break;
     }
   }
+
+  break_the_inner_loop:
 
   if (bt_outer_to_return != bt_outer_at_entry) {
     bt->bottom_frame_elided = true;
@@ -1270,9 +1434,8 @@ ompt_elide_runtime_frame(
       int ret = ompt_provide_callpaths_while_elide_runtime_frame_internal(bt, region_id, isSync);
       if (!ret)
         return;
-       else
-         printf("vi3 provide: Edge case: %d\n", ret);
-
+      else
+        printf("vi3 provide: Edge case: %d\n", ret);
     }
   }
 #endif
