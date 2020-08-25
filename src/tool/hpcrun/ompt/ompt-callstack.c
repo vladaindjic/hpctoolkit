@@ -1074,25 +1074,29 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
                       !child_region && (flags0 & ompt_task_explicit)) {
               // Inside runtime code called from explicit task. Since child_region
               // is not found, cannot provide its prefix.
-            } else if (i == 1 && parent_region && !child_region
-                      && (flags0 & ompt_task_implicit)) {
-              // Sample is taken inside runtime code called from
-              // implicit tasks that matches parent_region.
-              // In order to provide prefix for the parent_region,
-              // set child_region to match parent_region (only in this case).
-              child_region = parent_region;
-              child_prefix_inner = it;
-            } else if (i == 2 && parent_region && child_region
-                      && (flags0 & ompt_task_implicit)){
-              // Task frame at level 0 should be new/suspended explicit task.
-              // Task frame at level 1 should be suspended implicit task.
-              // We can provide prefix for the child region
-              child_prefix_inner = it;
-            } else{
-              // TODO for-nested-functions (USE_NESTED_TASKS)
-              printf("vi3 provide: Think good about taking"
-                     " sample inside runtime frames: %d, %p, %p\n", i, parent_region, child_region);
+            }
+//            else if (i == 1 && parent_region && !child_region
+//                      && (flags0 & ompt_task_implicit)) {
+//              // Sample is taken inside runtime code called from
+//              // implicit tasks that matches parent_region.
+//              // In order to provide prefix for the parent_region,
+//              // set child_region to match parent_region (only in this case).
+//              child_region = parent_region;
+//              child_prefix_inner = it;
+//            }
+//            else if (i == 2 && parent_region && child_region
+//                      && (flags0 & ompt_task_implicit)){
+//              // Task frame at level 0 should be new/suspended explicit task.
+//              // Task frame at level 1 should be suspended implicit task.
+//              // We can provide prefix for the child region
+//              child_prefix_inner = it;
+//            }
 
+            else{
+              // TODO for-nested-functions (USE_NESTED_TASKS)
+              //printf("vi3 provide: Think good about taking"
+              //       " sample inside runtime frames: %d, %p, %p\n", i, parent_region, child_region);
+              return -100;
             };
           }
 
@@ -1434,8 +1438,8 @@ ompt_elide_runtime_frame(
       int ret = ompt_provide_callpaths_while_elide_runtime_frame_internal(bt, region_id, isSync);
       if (!ret)
         return;
-      else
-        printf("vi3 provide: Edge case: %d\n", ret);
+//      else
+//        printf("vi3 provide: Edge case: %d\n", ret);
     }
   }
 #endif
