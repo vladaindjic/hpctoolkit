@@ -1,3 +1,21 @@
+Current Spack Issues for HPCToolkit
+===================================
+
+1 Introduction
+2 Current Issues
+2.1 (2019-08-28) Cray front-end compilers
+3 Recently Resolved Issues
+3.1 (2020-03-27) Intel-TBB checksums don't match
+4 General Problems
+4.1 Unable to fetch
+4.2 Connection timeout
+4.3 New version breaks the build
+4.4 Spack core breaks the build
+5 Long Term Issues
+5.1 Boost 1.68.0
+5.2 Elfutils 0.176
+    
+
 1 Introduction
 ==============
 
@@ -5,9 +23,11 @@ Spack is a moving target and receives multiple commits per day.
 Normally, HPCToolkit will build and run successfully with the latest
 version of all of its prerequisite packages, but sometimes not.  This
 page covers the current known issues where HPCToolkit fails to build
-with the latest version of spack.
+with the latest version of spack.  The main build directions are at:
 
-   Report problems to 'hpctoolkit-forum at rice dot edu'.  But before
+   README.Install
+
+Report problems to 'hpctoolkit-forum at rice dot edu'.  But before
 reporting a problem, first try the versions recommended in the
 'packages.yaml' file in the 'spack' subdirectory of the hpctoolkit
 repository.  And always check the latest version of this file on the
@@ -15,25 +35,66 @@ hpctoolkit web site.
 
      <http://hpctoolkit.org/spack-issues.html>
 
-Last revised: June 17, 2019.
+Last revised: June 17, 2020.
 
 2 Current Issues
 ================
 
-No known issues at this time.
+2.1 (2019-08-28) Cray front-end compilers
+-----------------------------------------
+
+'Spack compiler find' is currently broken for detecting the front-end
+compilers on Cray that HPCToolkit uses.  Normally, you would load a
+module for gcc and run 'spack compiler find' and spack would add that
+compiler to 'compilers.yaml', but this currently does not work.
+
+   Workaround: If you have a working 'compiler:' entry for a front-end
+GNU compiler on Cray, then that will continue to work.  If not, then you
+will have to add one manually.  For example, this is an entry for the
+'gcc/8.3.0' module on theta at ANL. Note that the front-end
+operating_system is something like 'sles12' (not 'cnl6'), and the
+front-end target is 'x86_64' (not 'mic_knl').  Your versions may differ.
+
+     - compiler:
+         environment: {}
+         flags: {}
+         modules:
+         - PrgEnv-gnu/6.0.5
+         - gcc/8.3.0
+         - craype/2.6.1
+         - cray-mpich/7.7.10
+         operating_system: sles12
+         paths:
+           cc:  /opt/gcc/8.3.0/bin/gcc
+           cxx: /opt/gcc/8.3.0/bin/g++
+           f77: /opt/gcc/8.3.0/bin/gfortran
+           fc:  /opt/gcc/8.3.0/bin/gfortran
+         spec: gcc@8.3.0
+         target: x86_64
+
+Note: Be sure to fill in the 'modules:' field with all four modules.
 
 3 Recently Resolved Issues
 ==========================
 
-3.1 (2019-06-06) intel-xed and hpcviewer
-----------------------------------------
+3.1 (2020-03-27) Intel-TBB checksums don't match
+------------------------------------------------
 
-Packages that use a spack resource (a second tar file) are currently
-broken.  This includes intel-xed (x86_64 only) and hpcviewer (all
-platforms).
+Intel recently moved the TBB project on GitHub to a new repository,
+'oneAPI-SRC/oneTBB'.  When downloading the intel-tbb tar file, github
+makes the tar file on the fly, and this includes the new top-level
+directory name (oneTBB). The contents of the tar file are the same, but
+the new directory name is enough to invalidate the spack checksum.
 
-Fixed: This is now fixed in spack develop in commit 'aca1bfdb6a64' on
-2019-06-13.
+Fixed: The new checksums were added to spack in commit 16f104aafe2b
+(https://github.com/spack/spack/pull/15675) on 2020-03-27.  So, if you
+update your spack repository after this commit, then the checksums will
+match.
+
+Workaround: If you have an older spack repository, then you will need to
+disable verifying checksums.
+
+     spack install --no-checksum intel-tbb
 
 4 General Problems
 ==================
@@ -53,7 +114,15 @@ This problem is usually temporary and the solution is to either wait a
 few minutes or an hour and try again, or else download the file manually
 and put it into a spack mirror.
 
-4.2 New version breaks the build
+4.2 Connection timeout
+----------------------
+
+Another way fetch can fail is with a connection timeout.  Some sites,
+especially sourceforge are often slow to connect.  If this happens, then
+increase the connection timeout in 'config.yaml' to 30 or 60 seconds
+(default is 10 seconds).
+
+4.3 New version breaks the build
 --------------------------------
 
 Sometimes the latest version of some package breaks the build.  This has
@@ -61,7 +130,7 @@ happened a couple of times where a new version of Boost has broken the
 build for Dyninst.  The solution is to revert the package to an earlier
 version until the rest of the code catches up.
 
-4.3 Spack core breaks the build
+4.4 Spack core breaks the build
 -------------------------------
 
 Sometimes but rarely, something in the spack core will change or break

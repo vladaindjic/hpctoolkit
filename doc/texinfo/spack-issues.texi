@@ -3,9 +3,16 @@
 @setfilename issues.texi
 @settitle Current Spack Issues for HPCToolkit
 
-@ifhtml
+@ifinfo
+Current Spack Issues for HPCToolkit@*
+===================================
+@end ifinfo
+
 @contents
-@end ifhtml
+
+@ifinfo
+@w{ }
+@end ifinfo
 
 @section Introduction
 
@@ -13,8 +20,16 @@ Spack is a moving target and receives multiple commits per day.
 Normally, HPCToolkit will build and run successfully with the latest
 version of all of its prerequisite packages, but sometimes not.  This
 page covers the current known issues where HPCToolkit fails to build
-with the latest version of spack.
+with the latest version of spack.  The main build directions are at:
 
+@ifhtml
+@uref{software-instructions.html}
+@end ifhtml
+@ifinfo
+README.Install
+@end ifinfo
+
+@noindent
 Report problems to @code{hpctoolkit-forum at rice dot edu}.  But before
 reporting a problem, first try the versions recommended in the
 @code{packages.yaml} file in the @code{spack} subdirectory of the
@@ -26,27 +41,77 @@ on the hpctoolkit web site.
 @end example
 
 @noindent
-Last revised: June 17, 2019.
+Last revised: June 17, 2020.
 
 @c ------------------------------------------------------------
 
 @section Current Issues
 
-No known issues at this time.
+@subsection (2019-08-28) Cray front-end compilers
+
+@code{Spack compiler find} is currently broken for detecting the
+front-end compilers on Cray that HPCToolkit uses.  Normally, you would
+load a module for gcc and run @code{spack compiler find} and spack would
+add that compiler to @code{compilers.yaml}, but this currently does not
+work.
+
+@b{Workaround:} If you have a working @code{compiler:} entry for a
+front-end GNU compiler on Cray, then that will continue to work.  If
+not, then you will have to add one manually.  For example, this is an
+entry for the @code{gcc/8.3.0} module on theta at ANL.  Note that the
+front-end operating_system is something like @code{sles12} (not
+@code{cnl6}), and the front-end target is @code{x86_64} (not
+@code{mic_knl}).  Your versions may differ.
+
+@example
+- compiler:
+    environment: @{@}
+    flags: @{@}
+    modules:
+    - PrgEnv-gnu/6.0.5
+    - gcc/8.3.0
+    - craype/2.6.1
+    - cray-mpich/7.7.10
+    operating_system: sles12
+    paths:
+      cc:  /opt/gcc/8.3.0/bin/gcc
+      cxx: /opt/gcc/8.3.0/bin/g++
+      f77: /opt/gcc/8.3.0/bin/gfortran
+      fc:  /opt/gcc/8.3.0/bin/gfortran
+    spec: gcc@@8.3.0
+    target: x86_64
+@end example
+
+@noindent
+@b{Note:} Be sure to fill in the @code{modules:} field with all four
+modules.
 
 @c ------------------------------------------------------------
 
 @section Recently Resolved Issues
 
-@subsection (2019-06-06) intel-xed and hpcviewer
+@subsection (2020-03-27) Intel-TBB checksums don't match
 
-Packages that use a spack resource (a second tar file) are currently
-broken.  This includes intel-xed (x86_64 only) and hpcviewer (all
-platforms).
+Intel recently moved the TBB project on GitHub to a new repository,
+@code{oneAPI-SRC/oneTBB}.  When downloading the intel-tbb tar file,
+github makes the tar file on the fly, and this includes the new
+top-level directory name (oneTBB).  The contents of the tar file are the
+same, but the new directory name is enough to invalidate the spack
+checksum.
 
 @noindent
-@b{Fixed:} This is now fixed in spack develop in commit
-@code{aca1bfdb6a64} on 2019-06-13.
+@b{Fixed:} The new checksums were added to spack in commit
+@uref{https://github.com/spack/spack/pull/15675, 16f104aafe2b}
+on 2020-03-27.  So, if you update your spack repository after this
+commit, then the checksums will match.
+
+@noindent
+@b{Workaround:} If you have an older spack repository, then you will
+need to disable verifying checksums.
+
+@example
+spack install --no-checksum intel-tbb
+@end example
 
 @c ------------------------------------------------------------
 
@@ -68,6 +133,13 @@ and dies with a message similar to this.
 This problem is usually temporary and the solution is to either wait a
 few minutes or an hour and try again, or else download the file manually
 and put it into a spack mirror.
+
+@subsection Connection timeout
+
+Another way fetch can fail is with a connection timeout.  Some sites,
+especially sourceforge are often slow to connect.  If this happens, then
+increase the connection timeout in @code{config.yaml} to 30 or 60
+seconds (default is 10 seconds).
 
 @subsection New version breaks the build
 

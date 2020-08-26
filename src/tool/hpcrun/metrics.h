@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -135,6 +135,14 @@ metric_upd_proc_t* hpcrun_get_metric_proc(int metric_id);
 int hpcrun_set_new_metric_info_w_fn(kind_info_t *kind, const char* name,
 				    MetricFlags_ValFmt_t valFmt, size_t period,
 				    metric_upd_proc_t upd_fn, metric_desc_properties_t prop);
+
+int hpcrun_set_new_metric_desc(kind_info_t *kind, const char* name,
+		        const char *description,
+				MetricFlags_ValFmt_t valFmt, size_t period,
+				metric_upd_proc_t upd_fn, metric_desc_properties_t prop);
+
+int hpcrun_set_new_metric_desc_and_period(kind_info_t *kind, const char* name, const char *description,
+				      MetricFlags_ValFmt_t valFmt, size_t period, metric_desc_properties_t prop);
 
 int hpcrun_set_new_metric_info_and_period(kind_info_t *kind, const char* name,
 					  MetricFlags_ValFmt_t valFmt, size_t period, metric_desc_properties_t prop);

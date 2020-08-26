@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -46,9 +46,6 @@
 
 #ifndef _CSPROF_DLFNS_H_
 #define _CSPROF_DLFNS_H_
-
-int  hpcrun_dlopen_read_lock(void);
-void hpcrun_dlopen_read_unlock(void);
 
 void hpcrun_pre_dlopen(const char *path, int flags);
 void hpcrun_dlopen(const char *module_name, int flags, void *handle);

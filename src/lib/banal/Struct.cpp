@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -70,6 +70,14 @@
 #include <string.h>
 #include <include/uint.h>
 
+#if ENABLE_VG_ANNOTATIONS == 1
+#include <valgrind/helgrind.h>
+#include <valgrind/drd.h>
+#else
+#define ANNOTATE_HAPPENS_BEFORE(X)
+#define ANNOTATE_HAPPENS_AFTER(X)
+#endif
+
 #include <algorithm>
 #include <map>
 #include <set>
@@ -81,10 +89,13 @@
 
 #include <lib/binutils/BinUtils.hpp>
 #include <lib/binutils/VMAInterval.hpp>
+#include <lib/binutils/ElfHelper.hpp>
+#include <lib/binutils/InputFile.hpp>
 #include <lib/support/FileNameMap.hpp>
 #include <lib/support/FileUtil.hpp>
 #include <lib/support/RealPathMgr.hpp>
 #include <lib/support/StringTable.hpp>
+#include <lib/support/dictionary.h>
 
 #include <boost/atomic.hpp>
 
@@ -99,8 +110,6 @@
 
 #include <include/hpctoolkit-config.h>
 
-#include "ElfHelper.hpp"
-#include "InputFile.hpp"
 #include "Struct.hpp"
 #include "Struct-Inline.hpp"
 #include "Struct-Output.hpp"
@@ -152,10 +161,10 @@ static int merge_irred_loops = 1;
 // variables
 //******************************************************************************
 
-// Copied from lib/prof/Struct-Tree.cpp
-static const string & unknown_file = "<unknown file>";
-static const string & unknown_proc = "<unknown proc>";
-static const string & unknown_link = "_unknown_proc_";
+// Copied from lib/support/dictionary.h
+static const string & unknown_file = UNKNOWN_FILE;
+static const string & unknown_proc = UNKNOWN_PROC;
+static const string & unknown_link = UNKNOWN_LINK;
 
 // FIXME: temporary until the line map problems are resolved
 static Symtab * the_symtab = NULL;
@@ -228,9 +237,10 @@ computeGaps(VMAIntervalSet &, VMAIntervalSet &, VMA, VMA);
 
 static void
 doUnparsableFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo);
- 
+
 static void 
-doUnparsableFunction(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func, TreeNode * root);
+doUnparsableFunction(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
+		     TreeNode * root);
 
 //----------------------------------------------------------------------
 
@@ -568,10 +578,9 @@ makeStructure(string filename,
 #endif
 
   InputFile inputFile;
-  if (! inputFile.openFile(filename)) {
-    // error already printed by openFile
-    exit(1);
-  }
+
+  // failure throws an error up the call chain
+  inputFile.openFile(filename, InputFileError_Error);
 
   ElfFileVector * elfFileVector = inputFile.fileVector();
   string & sfilename = inputFile.fileName();
@@ -591,7 +600,7 @@ makeStructure(string filename,
       cout << "file:  " << elfFile->getFileName() << "\n"
 	   << "symtab threads: " << opts.jobs_symtab
 	   << "  parse: " << opts.jobs_parse
-	   << "  struct: " << opts.jobs << "\n\n";
+	   << "  struct: " << opts.jobs_struct << "\n\n";
       printTime("init:  ", &tv_init, &ru_init, &tv_init, &ru_init);
     }
 
@@ -644,7 +653,8 @@ makeStructure(string filename,
     } else {
       cuda_arch = elfFile->getArch();
       cubin_size = elfFile->getLength();
-      parsable = readCubinCFG(search_path, elfFile, the_symtab, &code_src, &code_obj);
+      parsable = readCubinCFG(search_path, elfFile, the_symtab, 
+			      structOpts.compute_gpu_cfg, &code_src, &code_obj);
     }
 
     if (opts.show_time) {
@@ -652,7 +662,7 @@ makeStructure(string filename,
     }
 
 #ifdef ENABLE_OPENMP
-    omp_set_num_threads(opts.jobs);
+    omp_set_num_threads(opts.jobs_struct);
 #endif
 
     string basename = FileUtil::basename(cfilename);
@@ -754,7 +764,8 @@ doWorkItem(WorkItem * witem, string & search_path, bool parsable,
     doUnparsableFunctionList(witem->env, finfo, ginfo);
   }
 
-  witem->is_done.store(true);
+  ANNOTATE_HAPPENS_BEFORE(&witem->is_done);
+  witem->is_done.exchange(true);
 }
 
 //----------------------------------------------------------------------
@@ -801,7 +812,7 @@ makeWorkList(FileMap * fileMap, WorkList & wlPrint, WorkList & wlLaunch)
   }
 
   // if single-threaded, then order doesn't matter
-  if (opts.jobs == 1) {
+  if (opts.jobs_struct == 1) {
     wlLaunch = wlPrint;
     return;
   }
@@ -810,7 +821,7 @@ makeWorkList(FileMap * fileMap, WorkList & wlPrint, WorkList & wlLaunch)
   // if the expected cost of one function is more than 5% of the ideal
   // parallel run time, then promote it to start early.
   //
-  double threshold = WORK_LIST_PCT * total_cost / ((double) opts.jobs);
+  double threshold = WORK_LIST_PCT * total_cost / ((double) opts.jobs_struct);
 
   for (auto wit = wlPrint.begin(); wit != wlPrint.end(); ++wit) {
     WorkItem * witem = *wit;
@@ -847,6 +858,7 @@ printWorkList(WorkList & workList, uint & num_done, ostream * outFile,
 	      ostream * gapsFile, string & gaps_filenm)
 {
   while (num_done < workList.size() && workList[num_done]->is_done.load()) {
+    ANNOTATE_HAPPENS_AFTER(&workList[num_done]->is_done);
     WorkItem * witem = workList[num_done];
     FileInfo * finfo = witem->finfo;
     GroupInfo * ginfo = witem->ginfo;
@@ -968,7 +980,7 @@ getProcLineMap(StatementVector & svec, Offset vma, Offset end,
   svec.clear();
 
   if (cuda_arch > 0) {
-    int len = cuda_arch >= 70 ? 16 : 8;
+    int len = (cuda_arch >= 70) ? 16 : 8;
 
     StatementVector tmp;
 
@@ -979,7 +991,7 @@ getProcLineMap(StatementVector & svec, Offset vma, Offset end,
         if (svec.empty()) {
           svec.push_back(tmp[0]);
         } else if (tmp[0]->getFile() == svec[0]->getFile() &&
-          tmp[0]->getLine() < svec[0]->getLine()) {
+		   tmp[0]->getLine() < svec[0]->getLine()) {
           svec[0] = tmp[0];
         }
       }
@@ -1098,47 +1110,10 @@ addProc(FileMap * fileMap, ProcInfo * pinfo, string & filenm,
 #endif
 }
 
-
 //----------------------------------------------------------------------
 
-// funcNamePrefer -- ordering of mangled (link) and typed names to
-// make the choice in getFuncNames() deterministic (strict prefer).
-//
-// Prefer:
-//   1. longer typed name (longer has more info)
-//   2. longer link name
-//   3. alphabetically lower typed name (arbitrary)
-//   4. alphabetically lower link name
-//
-static bool
-funcNamePrefer(string & typea, string & linka, string & typeb, string & linkb)
-{
-  size_t lena = typea.length();
-  size_t lenb = typeb.length();
-
-  if (lena > lenb) { return true; }
-  if (lena < lenb) { return false; }
-
-  lena = linka.length();
-  lenb = linkb.length();
-
-  if (lena > lenb) { return true; }
-  if (lena < lenb) { return false; }
-
-  int comp = typea.compare(typeb);
-
-  if (comp < 0 ) { return true; }
-  if (comp > 0 ) { return false; }
-
-  comp = linka.compare(linkb);
-
-  if (comp < 0 ) { return true; }
-
-  return false;
-}
-
 // getFuncNames -- helper for makeSkeleton() to select the pretty
-// (typed) and link (mangled) names for a SymtabAPI::Function.
+// (demangled) and link (mangled) names for a SymtabAPI::Function.
 //
 // Some functions have multiple symbols with different names for the
 // same address (global and weak syms).  We sort the symbol names to
@@ -1149,31 +1124,28 @@ funcNamePrefer(string & typea, string & linka, string & typeb, string & linkb)
 // values, so don't overwrite them unless there is at least one valid
 // name.
 //
+// Note: we now use symtab only for mangled names and do all the
+// demangling ourselves.
+//
 static void
-getFuncNames(SymtabAPI::Function * sym_func, string & prettynm,
-	     string & linknm, bool ourDemangle)
+getFuncNames(SymtabAPI::Function * sym_func, string & prettynm, string & linknm)
 {
-  auto typed_begin = sym_func->typed_names_begin();
-  auto typed_end =   sym_func->typed_names_end();
+  auto mangled_begin = sym_func->mangled_names_begin();
   auto mangled_end = sym_func->mangled_names_end();
 
-  auto typed_it =    typed_begin;
-  auto mangled_it =  sym_func->mangled_names_begin();
+  for (auto mit = mangled_begin; mit != mangled_end; ++mit) {
+    string new_mangled = *mit;
 
-  while (typed_it != typed_end && mangled_it != mangled_end) {
-    string new_mangled = *mangled_it;
-    string new_typed =
-      (ourDemangle) ? BinUtil::demangleProcName(new_mangled) : *typed_it;
-
-    if (typed_it == typed_begin
-	|| funcNamePrefer(new_typed, new_mangled, prettynm, linknm))
+    // sort by: longer mangled name (more info), or else by
+    // alphabetically lower name (arbitrary).
+    if (mit == mangled_begin
+	|| (new_mangled.length() > linknm.length())
+	|| (new_mangled.length() == linknm.length()
+	    && new_mangled.compare(linknm) < 0))
     {
-      prettynm = new_typed;
       linknm = new_mangled;
+      prettynm = BinUtil::demangleProcName(linknm);
     }
-
-    ++typed_it;
-    ++mangled_it;
   }
 }
 
@@ -1206,7 +1178,6 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
   for (auto flit = funcList.begin(); flit != funcList.end(); ++flit) {
     ParseAPI::Function * func = *flit;
     funcMap[func->addr()] = func;
-    DEBUG_SKEL("\nskel:    func*=" << std::hex << (void *) func << ", func->addr() =" << (void *) func->addr() << "\n");
   }
 
   for (auto fmit = funcMap.begin(); fmit != funcMap.end(); ++fmit) {
@@ -1244,14 +1215,14 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
     }
 
     DEBUG_SKEL("symbol:  0x" << hex << sym_start << "--0x" << sym_end
-      << "  next:  0x" << next_vma
-      << "  region:  0x" << reg_start << "--0x" << reg_end << dec << "\n");
+	       << "  next:  0x" << next_vma
+	       << "  region:  0x" << reg_start << "--0x" << reg_end << dec << "\n");
 
     // symtab doesn't recognize plt funcs and puts them in the wrong
     // region.  to be a valid symbol, the func entry must lie within
     // the symbol's region.
     if (found && sym_func != NULL && region != NULL
-      && reg_start <= vma && vma < reg_end)
+	&& reg_start <= vma && vma < reg_end)
     {
       string filenm = unknown_base;
       string linknm = unknown_link + vma_str;
@@ -1281,9 +1252,9 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
 	//
 	DEBUG_SKEL("(case 1)\n");
 
-	getFuncNames(sym_func, prettynm, linknm, opts.ourDemangle);
+	getFuncNames(sym_func, prettynm, linknm);
 	if (is_shared) {
-	  prettynm += " (" + basename + ")";
+	  prettynm += " [" + basename + "]";
 	}
 
 	ProcInfo * pinfo = new ProcInfo(func, NULL, linknm, prettynm, line,
@@ -1300,8 +1271,8 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
 	getProcLineMap(pvec, vma, sym_end, sym_func);
 
 	if (! pvec.empty()) {
-    parse_filenm = pvec[0]->getFile();
-    parse_line = pvec[0]->getLine();
+	  parse_filenm = pvec[0]->getFile();
+	  parse_line = pvec[0]->getLine();
 	  RealPathMgr::singleton().realpath(parse_filenm);
 	}
 
@@ -1309,7 +1280,7 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
 	stringstream buf;
 	buf << "outline " << parse_base << ":" << parse_line << " (" << vma_str << ")";
 	if (is_shared) {
-	  buf << " (" << basename << ")";
+	  buf << " [" << basename << "]";
 	}
 
 	linknm = func->name();
@@ -1353,7 +1324,7 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
 
       // symtab doesn't offer any guidance on demangling in this case
       if (linknm != prettynm
-        && prettynm.find_first_of("()<>") == string::npos) {
+	  && prettynm.find_first_of("()<>") == string::npos) {
         prettynm = linknm;
       }
 
@@ -1390,7 +1361,7 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
 	}
       }
       if (is_shared) {
-	prettynm += " (" + basename + ")";
+	prettynm += " [" + basename + "]";
       }
 
       ProcInfo * pinfo = new ProcInfo(func, NULL, linknm, prettynm, 0);
@@ -1415,14 +1386,14 @@ makeSkeleton(CodeObject * code_obj, const string & basename)
         num++;
 
         cout << "\nentry:   0x" << hex << pinfo->entry_vma << dec
-          << "  (" << num << "/" << size << ")\n"
-          << "group:   0x" << hex << ginfo->start
-          << "--0x" << ginfo->end << dec << "\n"
-          << "file:    " << finfo->fileName << "\n"
-          << "link:    " << pinfo->linkName << "\n"
-          << "pretty:  " << pinfo->prettyName << "\n"
-          << "parse:   " << pinfo->func->name() << "\n"
-          << "line:    " << pinfo->line_num << "\n";
+	     << "  (" << num << "/" << size << ")\n"
+	     << "group:   0x" << hex << ginfo->start
+	     << "--0x" << ginfo->end << dec << "\n"
+	     << "file:    " << finfo->fileName << "\n"
+	     << "link:    " << pinfo->linkName << "\n"
+	     << "pretty:  " << pinfo->prettyName << "\n"
+	     << "parse:   " << pinfo->func->name() << "\n"
+	     << "line:    " << pinfo->line_num << "\n";
       }
     }
   }
@@ -1517,11 +1488,11 @@ doFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo, bool fullGaps
 
     if (call_it != callMap.end()) {
       cout << "\ncall site prefix:  0x" << hex << call_it->second
-        << " -> 0x" << call_it->first << dec << "\n";
+	   << " -> 0x" << call_it->first << dec << "\n";
       for (auto pit = prefix.begin(); pit != prefix.end(); ++pit) {
         cout << "inline:  l=" << pit->getLineNum()
-          << "  f='" << pit->getFileName()
-          << "'  p='" << debugPrettyName(pit->getPrettyName()) << "'\n";
+	     << "  f='" << pit->getFileName()
+	     << "'  p='" << debugPrettyName(pit->getPrettyName()) << "'\n";
       }
     }
 #endif
@@ -1590,7 +1561,7 @@ doFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo, bool fullGaps
     // (alt-file) and use the symtab file for gaps only.
     if (pinfo->gap_only) {
       DEBUG_CFG("\nskipping full parse (gap only) for function:  '"
-        << func->name() << "'\n");
+		<< func->name() << "'\n");
       continue;
     }
 
@@ -1627,23 +1598,23 @@ doFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo, bool fullGaps
 
 #if DEBUG_CFG_SOURCE
     cout << "\nfinal inline tree:  (" << num << "/" << num_funcs << ")"
-      << "  link='" << pinfo->linkName << "'\n"
-      << "parse:  '" << func->name() << "'\n";
+	 << "  link='" << pinfo->linkName << "'\n"
+	 << "parse:  '" << func->name() << "'\n";
 
     if (call_it != callMap.end()) {
       cout << "\ncall site prefix:  0x" << hex << call_it->second
-        << " -> 0x" << call_it->first << dec << "\n";
+	   << " -> 0x" << call_it->first << dec << "\n";
       for (auto pit = prefix.begin(); pit != prefix.end(); ++pit) {
         cout << "inline:  l=" << pit->getLineNum()
-          << "  f='" << pit->getFileName()
-          << "'  p='" << debugPrettyName(pit->getPrettyName()) << "'\n";
+	     << "  f='" << pit->getFileName()
+	     << "'  p='" << debugPrettyName(pit->getPrettyName()) << "'\n";
       }
     }
     cout << "\n";
     debugInlineTree(root, NULL, *(env.strTab), 0, true);
     cout << "\nend proc:  (" << num << "/" << num_funcs << ")"
-      << "  link='" << pinfo->linkName << "'\n"
-      << "parse:  '" << func->name() << "'\n";
+	 << "  link='" << pinfo->linkName << "'\n"
+	 << "parse:  '" << func->name() << "'\n";
 #endif
   }
 
@@ -1672,9 +1643,9 @@ doFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo, bool fullGaps
 
   if (! ginfo->alt_file) {
     cout << "\ncovered:\n"
-      << covered.toString() << "\n"
-      << "\ngaps:\n"
-      << ginfo->gapSet.toString() << "\n";
+	 << covered.toString() << "\n"
+	 << "\ngaps:\n"
+	 << ginfo->gapSet.toString() << "\n";
   }
   else {
     cout << "\ngaps: alt-file\n";
@@ -1779,6 +1750,7 @@ doLoopLate(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
 
   return root;
 }
+
 //----------------------------------------------------------------------
 
 // Process one basic block.
@@ -1821,19 +1793,19 @@ doBlock(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
 #endif
   block->getInsns(imap);
 
-  int len = 0; // avoid warning about uninitialized
-  std::string device;
+  int len = 0;
+  string device;
 
   if (cuda_arch > 0) {
-    device= "NVIDIA sm_" + std::to_string(cuda_arch);
-    len = cuda_arch >= 70 ? 16 : 8;
+    device = "NVIDIA sm_" + std::to_string(cuda_arch);
+    len = (cuda_arch >= 70) ? 16 : 8;
   }
   
   for (auto iit = imap.begin(); iit != imap.end(); ++iit) {
     auto next_it = iit;  next_it++;
     Offset vma = iit->first;
     string filenm = "";
-    uint line;
+    uint line = 0;
 
     if (cuda_arch == 0) {
 #ifdef DYNINST_INSTRUCTION_PTR
@@ -1851,7 +1823,8 @@ doBlock(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
 
     // a call must be the last instruction in the block
     if (next_it == imap.end() && is_call) {
-      addStmtToTree(root, *(env.strTab), env.realPath, vma, len, filenm, line, device, is_call, is_sink, target);
+      addStmtToTree(root, *(env.strTab), env.realPath, vma, len, filenm, line,
+		    device, is_call, is_sink, target);
     }
     else {
       addStmtToTree(root, *(env.strTab), env.realPath, vma, len, filenm, line, device);
@@ -1863,8 +1836,8 @@ doBlock(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
 #endif
 }
 
-
 //---------------------------------------------------------------------- 
+
 // Unparsable functions 
 // 
 static void 
@@ -1891,9 +1864,9 @@ doUnparsableFunctionList(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo)
   } 
 } 
 
-
 static void 
-doUnparsableFunction(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func, TreeNode * root)
+doUnparsableFunction(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func,
+		     TreeNode * root)
 { 
   LineMapCache lmcache (ginfo->sym_func, env.realPath);
  
@@ -1903,7 +1876,7 @@ doUnparsableFunction(WorkEnv & env, GroupInfo * ginfo, ParseAPI::Function * func
     uint line = 0; 
  
     lmcache.getLineInfo(vma, filenm, line); 
-    std::string device;
+    string device;
     addStmtToTree(root, *(env.strTab), env.realPath, vma, len, filenm, line, device);
   }
 }
@@ -1946,16 +1919,18 @@ addGaps(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo)
         SrcFile::ln line = svec[0]->getLine();
         VMA end = std::min(((VMA) svec[0]->endAddr()), end_gap);
 
-        std::string device;
-        addStmtToTree(root, *(env.strTab), env.realPath, vma, end - vma, filenm, line, device);
+        string device;
+        addStmtToTree(root, *(env.strTab), env.realPath, vma, end - vma,
+		      filenm, line, device);
         vma = end;
       }
       else {
         // fixme: could be better at finding end of range
         VMA end = std::min(vma + 4, end_gap);
 
-        std::string device;
-        addStmtToTree(root, *(env.strTab), env.realPath, vma, end - vma, finfo->fileName, pinfo->line_num, device);
+        string device;
+        addStmtToTree(root, *(env.strTab), env.realPath, vma, end - vma,
+		      finfo->fileName, pinfo->line_num, device);
         vma = end;
       }
     }
@@ -2015,7 +1990,6 @@ findLoopHeader(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo,
 
       if (type != ParseAPI::CALL && type != ParseAPI::CALL_FT) {
         if (bset.find(dest) != bset.end()) { in_loop = true; }
-
         else { out_loop = true; }
       }
     }
@@ -2117,9 +2091,9 @@ findLoopHeader(WorkEnv & env, FileInfo * finfo, GroupInfo * ginfo,
     depth_root++;
 
     DEBUG_CFG("inline:  l=" << flp.line_num
-	       << "  f='" << strTab->index2str(flp.file_index)
-	       << "'  p='" << debugPrettyName(strTab->index2str(flp.pretty_index))
-	       << "'\n");
+	      << "  f='" << strTab->index2str(flp.file_index)
+	      << "'  p='" << debugPrettyName(strTab->index2str(flp.pretty_index))
+	      << "'\n");
   }
 found_level:
 
@@ -2170,7 +2144,7 @@ found_level:
       HeaderInfo * info = &(cit->second);
 
       if (info->depth == depth_root && info->base_index != empty_index
-        && info->base_index == proc_base) {
+	  && info->base_index == proc_base) {
         file_ans = proc_file;
         base_ans = proc_base;
         goto found_file;
@@ -2186,7 +2160,7 @@ found_level:
       HeaderInfo * info = &(cit->second);
 
       if (info->depth == depth_root && info->base_index != empty_index
-        && info->base_index == flp.base_index) {
+	  && info->base_index == flp.base_index) {
         file_ans = flp.file_index;
         base_ans = flp.base_index;
         goto found_file;
@@ -2266,7 +2240,7 @@ found_file:
     LoopInfo * linfo = *lit;
 
     if (linfo->base_index == base_ans
-      && (line_ans == 0 || (linfo->line_num > 0 && linfo->line_num < line_ans))) {
+	&& (line_ans == 0 || (linfo->line_num > 0 && linfo->line_num < line_ans))) {
       line_ans = linfo->line_num;
     }
   }
@@ -2276,13 +2250,13 @@ found_file:
     HeaderInfo * info = &(cit->second);
 
     if (info->depth == depth_root
-      && (line_ans == 0 || (info->line_num > 0 && info->line_num < line_ans))) {
+	&& (line_ans == 0 || (info->line_num > 0 && info->line_num < line_ans))) {
       line_ans = info->line_num;
     }
   }
 
   DEBUG_CFG("\nheader:  l=" << line_ans << "  f='"
-	     << strTab->index2str(file_ans) << "'\n");
+	    << strTab->index2str(file_ans) << "'\n");
 
   vector <Block *> entryBlocks;
   loop->getLoopEntries(entryBlocks);
@@ -2738,9 +2712,9 @@ debugInlineTree(TreeNode * node, LoopInfo * info, HPC::StringTable & strTab,
       FLPIndex flp = *pit;
 
       cout << "inline:  l=" << flp.line_num
-        << "  f='" << strTab.index2str(flp.file_index)
-        << "'  p='" << debugPrettyName(strTab.index2str(flp.pretty_index))
-        << "'\n";
+	   << "  f='" << strTab.index2str(flp.file_index)
+	   << "'  p='" << debugPrettyName(strTab.index2str(flp.pretty_index))
+	   << "'\n";
       depth++;
     }
 
@@ -2748,9 +2722,9 @@ debugInlineTree(TreeNode * node, LoopInfo * info, HPC::StringTable & strTab,
       cout << INDENT;
     }
     cout << "loop:  " << info->name
-      << (info->irred ? "  (irred)" : "")
-      << "  l=" << info->line_num
-      << "  f='" << strTab.index2str(info->file_index) << "'\n";
+	 << (info->irred ? "  (irred)" : "")
+	 << "  l=" << info->line_num
+	 << "  f='" << strTab.index2str(info->file_index) << "'\n";
     depth++;
   }
 
@@ -2775,9 +2749,9 @@ debugInlineTree(TreeNode * node, LoopInfo * info, HPC::StringTable & strTab,
       cout << INDENT;
     }
     cout << "inline:  l=" << flp.line_num
-      << "  f='"  << strTab.index2str(flp.file_index)
-      << "'  p='" << debugPrettyName(strTab.index2str(flp.pretty_index))
-      << "'\n";
+	 << "  f='"  << strTab.index2str(flp.file_index)
+	 << "'  p='" << debugPrettyName(strTab.index2str(flp.pretty_index))
+	 << "'\n";
 
     debugInlineTree(nit->second, NULL, strTab, depth + 1, expand_loops);
   }
@@ -2791,9 +2765,9 @@ debugInlineTree(TreeNode * node, LoopInfo * info, HPC::StringTable & strTab,
     }
 
     cout << "loop:  " << info->name
-      << (info->irred ? "  (irred)" : "")
-      << "  l=" << info->line_num
-      << "  f='" << strTab.index2str(info->file_index) << "'\n";
+	 << (info->irred ? "  (irred)" : "")
+	 << "  l=" << info->line_num
+	 << "  f='" << strTab.index2str(info->file_index) << "'\n";
 
     if (expand_loops) {
       debugInlineTree(info->node, NULL, strTab, depth + 1, expand_loops);

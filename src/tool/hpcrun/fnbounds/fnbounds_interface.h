@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -70,7 +70,7 @@ void
 fnbounds_unmap_closed_dsos();
 
 bool
-fnbounds_ensure_mapped_dso(const char *module_name, void *start, void *end);
+fnbounds_ensure_mapped_dso(const char *module_name, void *start, void *end, struct dl_phdr_info*);
 
 void
 fnbounds_fini();

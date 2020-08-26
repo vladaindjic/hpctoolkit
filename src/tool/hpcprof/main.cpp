@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -168,7 +168,7 @@ realmain(int argc, char* const* argv)
   // 1a. Create canonical CCT // Normalize trace files
   // ------------------------------------------------------------
 
-  int mergeTy = Prof::CallPath::Profile::Merge_CreateMetric;
+  int mergeTy = Prof::CallPath::Profile::Merge_MergeMetricByName;
   Analysis::Util::UIntVec* groupMap =
     (nArgs.groupMax > 1) ? nArgs.groupMap : NULL;
 
@@ -300,7 +300,7 @@ makeMetrics(Prof::CallPath::Profile& prof,
   if (!Analysis::Args::MetricFlg_isThread(args.prof_metrics)) {
     for (uint mId = mSrcBeg; mId < mSrcEnd; ++mId) {
       Prof::Metric::ADesc* m = mMgr.metric(mId);
-      m->isVisible(false);
+      m->visibility(HPCRUN_FMT_METRIC_HIDE);
     }
   }
 

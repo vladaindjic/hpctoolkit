@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -78,7 +78,6 @@
 #include <unistd.h>    // getpid
 
 
-#include <include/hpctoolkit-config.h>
 
 //*********************************************************************
 // external libraries
@@ -99,6 +98,7 @@
 #include <hpcrun_dlfns.h>
 #include <hpcrun_stats.h>
 #include <disabled.h>
+#include <files.h>
 #include <loadmap.h>
 #include <epoch.h>
 #include <sample_event.h>
@@ -108,6 +108,10 @@
 #include <messages/messages.h>
 
 #include <lib/prof-lean/spinlock.h>
+#include <lib/prof-lean/vdso.h>
+
+#include <include/hpctoolkit-config.h>
+
 
 
 //*********************************************************************
@@ -187,8 +191,6 @@ fnbounds_init()
 bool
 fnbounds_enclosing_addr(void* ip, void** start, void** end, load_module_t** lm)
 {
-  FNBOUNDS_LOCK;
-
   bool ret = false; // failure unless otherwise reset to 0 below
   
   load_module_t* lm_ = fnbounds_get_loadModule(ip);
@@ -221,8 +223,6 @@ fnbounds_enclosing_addr(void* ip, void** start, void** end, load_module_t** lm)
     *lm = lm_;
   }
 
-  FNBOUNDS_UNLOCK;
-
   return ret;
 }
 
@@ -237,7 +237,10 @@ fnbounds_enclosing_addr(void* ip, void** start, void** end, load_module_t** lm)
 void
 fnbounds_map_open_dsos()
 {
+  FNBOUNDS_LOCK;
   dylib_map_open_dsos();
+  hpcrun_syserv_fini();
+  FNBOUNDS_UNLOCK;
 }
 
 
@@ -291,11 +294,13 @@ fnbounds_dso_exec(void)
   void** nm_table = (void**) hpcrun_syserv_query(filename, &fh);
   if (! nm_table) {
     EMSG("No nm_table for executable %s", filename);
-    return hpcrun_dso_make(filename, NULL, NULL, NULL, NULL, 0);
+    dylib_find_executable_bounds(&start, &end);
+    return hpcrun_dso_make(filename, NULL, NULL, start, end, 0);
   }
   if (fh.num_entries < 1) {
     EMSG("fnbounds returns no symbols for file %s, (all intervals poisoned)", filename);
-    return hpcrun_dso_make(filename, NULL, NULL, NULL, NULL, 0);
+    dylib_find_executable_bounds(&start, &end);
+    return hpcrun_dso_make(filename, NULL, NULL, start, end, 0);
   }
   TMSG(MAP_EXEC, "Relocatable exec");
   if (fh.is_relocatable) {
@@ -326,26 +331,27 @@ fnbounds_dso_exec(void)
 }
 
 bool
-fnbounds_ensure_mapped_dso(const char *module_name, void *start, void *end)
+fnbounds_ensure_mapped_dso(const char *module_name, void *start, void *end, struct dl_phdr_info* info)
 {
   bool isOk = true;
-
-  FNBOUNDS_LOCK;
 
   load_module_t *lm = hpcrun_loadmap_findByAddr(start, end);
   if (!lm) {
     dso_info_t *dso = fnbounds_compute(module_name, start, end);
     if (dso) {
-      hpcrun_loadmap_map(dso);
+      lm = hpcrun_loadmap_map(dso);
+      if (info != NULL) {
+        lm->phdr_info = *info;
+      }
     }
     else {
       EMSG("!! INTERNAL ERROR, not possible to map dso for %s (%p, %p)",
 	   module_name, start, end);
       isOk = false;
     }
+  } else if (lm->phdr_info.dlpi_phdr == NULL) {
+    if (info != NULL) lm->phdr_info = *info;
   }
-
-  FNBOUNDS_UNLOCK;
 
   return isOk;
 }
@@ -433,20 +439,33 @@ fnbounds_compute(const char* incoming_filename, void* start, void* end)
   void** nm_table;
   long map_size;
 
+  // typically, we use the filename for the query to the system server. however, 
+  // for [vdso], the filename will be the name of a file in the measurements
+  // directory where a copy of the [vdso] segment will be saved. for parallel programs,
+  // there is a race between the one process that opens the file first in exclusive
+  // mode and other processes that just continue. one of the continuing processes
+  // might try to invoke the system server to compute function bounds based on the 
+  // file contents before the file is completely written. for that reason, we use
+  // declare below pathname_for_query, which will just be [vdso] rather than the
+  // name of the file that contains a copy. given [vdso], the system server will
+  // compute the bounds using its own memory-mapped copy of [vdso] rather than
+  // waiting for the file to be written -- johnmc 7/2017 
+  const char *pathname_for_query;  
   if (incoming_filename == NULL) {
     return (NULL);
   }
 
-  // linux-vdso.so and linux-gate.so are virtual files and don't exist
+  // [vdso] and linux-gate.so are virtual files and don't exist
   // in the file system.
-  if (strncmp(incoming_filename, "linux-vdso.so", 13) == 0
-      || strncmp(incoming_filename, "linux-gate.so", 13) == 0) {
-    return hpcrun_dso_make(incoming_filename, NULL, NULL, start, end, 0);
+  if (strncmp(incoming_filename, "linux-gate.so", 13) == 0) {
+    strncpy(filename, incoming_filename, PATH_MAX);
+    pathname_for_query = filename;
+  } else {
+    realpath(incoming_filename, filename);
+    pathname_for_query = filename;
   }
 
-  realpath(incoming_filename, filename);
-
-  nm_table = (void**) hpcrun_syserv_query(filename, &fh);
+  nm_table = (void**) hpcrun_syserv_query(pathname_for_query, &fh);
   if (nm_table == NULL) {
     return hpcrun_dso_make(filename, NULL, NULL, start, end, 0);
   }
@@ -520,14 +539,6 @@ fnbounds_get_loadModule(void *ip)
 static void
 fnbounds_map_executable()
 {
-  // dylib_map_executable() ==>
-  // fnbounds_ensure_mapped_dso("/proc/self/exe", NULL, NULL) ==>
-  //{
-  //   FNBOUNDS_LOCK;
-  //   dso = fnbound_compute(exename, ...);
-  //   hpcrun_loadmap_map(dso);
-  //   FNBOUNDS_UNLOCK;
-  //}
   FNBOUNDS_LOCK;
   hpcrun_loadmap_map(fnbounds_dso_exec());
   FNBOUNDS_UNLOCK;

@@ -12,7 +12,7 @@
 // HPCToolkit is at 'hpctoolkit.org' and in 'README.Acknowledgments'.
 // --------------------------------------------------------------------------
 //
-// Copyright ((c)) 2002-2019, Rice University
+// Copyright ((c)) 2002-2020, Rice University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -62,17 +62,23 @@ namespace Struct {
 class Options {
 public:
   int  jobs;
+  int  jobs_struct;
   int  jobs_parse;
   int  jobs_symtab;
   bool show_time;
+  long gpu_size;
+  bool compute_gpu_cfg;
   bool ourDemangle;
 
   Options()
   {
     jobs = 1;
+    jobs_struct = 1;
     jobs_parse = 1;
     jobs_symtab = 1;
     show_time = false;
+    gpu_size = 0;
+    compute_gpu_cfg = false;
     ourDemangle = false;
   }
 };
