@@ -613,7 +613,8 @@ ompt_elide_runtime_frame_internal(
 }
 
 
-static void
+// non-zero value means that something was wrong
+int
 next_region_matching_task
 (
   int *task_level,
@@ -632,10 +633,9 @@ next_region_matching_task
   ompt_data_t *td = hpcrun_ompt_get_task_data(local_task_level);
 
   if (!td) {
+    // TODO vi3 (08/26)
     // have no idea what to do
-    printf("vi3 provide: No task data: \n");
-    // TODO: this is also possible
-    return;
+    return - 1;
   }
 
   int td_depth = -1;
@@ -670,13 +670,16 @@ next_region_matching_task
           local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
           goto return_label;
         }
+      } else {
+        // TODO vi3 (08/26)
+        //printf("vi3 provide: How I omit this???\n");
       }
     } else {
-      printf("vi3 provide: Missing necessary information: %p,"
-             " task_depth: %d, reg_depth: %d\n", td->ptr, local_task_level,
-             local_region_level);
+        //printf("vi3 provide: Missing necessary information: %p,"
+        //     " task_depth: %d, reg_depth: %d\n", td->ptr, local_task_level,
+        //     local_region_level);
     }
-    return;
+    return -2;
   }
 
   if (local_region_level == -1 || local_parent_region == NULL) {
@@ -684,36 +687,45 @@ next_region_matching_task
     local_child_region = local_parent_region;
     local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
     if (!local_parent_region && !(flags0 & ompt_task_initial)) {
-      printf("vi3 provide: No region at this level\n");
-      goto return_label;
+      //printf("vi3 provide: No region at this level\n");
+      return -3;
     }
   }
 
   if (td_depth == local_parent_region->depth) {
     // parent_region matching depth of the task
     goto return_label;
-  }
-
-
-  if (local_parent_region->depth - 1 == td_depth) {
+  } else if (local_parent_region->depth - 1 == td_depth) {
     // take outer region to match task
     local_child_region = local_parent_region;
     local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
     goto return_label;
-  } else if (flags0 & ompt_task_initial && local_parent_region->depth == 0) {
+  } else if ((flags0 & ompt_task_initial) && local_parent_region->depth == 0) {
     // we found both outermost task and region
     local_child_region = local_parent_region;
     local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
     goto return_label;
-  } else if (local_parent_region->depth == td_depth ) {
-    // Task corresponds to the region, do nothing.
   } else if (td_depth > local_parent_region->depth) {
     // TODO for-nested-functions (USE_NESTED_TASKS)
     // This makes no sense.
+    //printf("Makes no sense\n");
+    return -4;
   } else {
-    printf("vi3 provide: Something wasn't done properly before: flags: %x,"
-           " td_depth: %d, parent_depth: %d\n",
-           flags0, td_depth, local_parent_region->depth);
+    // for-nested-functions.c (USE_NESTED_TASKS)
+    // Task by levels:
+    // 0 - explicit task (exit_frame set)
+    // 1 - implicit untied (why???)
+    // 2 - implicit (enter = 0, exit = 0) Suspended I guess
+    // 3 - implicit (enter and exit set)
+    // 4 - implicit (enter and exit set)
+    // 5 - implicit (enter and exit set)
+    // 6 - initial (enter=0, exit set)
+    // TODO vi3 (08/26)
+    // Don't understand this situation at all.
+    //printf("vi3 provide: Something wasn't done properly before: flags: %x,"
+    //       " td_depth: %d, parent_depth: %d\n",
+    //       flags0, td_depth, local_parent_region->depth);
+    return -5;
   }
 
   return_label:
@@ -722,6 +734,7 @@ next_region_matching_task
     *region_level = local_region_level;
     *child_region = local_child_region;
     *parent_region = local_parent_region;
+    return 0;
   };
 
 
@@ -746,6 +759,49 @@ provide_region_refix_segment
   *region_data = NULL;
 }
 
+#if 0
+int vi3_edge_case(
+    ompt_frame_t **f0,
+    ompt_frame_t **f1,
+    ompt_frame_t **f2,
+    ompt_frame_t **f3,
+    ompt_frame_t **f4,
+    ompt_frame_t **f5,
+    ompt_frame_t **f6) {
+  ompt_frame_t  *frame0 = hpcrun_ompt_get_task_frame(0);
+  ompt_frame_t  *frame1 = hpcrun_ompt_get_task_frame(1);
+  ompt_frame_t  *frame2 = hpcrun_ompt_get_task_frame(2);
+  ompt_frame_t  *frame3 = hpcrun_ompt_get_task_frame(3);
+  ompt_frame_t  *frame4 = hpcrun_ompt_get_task_frame(4);
+  ompt_frame_t  *frame5 = hpcrun_ompt_get_task_frame(5);
+  ompt_frame_t  *frame6 = hpcrun_ompt_get_task_frame(6);
+
+
+  *f0 = frame0;
+  *f1 = frame1;
+  *f2 = frame2;
+  *f3 = frame3;
+  *f4 = frame4;
+  *f5 = frame5;
+  *f6 = frame6;
+
+
+  if (frame0 && frame1 && frame2 && frame3 && frame4 && frame5 && frame6) {
+    if (fp_enter(frame0) == 0 && fp_exit(frame0) != 0) {
+      if (fp_enter(frame1) == 0 && fp_exit(frame1) == 0) {
+        if (fp_enter(frame2) == 0 && fp_exit(frame2) == 0) {
+          if (fp_exit(frame3) == fp_enter(frame4)) {
+            //printf("Zastoooooooooooooooooooooo???\n");
+            return 1;
+          }
+        }
+      }
+    }
+  }
+  return 0;
+}
+#endif
+
 // Return value
 // zero     - call path is provided
 // non-zero - some of the edge case that is not handled for now
@@ -758,6 +814,9 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   int isSync
 )
 {
+#if 0
+  VI3_EDGE = 0;
+#endif
   // invalidate omp_task_context of previous sample
   // FIXME vi3 >>> It should be ok to do this.
   TD_GET(omp_task_context) = 0;
@@ -792,7 +851,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   switch(thread_state) {
     case ompt_state_wait_barrier:
     case ompt_state_wait_barrier_implicit: // mark it idle
-      printf("This should be deprecated\n");
+      //printf("This should be deprecated\n");
       return -1;
     case ompt_state_wait_barrier_implicit_parallel:
       // printf("vi3 provide: Wait on the implicit barrier "
@@ -893,7 +952,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         // TODO vi3 (08/23/2020): how about checking parent_region->depth,
         //  not sure if this is enough
         if (!parent_region) {
-          printf("vi3: Parallel data hasn't set yet");
+          //printf("vi3: Parallel data hasn't set yet");
           return -3;
         }
         // task_data hasn't been filled yet, since implicit task hasn't
@@ -907,8 +966,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         // This happens before ompt_callback_parallel_end and team hasn't been
         // torn apart. FIXME vi3 hopes.
       } else {
-        printf("vi3: Thread is not creating nor "
-               "destroying the region\n");
+        //printf("vi3: Thread is not creating nor "
+        //       "destroying the region\n");
         return -4;
       }
     } else if (thread_state == ompt_state_work_parallel
@@ -919,7 +978,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         child_region = parent_region;
         parent_region = hpcrun_ompt_get_region_data(++reg_anc_lev);
         if (!parent_region) {
-          printf("vi3 provide: Why is parallel data unavailable?\n");
+          //printf("vi3 provide: Why is parallel data unavailable?\n");
           return -5;
         }
       } else if (parent_region) {
@@ -927,8 +986,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         // or is destroying the suspended one (task_frames invalidated).
         // Skip this frame.
       } else {
-        printf("vi3 provide: Thread is not creating nor"
-               "destroying explicit task.\n");
+        //printf("vi3 provide: Thread is not creating nor"
+        //       "destroying explicit task.\n");
         return -6;
       }
     } else if (thread_state == ompt_state_wait_barrier_implicit_parallel
@@ -970,7 +1029,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     flags0 = hpcrun_ompt_get_task_flags(i);
 
     if (!frame0) {
-      printf("vi3: Why this happens??? -3");
+      //printf("vi3: Why this happens??? -3");
       return -3;
       if (thread_type == ompt_thread_initial) goto return_label;
 
@@ -1114,7 +1173,17 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     // frames at top of stack elided. continue with the rest
   }
 
-  //just for now, skip all edge cases
+#if 0
+  ompt_frame_t *tf0 = NULL;
+  ompt_frame_t *tf1 = NULL;
+  ompt_frame_t *tf2 = NULL;
+  ompt_frame_t *tf3 = NULL;
+  ompt_frame_t *tf4 = NULL;
+  ompt_frame_t *tf5 = NULL;
+  ompt_frame_t *tf6 = NULL;
+
+  VI3_EDGE = vi3_edge_case(&tf0,&tf1,&tf2,&tf3,&tf4,&tf5,&tf6);
+#endif
 
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
@@ -1172,6 +1241,9 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
                                      &child_region);
       }
     }
+    // reset frames
+    child_prefix_inner = NULL;
+    child_prefix_outer = NULL;
 
     if (exit0_flag && omp_task_context) {
       if (bt_outer_to_return == bt->last) {
@@ -1186,7 +1258,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         break;
       }
     }
-
+    frame0 = frame1;
+    flags0 = flags1;
     frame1 = hpcrun_ompt_get_task_frame(++i);
     flags1 = hpcrun_ompt_get_task_flags(i);
     if (!frame1) break;
@@ -1220,6 +1293,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     //  Run region-in-task3.c
     while (fp_enter(frame1) == 0) {
       // skip frame1, since I don't think this should happen.
+      frame0 = frame1;
+      flags0 = flags1;
       frame1 = hpcrun_ompt_get_task_frame(++i);
       flags1 = hpcrun_ompt_get_task_flags(i);
       if (!frame1) break;
@@ -1243,8 +1318,13 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     if ((fp_enter(frame1) == fp_exit(frame0)) &&
         (ff_is_appl(FF(frame0, exit)) &&
          ff_is_rt(FF(frame1, enter)))) {
-      // I think it should be child innermost frame
-      child_prefix_inner = it;
+      if (flags0 & ompt_task_implicit) {
+        // Going from implicit to implicit task, or from
+        // implicit to explicit task. Both outer task should
+        // be start of the prefix
+        // I think it should be child innermost frame
+        child_prefix_inner = it;
+      }
       continue;
     }
 
@@ -1268,7 +1348,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
           // FIXME vi3 (08/18): or it should be it - 1?
           int vi3_offet = ff_is_appl(FF(frame1, enter)) ? 1 : 0;
           if (vi3_offet) {
-            printf("vi3 provide: What to do know??? :(");
+            //printf("vi3 provide: What to do know??? :(");
           }
           child_prefix_inner = it - vi3_offet;
           break;
@@ -1331,7 +1411,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         // Why this happens???
       } else {
         // never happened
-        printf("vi3 provide: Can this happen??? %p\n", fp_enter(frame1));
+        //printf("vi3 provide: Can this happen??? %p\n", fp_enter(frame1));
       }
       // TODO: 0x6000002 for task?
       break;
