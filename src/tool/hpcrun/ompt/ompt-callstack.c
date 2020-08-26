@@ -665,7 +665,7 @@ next_region_matching_task
           // task. Task data has not been filled in yet, since
           // ompt_implicit_task_begin hasn't been called yet.
           // Innermost parallel data corresponds to the innermost task frame
-          assert(local_region_level == -1);
+          //assert(local_region_level == -1);
           local_child_region = local_parent_region;
           local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
           goto return_label;
@@ -1105,10 +1105,10 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
           if (thread_state == ompt_state_wait_barrier_implicit_parallel) {
             // i == 1 if innermost task is suspended implicit
             // i == 2 if innermost task is suspended explicit
-            assert(i == 1 || i == 2);
-            assert(child_region != NULL);
+            //assert(i == 1 || i == 2);
+            //assert(child_region != NULL);
             // level of child_region
-            assert(reg_anc_lev - 1 == 0);
+            //assert(reg_anc_lev - 1 == 0);
             // innermost frame of the child region (should be the innermost region)
             child_prefix_inner = it;
           } else {
@@ -1517,8 +1517,8 @@ ompt_elide_runtime_frame(
       int ret = ompt_provide_callpaths_while_elide_runtime_frame_internal(bt, region_id, isSync);
       if (!ret)
         return;
-      else
-        printf("vi3 provide: Edge case: %d\n", ret);
+      //else
+      //  printf("vi3 provide: Edge case: %d\n", ret);
     }
   }
 #endif

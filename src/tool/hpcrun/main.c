@@ -644,9 +644,9 @@ hpcrun_fini_internal()
   // vi3: Finishing with measuring execution time.
   double vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-  AMSG("stack-lazy <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+  AMSG("early <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-  printf("stack-lazy <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  printf("early <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
 
   hpcrun_disable_sampling();
@@ -686,9 +686,9 @@ hpcrun_fini_internal()
 
     vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("stack-lazy (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+    AMSG("early (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-     printf("stack-lazy (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+     printf("early (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
 
     // write all threads' profile data and close trace file
@@ -698,16 +698,16 @@ hpcrun_fini_internal()
 
     vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("stack-lazy (very end) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+    AMSG("early (very end) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-     printf("stack-lazy (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+     printf("early (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
     // printf("hpcrun_fini_internal - end\n");
     double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("stack-lazy (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+    AMSG("early (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 #else
-     printf("stack-lazy (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+     printf("early (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 #endif
 
     hpcrun_stats_print_summary();
