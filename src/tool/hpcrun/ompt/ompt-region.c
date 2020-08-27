@@ -165,8 +165,10 @@ ompt_parallel_begin_internal
   typed_stack_next_set(region, sstack)(region_data, parent_region);
 #endif
 
+#if 0
   // add region on the stack
   hpcrun_ompt_initialize_new_master_region(region_data);
+#endif
 
   if (ompt_eager_context_p()) {
      region_data->call_path =
@@ -191,15 +193,14 @@ ompt_parallel_end_internal
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
-  typed_random_access_stack_elem(region) *top_el =
-      typed_random_access_stack_top(region)(region_stack);
-  // get the innermost region
-  typed_stack_elem(region) *top_reg = top_el->region_data;
-  if (top_reg != region_data) {
-    region_data = top_reg;
-  }
-
   if (!ompt_eager_context_p()){
+    typed_random_access_stack_elem(region) *top_el =
+        typed_random_access_stack_top(region)(region_stack);
+    // get the innermost region
+    typed_stack_elem(region) *top_reg = top_el->region_data;
+    if (top_reg != region_data) {
+      region_data = top_reg;
+    }
 #if DEBUG_BARRIER_CNT
     // Debug only
     // Mark that this region is finished
@@ -363,7 +364,7 @@ ompt_implicit_task_internal_begin
     // do nothing for initial tasks.
     return;
   }
-
+#if 0
   if (index != 0) {
     // thread is the worker of the region
     if (hpcrun_ompt_is_thread_region_owner(region_data)) {
@@ -378,7 +379,7 @@ ompt_implicit_task_internal_begin
     // move to the next execution phase
     hpcrun_ompt_next_region_execution_phase();
   }
-
+#endif
   cct_node_t *prefix = region_data->call_path;
   // allocate ompt_task_data_t structure to store needed info
   ompt_task_data_t *ompt_task_data =
@@ -425,6 +426,7 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
+#if 0
   if (hpcrun_ompt_is_thread_master_of_the_innermost_region()) {
     // thread is region's master, move to the next phase
     hpcrun_ompt_next_region_execution_phase();
@@ -432,6 +434,7 @@ ompt_implicit_task_internal_end
     // thread is the worker of the region, so remove the region from the stack
     hpcrun_ompt_finalize_worker_region();
   }
+#endif
 
   if (!ompt_eager_context_p()) {
     // try to resolve some regions, if any
@@ -584,7 +587,7 @@ ompt_region_release
   ompt_region_freelist_put(r);
 }
 
-
+#if 0
 static void
 ompt_sync
 (
@@ -615,6 +618,7 @@ ompt_sync
       assert(0);
   }
 }
+#endif
 
 //*****************************************************************************
 // interface operations
@@ -650,7 +654,10 @@ ompt_parallel_region_register_callbacks
                                 (ompt_callback_t)ompt_implicit_task);
   assert(ompt_event_may_occur(retval));
 
+  // avoid registering sync callback
+#if 0
   retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
                                 (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
+#endif
 }
