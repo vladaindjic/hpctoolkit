@@ -313,10 +313,9 @@ ompt_elide_runtime_frame(
   // collapse callstack if a thread is idle or waiting in a barrier
   switch(check_state()) {
     case ompt_state_wait_barrier:
-      // According to standard, this should never happen.
-      // Current implementation of runtime shows this state
-      // when thread is waiting on explicit barrier
     case ompt_state_wait_barrier_implicit: // mark it idle
+      // previous two states should be deprecated
+    case ompt_state_wait_barrier_implicit_parallel:
       TD_GET(omp_task_context) = 0;
       if (hpcrun_ompt_get_thread_num(0) != 0) {
         collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
