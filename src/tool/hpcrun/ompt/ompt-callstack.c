@@ -1188,8 +1188,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
     frame_t *exit0 = NULL, *reenter1 = NULL;
-    ompt_frame_t *frame1;
-    int flags1;
+    ompt_frame_t *frame1 = NULL;
+    int flags1 = 0;
 
     frame0 = hpcrun_ompt_get_task_frame(i);
     flags0 = hpcrun_ompt_get_task_flags(i);
@@ -1258,8 +1258,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         break;
       }
     }
-    frame0 = frame1;
-    flags0 = flags1;
+    //frame0 = frame1;
+    //flags0 = flags1;
     frame1 = hpcrun_ompt_get_task_frame(++i);
     flags1 = hpcrun_ompt_get_task_flags(i);
     if (!frame1) break;
@@ -1293,8 +1293,8 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     //  Run region-in-task3.c
     while (fp_enter(frame1) == 0) {
       // skip frame1, since I don't think this should happen.
-      frame0 = frame1;
-      flags0 = flags1;
+      //frame0 = frame1;
+      //flags0 = flags1;
       frame1 = hpcrun_ompt_get_task_frame(++i);
       flags1 = hpcrun_ompt_get_task_flags(i);
       if (!frame1) break;
