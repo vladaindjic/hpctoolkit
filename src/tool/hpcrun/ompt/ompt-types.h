@@ -144,6 +144,10 @@ typedef struct ompt_notification_s {
   struct ompt_region_data_s *region_data;
   // pseudo cct node which corresponds to the region that should be resolve
   cct_node_t *unresolved_cct;
+  // region prefix
+  // The reason I'm introducing this field is because of the case
+  // that region_data may be recycled when thead tries to resolve region.
+  cct_node_t *region_prefix;
   struct mpsc_channel_notification_s *notification_channel;
 } typed_stack_elem(notification);
 

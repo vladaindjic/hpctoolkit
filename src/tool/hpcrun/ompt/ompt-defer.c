@@ -441,6 +441,7 @@ help_notification_alloc
   typed_stack_elem_ptr(notification) notification = hpcrun_ompt_notification_alloc();
   notification->region_data = region_data;
   notification->unresolved_cct = unresolved_cct;
+  notification->region_prefix = NULL;
   notification->notification_channel = &thread_notification_channel;
   return notification;
 }
@@ -1589,7 +1590,7 @@ register_to_all_regions
 void
 resolve_one_region_context
 (
-  typed_stack_elem_ptr(region) region_data,
+  cct_node_t *region_call_path,
   cct_node_t *unresolved_cct
 )
 {
@@ -1598,16 +1599,15 @@ resolve_one_region_context
 
   if (parent_unresolved_cct == NULL) {
     msg_deferred_resolution_breakpoint("resolve_one_region_context: Parent of unresolved_cct node is missing\n");
-  }
-  else if (region_data->call_path == NULL) {
+  } else if (region_call_path == NULL) {
     msg_deferred_resolution_breakpoint("resolve_one_region_context: Region call path is missing\n");
   } else {
-    // prefix should be put between unresolved_cct and parent_unresolved_cct
-    cct_node_t *prefix = NULL;
-    cct_node_t *region_call_path = region_data->call_path;
-
-    // FIXME: why hpcrun_cct_insert_path_return_leaf ignores top cct of the path
-    prefix = hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct, region_call_path);
+    // region prefix (region_call_path) should be put
+    // between unresolved_cct and parent_unresolved_cct
+    // Note: hpcrun_cct_insert_path_return_leaf ignores top cct of the path
+    cct_node_t *prefix =
+        hpcrun_cct_insert_path_return_leaf(parent_unresolved_cct,
+            region_call_path);
 
     if (prefix == NULL) {
       msg_deferred_resolution_breakpoint("resolve_one_region_context: Prefix is not properly inserted\n");
@@ -1643,12 +1643,12 @@ try_resolve_one_region_context
   unresolved_cnt--;
   ompt_region_debug_notify_received(old_head);
 
-  resolve_one_region_context(old_head->region_data, old_head->unresolved_cct);
-
   // check if the notification needs to be forwarded
   typed_stack_elem_ptr(notification) next =
     typed_stack_pop(notification, sstack)(&old_head->region_data->notification_stack);
   if (next) {
+    // store region_prefix and notify next worker in the chain
+    next->region_prefix = old_head->region_prefix;
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
@@ -1656,6 +1656,7 @@ try_resolve_one_region_context
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 
+  resolve_one_region_context(old_head->region_prefix, old_head->unresolved_cct);
   // free notification
   hpcrun_ompt_notification_free(old_head);
 

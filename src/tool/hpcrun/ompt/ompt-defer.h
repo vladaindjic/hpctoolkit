@@ -163,7 +163,7 @@ try_resolve_one_region_context
 void 
 resolve_one_region_context
 (
-  typed_stack_elem_ptr(region) region,
+  cct_node_t *region_call_ath,
   cct_node_t *unresolved_cct
 );
 
