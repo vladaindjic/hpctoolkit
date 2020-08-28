@@ -262,6 +262,18 @@ ompt_parallel_end_internal
                                flags & ompt_parallel_invoker_program);
     }
 
+    cct_node_t *region_prefix = region_data->call_path;
+    if (to_notify){
+      // store region prefix separately from region_data
+      to_notify->region_prefix = region_prefix;
+      // notify first thread in chain
+      typed_channel_shared_push(notification)(to_notify->notification_channel, to_notify);
+    } else {
+      // if none, you can reuse region
+      // this thread is region creator, so it could push to private stack of region channel
+      ompt_region_release(region_data);
+    }
+
     // If master took a sample in this region, it needs to resolve its call path.
     if (stack_el
 #if EARLY_PROVIDE_REGION_PREFIX
@@ -270,7 +282,7 @@ ompt_parallel_end_internal
                 ) {
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
-      resolve_one_region_context(region_data, stack_el->unresolved_cct);
+      resolve_one_region_context(region_prefix, stack_el->unresolved_cct);
       // mark that master resolved this region
       unresolved_cnt--;
       // Since we never do real push and pop operations, it is possible that
@@ -281,14 +293,6 @@ ompt_parallel_end_internal
       stack_el->region_data = NULL;
     }
 
-    if (to_notify){
-      // notify next thread
-      typed_channel_shared_push(notification)(to_notify->notification_channel, to_notify);
-    } else {
-      // if none, you can reuse region
-      // this thread is region creator, so it could push to private stack of region channel
-      ompt_region_release(region_data);
-    }
 #if 1
     // Instead of popping in ompt_implicit_task_end, master of the region
     // will pop region here.
