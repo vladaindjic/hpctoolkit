@@ -635,6 +635,7 @@ next_region_matching_task
   if (!td) {
     // TODO vi3 (08/26)
     // have no idea what to do
+    printf("638\n");
     return - 1;
   }
 
@@ -674,10 +675,12 @@ next_region_matching_task
         // TODO vi3 (08/26)
         //printf("vi3 provide: How I omit this???\n");
       }
+      printf("678\n");
     } else {
         //printf("vi3 provide: Missing necessary information: %p,"
         //     " task_depth: %d, reg_depth: %d\n", td->ptr, local_task_level,
         //     local_region_level);
+      printf("682\n");
     }
     return -2;
   }
@@ -687,7 +690,7 @@ next_region_matching_task
     local_child_region = local_parent_region;
     local_parent_region = hpcrun_ompt_get_region_data(++local_region_level);
     if (!local_parent_region && !(flags0 & ompt_task_initial)) {
-      //printf("vi3 provide: No region at this level\n");
+      printf("vi3 provide: No region at this level\n");
       return -3;
     }
   }
@@ -708,7 +711,7 @@ next_region_matching_task
   } else if (td_depth > local_parent_region->depth) {
     // TODO for-nested-functions (USE_NESTED_TASKS)
     // This makes no sense.
-    //printf("Makes no sense\n");
+    printf("Makes no sense\n");
     return -4;
   } else {
     // for-nested-functions.c (USE_NESTED_TASKS)
@@ -722,9 +725,9 @@ next_region_matching_task
     // 6 - initial (enter=0, exit set)
     // TODO vi3 (08/26)
     // Don't understand this situation at all.
-    //printf("vi3 provide: Something wasn't done properly before: flags: %x,"
-    //       " td_depth: %d, parent_depth: %d\n",
-    //       flags0, td_depth, local_parent_region->depth);
+    printf("vi3 provide: Something wasn't done properly before: flags: %x,"
+           " td_depth: %d, parent_depth: %d\n",
+           flags0, td_depth, local_parent_region->depth);
     return -5;
   }
 
@@ -1150,7 +1153,19 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
               // Since implicit task at level 2 matches parent_region,
               // it should be possible to provide prefix for child_region.
               child_prefix_inner = it;
-            } else{
+            } else if (i == 1 && !parent_region && child_region) {
+              // The child_region should be at depth zero.
+              // Enter_frame of task (should be initial) represents the
+              // innermost frame of the child_region prefix.
+              child_prefix_inner = it;
+            } else if (i == 0 &&
+                      (flags0 & ompt_task_initial) && !parent_region
+                      && child_region) {
+              // Child_region is the only active region.
+              // Frame0 is the initial task, so its enter_frame represents
+              // the innermost frame of child_region prefix.
+              child_prefix_inner = it;
+            } else {
               // TODO for-nested-functions (USE_NESTED_TASKS)
               //printf("vi3 provide: Think good about taking"
               //       " sample inside runtime frames: %d, %p, %p\n", i, parent_region, child_region);
@@ -1502,7 +1517,7 @@ ompt_elide_runtime_frame(
   int isSync
 )
 {
-#if 1
+#if EARLY_PROVIDE_REGION_PREFIX && 1
   // TODO vi3: Worker that is creating a new region, won't enter here,
   //   until it becomes a master.
   if (!ompt_eager_context_p()) {
@@ -1517,8 +1532,8 @@ ompt_elide_runtime_frame(
       int ret = ompt_provide_callpaths_while_elide_runtime_frame_internal(bt, region_id, isSync);
       if (!ret)
         return;
-      //else
-      //  printf("vi3 provide: Edge case: %d\n", ret);
+      else
+        printf("vi3 provide: Edge case: %d\n", ret);
     }
   }
 #endif

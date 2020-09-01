@@ -1776,7 +1776,11 @@ register_to_all_regions
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
   bool all_prefixes_available = true;
-  if (!least_common_ancestor(&lca, region_depth, &all_prefixes_available)) {
+  if (!least_common_ancestor(&lca, region_depth
+#if EARLY_PROVIDE_REGION_PREFIX
+      , &all_prefixes_available
+#endif
+      )) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
     return;
