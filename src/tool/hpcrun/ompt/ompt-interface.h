@@ -98,6 +98,17 @@ hpcrun_ompt_get_task_data
  int level
 );
 
+int
+hpcrun_ompt_get_task_info
+(
+  int ancestor_level,
+  int *flags,
+  ompt_data_t **task_data,
+  ompt_frame_t **task_frame,
+  ompt_data_t **parallel_data,
+  int *thread_num
+);
+
 
 uint64_t 
 hpcrun_ompt_outermost_parallel_id

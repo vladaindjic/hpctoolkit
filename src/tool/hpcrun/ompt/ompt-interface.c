@@ -850,6 +850,23 @@ hpcrun_ompt_get_task_data
 }
 
 
+
+int
+hpcrun_ompt_get_task_info
+(
+  int ancestor_level,
+  int *flags,
+  ompt_data_t **task_data,
+  ompt_frame_t **task_frame,
+  ompt_data_t **parallel_data,
+  int *thread_num
+)
+{
+
+  return ompt_get_task_info_fn(ancestor_level, flags,
+      task_data, task_frame, parallel_data, thread_num);
+}
+
 void *
 hpcrun_ompt_get_idle_frame
 (

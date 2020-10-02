@@ -675,7 +675,9 @@ next_region_matching_task
         // TODO vi3 (08/26)
         //printf("vi3 provide: How I omit this???\n");
       }
-      printf("678\n");
+      // vi3: I think this is ok to happen, since we cannot guarantee that task
+      // is matching the region. But the outer region should be found just fine.
+      // printf("678\n");
     } else {
         //printf("vi3 provide: Missing necessary information: %p,"
         //     " task_depth: %d, reg_depth: %d\n", td->ptr, local_task_level,
@@ -752,6 +754,9 @@ provide_region_refix_segment
   typed_stack_elem(region) **region_data
 )
 {
+  // This consumes a lot of time
+  return;
+
   // Provide segment of region prefix
   (*region_data)->call_path =
       hpcrun_cct_insert_backtrace(hpcrun_get_thread_epoch()->csdata.unresolved_root,
@@ -804,6 +809,9 @@ int vi3_edge_case(
   return 0;
 }
 #endif
+
+
+#include <omp-tools.h>
 
 // Return value
 // zero     - call path is provided
@@ -900,14 +908,28 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   int i = 0;
   frame_t *it = NULL;
 
-  ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(i);
-  int flags0 = hpcrun_ompt_get_task_flags(i);
+
+  int flags0;
+  ompt_data_t *td0 = NULL;
+  ompt_data_t *pd0 = NULL;
+  ompt_frame_t *frame0 = NULL;
+  int tn0 = 0;
+  // FIXME vi3 (08/18): Shouldn't I check the return value
   int reg_anc_lev = -1;
+  // NOTE vi3: childe and parent region may be the same
   typed_stack_elem(region) *child_region = NULL;
   typed_stack_elem(region) *parent_region = NULL;
+  typed_stack_elem(region) *new_parent_region = NULL;
+
   frame_t *child_prefix_inner = NULL;
   frame_t *child_prefix_outer = NULL;
 
+  int ret0 = hpcrun_ompt_get_task_info(i, &flags0, &td0, &frame0, &pd0, &tn0);
+  if (ret0 == 2) {
+    child_region = parent_region;
+    // try to get region info
+    parent_region = pd0 ? pd0->ptr : NULL;
+  }
 
   TD_GET(omp_task_context) = 0;
 
@@ -927,7 +949,6 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     goto clip_base_frames;
   }
   // find corresponding region if any
-  next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
 
 #if 0
   if (flags0 & ompt_task_implicit || flags0 & ompt_task_initial) {
@@ -940,7 +961,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
   bool processed_it = false;
   while ((fp_enter(frame0) == 0) &&
          (fp_exit(frame0) == 0)) {
-
+#if 0
     if (thread_state == ompt_state_work_parallel
         && i == 0 && (flags0 & ompt_task_implicit)) {
       // TODO vi3: Something similar to this can be added to condition
@@ -1022,14 +1043,21 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       // FIXME vi3: for-nested-tasks (USE_NESTED_FRAMES)
       return -7;
     }
-
+#endif
     // Innermost task has been suspended,
     // corresponding parallel region is still active, so try to provide prefix.
 
     // corner case: the top frame has been set up,
     // but not filled in. ignore this frame.
-    frame0 = hpcrun_ompt_get_task_frame(++i);
-    flags0 = hpcrun_ompt_get_task_flags(i);
+    // frame0 = hpcrun_ompt_get_task_frame(++i);
+    // flags0 = hpcrun_ompt_get_task_flags(i);
+
+    ret0 = hpcrun_ompt_get_task_info(++i, &flags0, &td0, &frame0, &pd0, &tn0);
+    if (ret0 == 2) {
+      child_region = parent_region;
+      // try to get region info
+      parent_region = pd0 ? pd0->ptr : NULL;
+    }
 
     if (!frame0) {
       //printf("vi3: Why this happens??? -3");
@@ -1040,12 +1068,12 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       goto clip_base_frames;
     }
 
-    next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
   }
 
   if (fp_exit(frame0) &&
       (((uint64_t) fp_exit(frame0)) <
        ((uint64_t) (*bt_inner)->cursor.sp))) {
+#if 0
     if (i == 0 && parent_region) {
       // parent_region matches this new innermost task
       // (task belongs to this region).
@@ -1056,13 +1084,23 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       return 7;
     }
     //printf("vi3 provide: No call to user code has been made\n");
+#endif
     // corner case: the top frame has been set up, exit frame has been filled in;
     // however, exit_frame.ptr points beyond the top of stack. the final call
     // to user code hasn't been made yet. ignore this frame.
-    frame0 = hpcrun_ompt_get_task_frame(++i);
-    flags0 = hpcrun_ompt_get_task_flags(i);
+
+    // frame0 = hpcrun_ompt_get_task_frame(++i);
+    // flags0 = hpcrun_ompt_get_task_flags(i);
     // TODO vi3: when this happens
-    next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
+    // next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
+
+    ret0 = hpcrun_ompt_get_task_info(++i, &flags0, &td0, &frame0, &pd0, &tn0);
+    if (ret0 == 2) {
+      child_region = parent_region;
+      // try to get region info
+      parent_region = pd0 ? pd0->ptr : NULL;
+    }
+
 #if 0
     if (flags0 & ompt_task_implicit || flags0 & ompt_task_initial) {
       // get corresponding region
@@ -1101,7 +1139,37 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
 
           // FIXME vi3 (08/21/2020): LLVM Runtime does not rerturn this kind of barrier,
           //   so I won't pay attention to this
-        } else {
+        }
+        else {
+          // FIXME vi3 (09/01/2020): This shoudl be repaired
+          if (child_region && child_region != parent_region) {
+            child_prefix_inner = it;
+          } else if (parent_region && td0) {
+              if (parent_region->depth * 2 + 1 == td0->value) {
+                // Thread entered the runtime from parent_region, but
+                // child_region is not present or it matches parent_region,
+                // cannot provide prefix for child_region, neither for parent_region
+                // at the moment. Just skip
+              } else if (parent_region->depth * 2 + 1 == td0->value + 2){
+                // Thread enter to the runtime code that started parent_region.
+                // parent_region matches tasks, so provide the prefix
+                child_region = parent_region;
+                child_prefix_inner = it;
+              } else if (td0->value == 0){
+                // Thread enter the runtime from squential code.
+                // The frames below entered frame should be parent_region prefix
+                child_region = parent_region;
+                child_prefix_inner = it;
+              } else {
+                return -333;
+              }
+          } else {
+            return -33;
+          }
+          // FIXME vi3
+        }
+#if 0
+        else {
           // FIXME vi3: Think good about this
           //   tests to run:
           //      - simple.c (with for loop)
@@ -1174,7 +1242,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
           }
 
         }
-
+#endif
 
         found = 1;
         break;
@@ -1188,28 +1256,30 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     // frames at top of stack elided. continue with the rest
   }
 
-#if 0
-  ompt_frame_t *tf0 = NULL;
-  ompt_frame_t *tf1 = NULL;
-  ompt_frame_t *tf2 = NULL;
-  ompt_frame_t *tf3 = NULL;
-  ompt_frame_t *tf4 = NULL;
-  ompt_frame_t *tf5 = NULL;
-  ompt_frame_t *tf6 = NULL;
-
-  VI3_EDGE = vi3_edge_case(&tf0,&tf1,&tf2,&tf3,&tf4,&tf5,&tf6);
-#endif
 
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
     frame_t *exit0 = NULL, *reenter1 = NULL;
     ompt_frame_t *frame1 = NULL;
     int flags1 = 0;
+    ompt_data_t *td1;
+    ompt_data_t *pd1;
+    int tn1;
+    int ret1;
 
-    frame0 = hpcrun_ompt_get_task_frame(i);
-    flags0 = hpcrun_ompt_get_task_flags(i);
-    // this region corresponds to the frame0
-    parent_region = hpcrun_ompt_get_region_data(reg_anc_lev);
+    // frame0 = hpcrun_ompt_get_task_frame(i);
+    // flags0 = hpcrun_ompt_get_task_flags(i);
+    // // this region corresponds to the frame0
+    // parent_region = hpcrun_ompt_get_region_data(reg_anc_lev);
+
+    ret0 = hpcrun_ompt_get_task_info(i, &flags0, &td0, &frame0, &pd0, &tn0);
+    // I think we don't need this
+    // if (ret0 == 2) {
+    //   child_region = parent_region;
+    //   // try to get region info
+    //   parent_region = pd0 ? pd0->ptr : NULL;
+    // }
+
 
     if (!frame0) break;
 
@@ -1240,7 +1310,11 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
           int offset = ff_is_appl(FF(frame0, exit)) ? 0 : 1;
           exit0 = it - offset;
           child_prefix_outer = exit0 - 1;
-          if (child_prefix_inner && child_prefix_outer && child_region) {
+          if (child_prefix_inner && child_prefix_outer && child_region &&
+              child_region != parent_region) {
+            // If child_region == parent_region (I guess both NULL or the tasks
+            // are explicit. Only when parent_region changes, then child_region
+            // can find its prefix)
             provide_region_refix_segment(&child_prefix_inner, &child_prefix_outer,
                                          &child_region);
           }
@@ -1275,33 +1349,28 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
     }
     //frame0 = frame1;
     //flags0 = flags1;
-    frame1 = hpcrun_ompt_get_task_frame(++i);
-    flags1 = hpcrun_ompt_get_task_flags(i);
+    // frame1 = hpcrun_ompt_get_task_frame(++i);
+    // flags1 = hpcrun_ompt_get_task_flags(i);
+
+    ret1 = hpcrun_ompt_get_task_info(++i, &flags1, &td1, &frame1, &pd1, &tn1);
+    // I think we don't need this
+    if (ret1 == 2) {
+      child_region = parent_region;
+      // try to get region info
+      parent_region = pd1 ? pd1->ptr : NULL;
+    }
+
+
     if (!frame1) break;
 
-    next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
     // If thread is not the master of child region, it should stop providing.
     // No need to provide call path if its already provided.
     if (child_region &&
-        (!hpcrun_ompt_is_thread_region_owner(child_region) || child_region->call_path)) {
+        (!hpcrun_ompt_is_thread_region_owner(child_region)
+          || child_region->call_path)) {
       break;
     }
 
-#if 0
-    if (fp_enter(frame1) == 0 && fp_exit(frame1) == 0 && (flags1 & ompt_task_implicit)) {
-      // skip finished implicit task, since its frame is invalidated
-      frame1 = hpcrun_ompt_get_task_frame(++i);
-      flags1 = hpcrun_ompt_get_task_flags(i);
-      if (!frame1) break;
-      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
-      // If thread is not the master of child region, it should stop providing.
-      // No need to provide call path if its already provided.
-      if (child_region &&
-          (!hpcrun_ompt_is_thread_region_owner(child_region) || child_region->call_path)) {
-        break;
-      }
-    }
-#endif
 
     // FIXME vi3 (08/22/2020) It is possible that and frame1->enter=frame0->enter=0
     //  The question is is this ok to happen???
@@ -1310,10 +1379,18 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       // skip frame1, since I don't think this should happen.
       //frame0 = frame1;
       //flags0 = flags1;
-      frame1 = hpcrun_ompt_get_task_frame(++i);
-      flags1 = hpcrun_ompt_get_task_flags(i);
+      // frame1 = hpcrun_ompt_get_task_frame(++i);
+      // flags1 = hpcrun_ompt_get_task_flags(i);
+
+      ret1 = hpcrun_ompt_get_task_info(++i, &flags1, &td1, &frame1, &pd1, &tn1);
+      // I think we don't need this
+      if (ret1 == 2) {
+        child_region = parent_region;
+        // try to get region info
+        parent_region = pd1 ? pd1->ptr : NULL;
+      }
+
       if (!frame1) break;
-      next_region_matching_task(&i, &reg_anc_lev, &child_region, &parent_region);
       // If thread is not the master of child region, it should stop providing.
       // No need to provide call path if its already provided.
       if (child_region &&
@@ -1346,15 +1423,6 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
 
     bool reenter1_flag =
         interval_contains(low_sp, high_sp, fp_enter(frame1));
-
-#if 0
-    ompt_frame_t *help_frame = region_stack[top_index-i+1].parent_frame;
-    if (!ompt_eager_context && !reenter1_flag && help_frame) {
-      frame1 = help_frame;
-      reenter1_flag = interval_contains(low_sp, high_sp, fp_enter(frame1));
-      // printf("THIS ONLY HAPPENS IN MASTER: %d\n", TD_GET(master));
-    }
-#endif
 
     if (reenter1_flag) {
       for (; it <= *bt_outer; it++) {
@@ -1408,6 +1476,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
       //      - simple-task.c (sample taken in loop2)
       //      - region-in-task3.c
       //      - for-nested-functions (USE_NESTED_TASKS 1)
+#if 0
       if (fp_enter(frame1) < low_sp) {
         // Have no idea how is this even possible.
         // TODO vi3:
@@ -1428,6 +1497,7 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
         // never happened
         //printf("vi3 provide: Can this happen??? %p\n", fp_enter(frame1));
       }
+#endif
       // TODO: 0x6000002 for task?
       break;
     }
