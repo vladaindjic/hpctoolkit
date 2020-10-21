@@ -755,7 +755,7 @@ provide_region_refix_segment
 )
 {
   // This consumes a lot of time
-  return;
+  //return;
 
   // Provide segment of region prefix
   (*region_data)->call_path =

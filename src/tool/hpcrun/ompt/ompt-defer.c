@@ -792,6 +792,8 @@ thread_take_sample
       // has already been inserted in parent_cct subtree.
       // This means that thread took sample in this region before,
       // but the region was swapped from the stack in the meantime
+      try_this_instead:
+      {
       cct_addr_t *region_addr = &ADDR2(UNRESOLVED, el->region_id);
       cct_node_t *found_cct = hpcrun_cct_find_addr(parent_cct, region_addr);
       if (found_cct) {
@@ -817,9 +819,26 @@ thread_take_sample
       }
       // process child region
       goto return_label;
+      }
     } else if (el->region_data->call_path && all_prefixes_available) {
+      // FIXME: try to see if it possible to end here multiple times
       // All region prefixes are available at the moment
       // insert region prefix
+      //goto try_this_instead;
+      if (el->unresolved_cct || el->cct_node) {
+        printf("Check redundancy %p\n", el->unresolved_cct);
+      }
+
+      if (hpcrun_ompt_is_thread_region_owner(el->region_data)) {
+        // TODO: Is this right?
+        // When master inserts long region prefix, all other workers
+        // need to wait, so the region overhead may increase.
+        goto try_this_instead;
+      } else {
+        //goto try_this_instead;
+      }
+      // if the region reapperead on the stack,
+      // am I going to insert the same call path multiple times
       el->cct_node =
           hpcrun_cct_insert_path_return_leaf(parent_cct, el->region_data->call_path);
       // notify child that prefix has been changed
@@ -839,6 +858,7 @@ thread_take_sample
     // el->cct_node is unresolved, then insert region prefix.
 
     // insert region prefix
+    goto try_this_instead;
     el->cct_node =
         hpcrun_cct_insert_path_return_leaf(parent_cct, el->region_data->call_path);
     // notify child that prefix has been changed
