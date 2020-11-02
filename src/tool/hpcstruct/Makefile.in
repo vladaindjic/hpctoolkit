@@ -1101,7 +1101,7 @@ endef
 #############################################################################
 
 %.h : $(srcdir)/%.txt
-	$(srcdir)/stringify.py < $<  > $@
+	$(srcdir)/stringify.sh < $<  > $@
 
 %.cpp.pp : %.cpp
 	$(CXXCPP) $(MYCPPFLAGS_0_CXX) $< > $@

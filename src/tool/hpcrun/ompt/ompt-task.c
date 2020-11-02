@@ -91,17 +91,17 @@ ompt_task_begin_internal
 
   // record the task creation context into task structure (in omp runtime)
   cct_node_t *cct_node = NULL;
-  if (ompt_task_full_context_p()){
-    ucontext_t uc; 
-    getcontext(&uc);
+  ucontext_t uc;
+  getcontext(&uc);
 
-    hpcrun_metricVal_t zero_metric_incr_metricVal;
-    zero_metric_incr_metricVal.i = 0;
-    cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal,
-        1, 1, NULL).sample_node;
-    // store cct_node in task_data
-    task_data_set_cct(task_data, cct_node);
-  } else {
+  hpcrun_metricVal_t zero_metric_incr_metricVal;
+  zero_metric_incr_metricVal.i = 0;
+  cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal,
+      1, 1, NULL).sample_node;
+  // store cct_node in task_data
+  task_data_set_cct(task_data, cct_node);
+#if 0
+  else {
     ompt_data_t *parallel_info = NULL;
     int team_size = 0;
     hpcrun_ompt_get_parallel_info(0, &parallel_info, &team_size);
@@ -120,6 +120,7 @@ ompt_task_begin_internal
       task_data_set_depth(task_data, region_data->depth);
     }
   }
+#endif
 
   td->overhead --;
 }
@@ -159,10 +160,14 @@ ompt_task_register_callbacks
  ompt_set_callback_t ompt_set_callback_fn
 )
 {
-  int retval;
-  retval = ompt_set_callback_fn(ompt_callback_task_create,
-                                (ompt_callback_t)ompt_task_create);
-  assert(ompt_event_may_occur(retval));
+  if (ompt_task_full_context_p()) {
+    // If there's need to determine task creation context,
+    // then register the following callback.
+    int retval;
+    retval = ompt_set_callback_fn(ompt_callback_task_create,
+                                  (ompt_callback_t)ompt_task_create);
+    assert(ompt_event_may_occur(retval));
+  }
 }
 
 

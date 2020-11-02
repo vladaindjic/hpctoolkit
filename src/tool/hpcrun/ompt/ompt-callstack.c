@@ -435,6 +435,44 @@ ompt_elide_runtime_frame(
 
     if (!frame0) break;
 
+    int flags0;
+    ompt_data_t *td0 = NULL;
+    ompt_data_t *pd0 = NULL;
+    int tn0 = 0;
+    int ret0 = hpcrun_ompt_get_task_info(i, &flags0, &td0, &frame0, &pd0, &tn0);
+
+    if (flags0 & ompt_task_explicit) {
+      if (!pd0) {
+        printf("No parallel_data\n");
+      } else {
+        typed_stack_elem(region) *reg0 = (typed_stack_elem(region)*) pd0->ptr;
+        if (!reg0) {
+          printf("No region_data\n");
+        } else {
+          if (td0 && td0->ptr == NULL) {
+            // If the task_data is empty, then the thread is taking
+            // the first sample is taken inside this explicit task,
+            // so copy the corresponding data from region_data.
+            // If however, the task_data contains value,
+            // then one of the following is true:
+            // 1. the thread already took a sample inside this task
+            // 2. the task context has been set inside ompt_task_create
+            //    callback (OMPT_TASK_FULL_CTXT=ENABLED)
+            // Don't do anything
+            if (ompt_eager_context_p()) {
+              // the region call path has been set inside
+              // ompt_callback_parallel_begin, so copy it
+              task_data_set_cct(td0, reg0->call_path);
+            } else {
+              // the region creation context has been unknown,
+              // so copy the region depth
+              task_data_set_depth(td0, reg0->depth);
+            }
+          }
+        }
+      }
+    }
+
     ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
     cct_node_t *omp_task_context = NULL;
     if (task_data)
