@@ -105,6 +105,8 @@
 // parallel region or to the outermost context.
 #define DETECT_IDLENESS_LAST_BARRIER 0
 
+#define USE_IMPLICIT_TASK_CALLBACKS 0
+
 struct ompt_region_data_s;
 struct ompt_notification_s;
 struct mpsc_channel_region_s;

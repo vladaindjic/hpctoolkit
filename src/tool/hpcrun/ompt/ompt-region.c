@@ -639,10 +639,11 @@ ompt_parallel_region_register_callbacks
                     (ompt_callback_t)ompt_parallel_end);
   assert(ompt_event_may_occur(retval));
 
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);
   assert(ompt_event_may_occur(retval));
-
+#endif
 #if DETECT_IDLENESS_LAST_BARRIER
   retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
                                 (ompt_callback_t)ompt_sync);
