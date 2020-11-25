@@ -438,135 +438,27 @@ ompt_elide_runtime_frame(
     hpcrun_ompt_get_task_info(i, &flags0, &task_data, &frame0,
         &parallel_data, &thread_num);
 
-
-    // frame0 = hpcrun_ompt_get_task_frame(i);
-
     if (!frame0) break;
-
-    // check if task_data is not initialized
-    if (task_data && task_data->ptr == NULL
-        && parallel_data && parallel_data->ptr) {
-      // try to initialize task_data if can
-      typed_stack_elem(region) *region_data = parallel_data->ptr;
-      if (ompt_eager_context_p()) {
-        task_data_set_cct(task_data, region_data->call_path);
-      } else {
-        task_data_set_depth(task_data, region_data->depth);
-      }
-    }
-
-#if 0
-    int flags0;
-    ompt_data_t *td0 = NULL;
-    ompt_data_t *pd0 = NULL;
-    int tn0 = 0;
-    int ret0 = hpcrun_ompt_get_task_info(i, &flags0, &td0, &frame0, &pd0, &tn0);
-
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
+    // If hpcrun is using ompt_callback_implicit_task, then check
+    // only if task_data of explicit task is uninitialized.
     if (flags0 & ompt_task_explicit) {
-      if (!pd0) {
-        printf("No parallel_data\n");
-      } else {
-        typed_stack_elem(region) *reg0 = (typed_stack_elem(region)*) pd0->ptr;
-        if (!reg0) {
-          printf("No region_data\n");
-        } else {
-          if (td0 && td0->ptr == NULL) {
-            // If the task_data is empty, then the thread is taking
-            // the first sample is taken inside this explicit task,
-            // so copy the corresponding data from region_data.
-            // If however, the task_data contains value,
-            // then one of the following is true:
-            // 1. the thread already took a sample inside this task
-            // 2. the task context has been set inside ompt_task_create
-            //    callback (OMPT_TASK_FULL_CTXT=ENABLED)
-            // Don't do anything
-            if (ompt_eager_context_p()) {
-              // the region call path has been set inside
-              // ompt_callback_parallel_begin, so copy it
-              task_data_set_cct(td0, reg0->call_path);
-            } else {
-              // the region creation context has been unknown,
-              // so copy the region depth
-              task_data_set_depth(td0, reg0->depth);
-            }
-          }
-        }
-      }
-    }
-#if USE_IMPLICIT_TASK_CALLBACKS == 0
-    else if (flags0 & ompt_task_implicit) {
-      if (pd0 && td0 && td0->ptr == NULL) {
-        typed_stack_elem(region) *reg0 = (typed_stack_elem(region)*) pd0->ptr;
-        if (reg0) {
-          if (ompt_eager_context_p()) {
-            task_data_set_cct(td0, reg0->call_path);
-          } else {
-            task_data_set_depth(td0, reg0->depth);
-          }
-        }
-      }
-#if 0
-      if (!td0) {
-        printf("task_data is missing: %p\n", td0);
-      }
-      if (!pd0) {
-        printf("No parallel data: %p\n", pd0);
-      } else {
-        typed_stack_elem(region) *reg0 = (typed_stack_elem(region)*) pd0->ptr;
-        if (!reg0) {
-          printf("No region_data: %p, parallel_data: %p\n", reg0, pd0);
-        } else {
-          if (!td0) {
-            printf("task_data is missing\n");
-          } else {
-            cct_node_t *tctxt00 = NULL;
-            int rd00 = -1;
-            int info_type = task_data_value_get_info(td0->ptr, &tctxt00, &rd00);
-            if (info_type == 0) {
-              printf("This can happen if tracing is enabled: %p\n", tctxt00);
-            } else if (info_type == 1) {
-              // printf("depth: %d, depth00: %d\n", reg0->depth, rd00);
-              if (reg0->depth != rd00) {
-                printf("Region data does not match task data\n");
-                 hpcrun_ompt_get_task_data(0);
-                /*
-                  #9  __kmp_free_thread (this_th=0x7fffe400ce80) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:5611
-                  #10 0x00007ffff764a9c5 in __kmp_free_team (root=root@entry=0x64ee40, team=team@entry=0x7fffe40055c0, master=master@entry=0x7fffe4002280)
-                      at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:5464
-                  #11 0x00007ffff764d5d8 in __kmp_join_call (loc=loc@entry=0x7ffff79044f0 <__kmp_GOMP_parallel_end_internal::loc>, gtid=gtid@entry=5,
-                      fork_context=fork_context@entry=fork_context_gnu_task_library, exit_teams=exit_teams@entry=0) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:2495
-                  #12 0x00007ffff76a97f3 in __kmp_GOMP_parallel_end_internal (fork_context=fork_context@entry=fork_context_gnu_task_library)
-                      at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_gsupport.cpp:565
-                  #13 0x00007ffff76af053 in __kmp_api_GOMP_parallel (task=0x400849 <g._omp_fn.0>, data=0x0, num_threads=4, flags=0) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_gsupport.cpp:1516
-                  #14 0x0000000000400733 in g () at for-nested-functions.c:61
-                  #15 0x000000000040074e in f () at for-nested-functions.c:71
-                  #16 0x0000000000400881 in e._omp_fn.1 () at for-nested-functions.c:82
-                  #17 0x00007ffff76a8761 in __kmp_GOMP_microtask_wrapper (gtid=<optimized out>, npr=<optimized out>, task=<optimized out>, data=<optimized out>)
-                      at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_gsupport.cpp:385
-                  #18 0x00007ffff76bdc03 in __kmp_invoke_microtask () at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/z_Linux_asm.S:1166
-                  #19 0x00007ffff764c981 in __kmp_invoke_task_func (gtid=5) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:7068
-                  #20 0x00007ffff764b331 in __kmp_launch_thread (this_thr=this_thr@entry=0x7fffe4002280) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:5741
-                  #21 0x00007ffff76a75ae in __kmp_launch_worker (thr=0x7fffe4002280) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/z_Linux_util.cpp:564
-                  #22 0x00007ffff792038b in monitor_thread_fence2 () at pthread.c:978
-                  #23 0x00007ffff73f5ea5 in start_thread (arg=0x7ffff0f21980) at pthread_create.c:307
-                  #24 0x00007ffff711e96d in clone () from /lib64/libc.so.6
-                 * */
-              }
-            } else if (info_type == 2) {
-              // TODO: debug this case
-              printf("Edge case: %d, %d, %x\n", reg0->depth, rd00, check_state());
-            } else {
-              printf("This should never happend\n");
-            }
-          }
-        }
-      }
 #endif
+      // check if task_data is not initialized
+      if (task_data && task_data->ptr == NULL
+          && parallel_data && parallel_data->ptr) {
+        // try to initialize task_data if can
+        typed_stack_elem(region) *region_data = parallel_data->ptr;
+        if (ompt_eager_context_p()) {
+          task_data_set_cct(task_data, region_data->call_path);
+        } else {
+          task_data_set_depth(task_data, region_data->depth);
+        }
+      }
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
     }
-#endif
 #endif
 
-    //ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
     cct_node_t *omp_task_context = NULL;
     if (task_data)
       omp_task_context = task_data->ptr;
