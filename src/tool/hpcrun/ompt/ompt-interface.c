@@ -838,10 +838,33 @@ hpcrun_ompt_get_task_info
   ompt_frame_t **task_frame,
   ompt_data_t **parallel_data,
   int *thread_num
-)
-{
-  return ompt_get_task_info_fn(ancestor_level, flags,
-      task_data, task_frame, parallel_data, thread_num);
+) {
+
+  int ret = -1;
+
+  if (ompt_initialized) {
+    // call runtime entry point
+    ret = ompt_get_task_info_fn(ancestor_level, flags,
+        task_data, task_frame, parallel_data, thread_num);
+  }
+
+  // Is there need to invalidate arguments passed by reference
+  if (ret != 2) {
+    // Standard:
+    // "If no task region exists at the
+    //  specified ancestor level or the information is
+    //  unavailable then the values of variables passed by
+    //  reference to the entry point are undefined"
+    // I guess it is ok to invalidate them in order to detect some
+    // of the edge cases.
+    *flags = 0;  // invalid flag
+    *task_data = NULL;
+    *task_frame = NULL;
+    *parallel_data = NULL;
+    *thread_num = -1;  // invalid thread num
+  }
+
+  return ret;
 }
 
 

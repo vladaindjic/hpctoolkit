@@ -431,10 +431,31 @@ ompt_elide_runtime_frame(
     frame_t *exit0 = NULL, *reenter1 = NULL;
     ompt_frame_t *frame1;
 
-    frame0 = hpcrun_ompt_get_task_frame(i);
+    int flags0;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    int thread_num = 0;
+    hpcrun_ompt_get_task_info(i, &flags0, &task_data, &frame0,
+        &parallel_data, &thread_num);
+
+
+    // frame0 = hpcrun_ompt_get_task_frame(i);
 
     if (!frame0) break;
 
+    // check if task_data is not initialized
+    if (task_data && task_data->ptr == NULL
+        && parallel_data && parallel_data->ptr) {
+      // try to initialize task_data if can
+      typed_stack_elem(region) *region_data = parallel_data->ptr;
+      if (ompt_eager_context_p()) {
+        task_data_set_cct(task_data, region_data->call_path);
+      } else {
+        task_data_set_depth(task_data, region_data->depth);
+      }
+    }
+
+#if 0
     int flags0;
     ompt_data_t *td0 = NULL;
     ompt_data_t *pd0 = NULL;
@@ -543,8 +564,9 @@ ompt_elide_runtime_frame(
 #endif
     }
 #endif
+#endif
 
-    ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
+    //ompt_data_t *task_data = hpcrun_ompt_get_task_data(i);
     cct_node_t *omp_task_context = NULL;
     if (task_data)
       omp_task_context = task_data->ptr;
