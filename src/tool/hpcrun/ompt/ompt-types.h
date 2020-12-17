@@ -258,5 +258,19 @@ typed_random_access_stack_declare(runtime_region);
 #endif
 
 // FIXME vi3: ompt_data_t freelist manipulation
+
+typedef struct ompt_atomic_data_s {
+  _Atomic(typed_stack_elem(region) *) ptr;
+} ompt_atomic_data_t;
+
+#define ATOMIC_STORE_RD(parallel_data, region_data) \
+  atomic_store(&(((ompt_atomic_data_t *)parallel_data)->ptr), region_data)
+
+#define ATOMIC_LOAD_RD(parallel_data) \
+  (typed_stack_elem(region) *)        \
+      atomic_load(&(((ompt_atomic_data_t *)parallel_data)->ptr))
+
+#define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
+
 #endif
 

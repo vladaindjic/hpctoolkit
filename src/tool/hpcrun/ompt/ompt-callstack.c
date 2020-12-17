@@ -445,10 +445,19 @@ ompt_elide_runtime_frame(
     if (flags0 & ompt_task_explicit) {
 #endif
       // check if task_data is not initialized
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
       if (task_data && task_data->ptr == NULL
           && parallel_data && parallel_data->ptr) {
+#else
+      if (task_data && task_data->ptr == NULL
+          && parallel_data && ATOMIC_LOAD_RD(parallel_data)) {
+#endif
         // try to initialize task_data if can
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
         typed_stack_elem(region) *region_data = parallel_data->ptr;
+#else
+        typed_stack_elem(region) *region_data = ATOMIC_LOAD_RD(parallel_data);
+#endif
         if (ompt_eager_context_p()) {
           task_data_set_cct(task_data, region_data->call_path);
         } else {

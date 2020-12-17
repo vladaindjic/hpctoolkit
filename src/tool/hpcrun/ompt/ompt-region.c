@@ -139,8 +139,12 @@ ompt_parallel_begin_internal
 {
   typed_stack_elem_ptr(region) region_data =
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   parallel_data->ptr = region_data;
 
+#else
+  ATOMIC_STORE_RD(parallel_data, region_data);
+#endif
   uint64_t region_id = region_data->region_id;
   thread_data_t *td = hpcrun_get_thread_data();
 
@@ -192,8 +196,13 @@ ompt_parallel_end_internal
  int flags
 )
 {
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
+#else
+  typed_stack_elem_ptr(region) region_data =
+    (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
+#endif
 
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
   // Pop the innermost region in which thread is the master.
@@ -374,9 +383,14 @@ ompt_implicit_task_internal_begin
 {
   task_data->ptr = NULL;
 
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region))parallel_data->ptr;
 
+#else
+  typed_stack_elem_ptr(region) region_data =
+    (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
+#endif
   if (region_data == NULL) {
     // there are no parallel region callbacks for the initial task.
     // region_data == NULL indicates that this is an initial task. 
