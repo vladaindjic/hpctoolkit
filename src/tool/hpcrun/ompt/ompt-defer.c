@@ -627,6 +627,15 @@ thread_take_sample
   } else {
     // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
     unresolved_cnt++;
+    // If the initial master register for the call path, then it is responsible
+    // to process notification and notify other worker about the resolving
+    // process. Since ompt_state_idle is not handle properly, the resolving
+    // will happen at the time thread is going to be shut down. At that point,'
+    // all other worker threads will be destroyed and they cannot be notified
+    // about unresolved regions.
+    // If ompt_state_idle were handled properly, it's not guaranteed that
+    // master will notify other worker threads (registered before master)
+    // about unresolved regions.
   }
 
   return_label: {
@@ -710,6 +719,128 @@ typedef struct lca_args_s {
 } lca_args_t;
 
 
+void
+check_thread_num
+(
+  typed_random_access_stack_elem(region) *el,
+  int level
+)
+{
+  int old_level = level;
+  typed_stack_elem(region) *rd0 = hpcrun_ompt_get_region_data(level);
+
+  if (rd0 != el->region_data) {
+    printf("Something is really wrong\n");
+  }
+
+  int flags0;
+  ompt_frame_t *frame0;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = -1;
+  hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+
+  typed_stack_elem(region) *rd1 = ATOMIC_LOAD_RD(parallel_data);
+  if (rd1 && rd0 && rd1 != rd0) {
+    if (level == 0) {
+      printf("This shouldn't be the case\n");
+    }
+    if (rd1->depth > rd0->depth) {
+      level++;
+    } else if (rd1->depth < rd0->depth) {
+      level--;
+    } else {
+      printf("How to handle this?\n");
+    }
+    // FIXME:
+  }
+  thread_num = -1;
+  hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+
+  rd1 = ATOMIC_LOAD_RD(parallel_data);
+  if (rd1 && rd0 && rd1 != rd0) {
+    printf("Why\n");
+  }
+
+  if (!el->team_master) {
+    if (thread_num == 0) {
+      printf("Problem: level: %d, old_level: %d\n", level, old_level);
+      hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                                &parallel_data, &thread_num);
+    }
+  }
+}
+
+bool
+is_thread_owner_of_the_region
+(
+  typed_random_access_stack_elem(region) *el,
+  int level
+)
+{
+#if 0
+  int old_level = level;
+  typed_stack_elem(region) *rd0 = hpcrun_ompt_get_region_data(level);
+
+  int flags0;
+  ompt_frame_t *frame0;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = -1;
+  int retVal = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+  if (retVal != 2) {
+    printf("No parallel_data at this level: %d\n", level);
+    exit(-1);
+  }
+
+  typed_stack_elem(region) *rd1 = ATOMIC_LOAD_RD(parallel_data);
+  if (rd0 && rd1) {
+    if (rd0 != rd1) {
+      // adjust level
+      if (rd0->depth > rd1->depth) {
+        level--;
+      } else if (rd0->depth < rd1->depth) {
+        level++;
+      } else {
+        printf("Cannot adjust: rd0->depth: %d, rd1->depth: %d\n", rd0->depth, rd1->depth);
+      }
+    }
+  } else {
+    // FIXME VI3: DEBUG
+    printf("Something is missing - rd0: %p, rd1: %p\n", rd0, rd1);
+    // TODO vi3: initialization isn't done properly
+  }
+
+  retVal = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+  if (retVal != 2) {
+    printf("No parallel_data at this level: %d, old_level: %d\n", level, old_level);
+    //exit(-1);
+  }
+  rd1 = ATOMIC_LOAD_RD(parallel_data);
+  if (!rd1) {
+    // FIXME VI3: DEBUG
+    printf("No rd1 at this level: %d\n", level);
+    // TODO vi3: It is possible that rd1 is not initialized.
+  }
+  // Master of the region has thread_num equals to zero.
+  return thread_num == 0;
+#endif
+  int flags0;
+  ompt_frame_t *frame0;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = -1;
+  int retVal = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                                         &parallel_data, &thread_num);
+  return thread_num == 0;
+}
+
+
+
 bool
 lca_el_fn
 (
@@ -734,8 +865,13 @@ lca_el_fn
   el->region_data = reg;
   // store region_id as persistent field
   el->region_id = reg->region_id;
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   // check if thread is the master (owner) of the reg
   el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
+  //check_thread_num(el, level);
+#else
+  el->team_master = is_thread_owner_of_the_region(el, level);
+#endif
   // invalidate previous values
   el->unresolved_cct = NULL;
   el->took_sample = false;
@@ -748,7 +884,11 @@ lca_el_fn
   // use parent as next region to process.
   args->region_data = typed_stack_next_get(region, sstack)(reg);
 #else
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   args->region_data = hpcrun_ompt_get_region_data(args->level);
+#else
+  args->region_data = hpcrun_ompt_get_region_data_from_task_info(args->level);
+#endif
 #endif
   // indicator to continue processing stack element
   return 0;
@@ -772,7 +912,11 @@ least_common_ancestor
 )
 {
   int ancestor_level = 0;
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
+#else
+  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
+#endif
   if (!innermost_reg) {
     // There is no parallel region active.
     // Thread should be executing sequential code.
@@ -788,7 +932,12 @@ least_common_ancestor
       innermost_reg = typed_stack_next_get(region, sstack)(innermost_reg);
 #else
       // skip this region and access to parent
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
       innermost_reg = hpcrun_ompt_get_region_data(++ancestor_level);
+#else
+      innermost_reg = hpcrun_ompt_get_region_data_from_task_info(++ancestor_level);
+#endif
+
 #endif
     }
   } else {
@@ -1963,6 +2112,32 @@ top_cct
 }
 #endif
 
+void
+initialize_regions_if_needed
+(
+  void
+)
+{
+  int flags0;
+  ompt_frame_t *frame0;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = 0;
+  hpcrun_ompt_get_task_info(0, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+  // TODO: Any more edge cases about sequential code.
+  if (flags0 & ompt_task_initial) {
+    // executing sequential code
+    //printf("Sequential code\n");
+    return;
+  }
+
+  if (parallel_data) {
+    initialize_region(0);
+  } else {
+    // TODO: Go one level above?
+  }
+}
 
 #if DEFER_DEBUGGING
 

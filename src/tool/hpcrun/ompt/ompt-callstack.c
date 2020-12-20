@@ -813,6 +813,9 @@ ompt_backtrace_finalize
   }
   uint64_t region_id = TD_GET(region_id);
 
+  // initialize region_data if needed
+  //initialize_regions_if_needed();
+
   ompt_elide_runtime_frame(bt, region_id, isSync);
 #if 0
   // Old code

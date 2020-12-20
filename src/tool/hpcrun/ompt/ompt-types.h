@@ -270,6 +270,10 @@ typedef struct ompt_atomic_data_s {
   (typed_stack_elem(region) *)        \
       atomic_load(&(((ompt_atomic_data_t *)parallel_data)->ptr))
 
+#define ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg) \
+  atomic_compare_exchange_strong(&(((ompt_atomic_data_t *)parallel_data)->ptr), \
+    &old_reg, new_reg)
+
 #define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
 
 #endif

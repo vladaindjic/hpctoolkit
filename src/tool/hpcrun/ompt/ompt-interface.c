@@ -868,6 +868,31 @@ hpcrun_ompt_get_task_info
 }
 
 
+typed_stack_elem(region) *
+hpcrun_ompt_get_region_data_from_task_info
+(
+  int ancestor_level
+)
+{
+  if (ompt_initialized){
+    int task_type_flags;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    ompt_frame_t *task_frame = NULL;
+    int thread_num = 0;
+
+    int retVal = ompt_get_task_info_fn(ancestor_level, &task_type_flags, &task_data,
+                          &task_frame, &parallel_data, &thread_num);
+    if (retVal != 2) {
+      return NULL;
+    }
+
+    return ATOMIC_LOAD_RD(parallel_data) ? ATOMIC_LOAD_RD(parallel_data) : NULL;
+  }
+  return NULL;
+}
+
+
 void *
 hpcrun_ompt_get_idle_frame
 (

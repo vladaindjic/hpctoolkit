@@ -202,6 +202,12 @@ msg_deferred_resolution_breakpoint
   char *msg
 );
 
+void
+initialize_regions_if_needed
+(
+  void
+);
+
 
 #if DETECT_IDLENESS_LAST_BARRIER
 void

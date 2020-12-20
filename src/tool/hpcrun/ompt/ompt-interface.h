@@ -110,6 +110,13 @@ hpcrun_ompt_get_task_info
 );
 
 
+typed_stack_elem(region) *
+hpcrun_ompt_get_region_data_from_task_info
+(
+  int ancestor_level
+);
+
+
 uint64_t 
 hpcrun_ompt_outermost_parallel_id
 (

@@ -284,11 +284,15 @@ ompt_parallel_end_internal
 
     // If master took a sample in this region, it needs to resolve its call path.
     if (stack_el) {
+#if 1
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
       resolve_one_region_context(region_prefix, stack_el->unresolved_cct);
       // mark that master resolved this region
       unresolved_cnt--;
+#else
+      //ompt_resolve_region_contexts_poll();
+#endif
       // Since we never do real push and pop operations, it is possible that
       // this region_data will be reused by new region at the same depth.
       // In that case, thread could think that it already register for
@@ -663,4 +667,44 @@ ompt_parallel_region_register_callbacks
                                 (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
 #endif
+}
+
+void
+initialize_region
+(
+  int level
+)
+{
+  ompt_data_t* parallel_data = NULL;
+  int team_size;
+  int ret_val =
+      hpcrun_ompt_get_parallel_info(level, &parallel_data, &team_size);
+  if (ret_val != 2) {
+    // no information available
+    //printf("initialize_one_region >>> No information available\n");
+    return;
+  }
+
+  if (!parallel_data) {
+    printf("initialize_one_region >>> No parallel_data\n");
+    return;
+  }
+
+  typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
+  if (old_reg) {
+    //printf("initialize_one_region >>> region_data initialized\n");
+    return;
+  }
+
+  // try to initilize region_data
+  typed_stack_elem(region) *new_reg =
+      ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
+  if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
+    // region_data has been initialized by other thread
+    // free new_reg
+    printf("Freed\n");
+    ompt_region_release(new_reg);
+  } else {
+    printf("Initialized\n");
+  }
 }
