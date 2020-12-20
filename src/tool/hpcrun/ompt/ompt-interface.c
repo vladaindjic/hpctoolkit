@@ -887,6 +887,12 @@ hpcrun_ompt_get_region_data_from_task_info
       return NULL;
     }
 
+    if (task_type_flags & ompt_task_initial) {
+      // TODO: think about this
+      // initial task should not have corresponding region_data
+      return NULL;
+    }
+
     return ATOMIC_LOAD_RD(parallel_data) ? ATOMIC_LOAD_RD(parallel_data) : NULL;
   }
   return NULL;

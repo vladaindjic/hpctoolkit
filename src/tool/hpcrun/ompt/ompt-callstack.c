@@ -814,7 +814,7 @@ ompt_backtrace_finalize
   uint64_t region_id = TD_GET(region_id);
 
   // initialize region_data if needed
-  //initialize_regions_if_needed();
+  initialize_regions_if_needed();
 
   ompt_elide_runtime_frame(bt, region_id, isSync);
 #if 0
@@ -1574,6 +1574,18 @@ ompt_cct_cursor_finalize
     // part of region's call path, because they will be used by other worker threads (of the same team)
     // in resolving process.
     return check_and_return_non_null(cct->unresolved_root, cct_cursor, 877);
+  }
+
+  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+//    int thread_num = -1;
+//    int ret = hpcrun_ompt_get_task_info(0, NULL, NULL, NULL, NULL, &thread_num);
+//    if (ret != 2) {
+//      return cct->partial_unw_root;
+//    }
+//    if (thread_num != 0) {
+//      return cct->partial_unw_root;
+//    }
+    return cct->partial_unw_root;
   }
 
   cct_node_t *omp_task_context = NULL;

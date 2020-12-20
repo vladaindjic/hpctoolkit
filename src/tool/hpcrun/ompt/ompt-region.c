@@ -215,8 +215,13 @@ ompt_parallel_end_internal
     region_data = runtime_master_region;
   }
 #endif
-
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   if (!ompt_eager_context_p()){
+#else
+  if (!ompt_eager_context_p() && region_data){
+    // It is possible that region_data is not initialized, if none thread took
+    // sample while region was active.
+#endif
 #if DEBUG_BARRIER_CNT
     // Debug only
     // Mark that this region is finished
@@ -649,10 +654,15 @@ ompt_parallel_region_register_callbacks
 )
 {
   int retval;
-  retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
-                    (ompt_callback_t)ompt_parallel_begin);
-  assert(ompt_event_may_occur(retval));
-
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
+  if (ompt_eager_context_p()) {
+#endif
+    retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
+                                  (ompt_callback_t) ompt_parallel_begin);
+    assert(ompt_event_may_occur(retval));
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
+  }
+#endif
   retval = ompt_set_callback_fn(ompt_callback_parallel_end,
                     (ompt_callback_t)ompt_parallel_end);
   assert(ompt_event_may_occur(retval));
@@ -669,42 +679,88 @@ ompt_parallel_region_register_callbacks
 #endif
 }
 
-void
+
+static ompt_state_t
+check_state
+(
+  void
+)
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
+
+int
 initialize_region
 (
   int level
 )
 {
+#if 0
   ompt_data_t* parallel_data = NULL;
   int team_size;
   int ret_val =
       hpcrun_ompt_get_parallel_info(level, &parallel_data, &team_size);
+#else
+  int flags0;
+  ompt_frame_t *frame0;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = -1;
+  int ret_val = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                            &parallel_data, &thread_num);
+#endif
+
   if (ret_val != 2) {
     // no information available
     //printf("initialize_one_region >>> No information available\n");
-    return;
+    return -1;
+  }
+
+  if (flags0 & ompt_task_initial) {
+    // ignore initial tasks
+    return -1;
   }
 
   if (!parallel_data) {
     printf("initialize_one_region >>> No parallel_data\n");
-    return;
+    return -1;
   }
 
   typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
   if (old_reg) {
     //printf("initialize_one_region >>> region_data initialized\n");
-    return;
+    return old_reg->depth;
   }
+
+  // initialize parent region if needed
+  int parent_depth = initialize_region(level + 1);
+//  int parent_depth = -1;
+  // If there's no parent region, parent_depth will be -1.
 
   // try to initilize region_data
   typed_stack_elem(region) *new_reg =
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
+  new_reg->depth = parent_depth + 1;
+  if (new_reg->depth == 0 && level == 0) {
+    printf("zasto se ovo desava: %x\n", check_state());
+  }
+  bool success = false;
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
-    printf("Freed\n");
+    //printf("Freed\n");
     ompt_region_release(new_reg);
   } else {
-    printf("Initialized\n");
+    old_reg = new_reg;
+    //printf("Initialized\n");
+    success = true;
   }
+  if (old_reg->depth == 0 && level == 0) {
+    printf("Only once, level: %d, success: %d, state: %x\n", level, success, check_state());
+  }
+  return old_reg->depth;
 }
+
+// FIXME VI3: check whether all pointers stored in region_data exists
+//   even after its creator has been destroyed

@@ -966,12 +966,35 @@ least_common_ancestor
 }
 
 
+static ompt_state_t
+check_state
+    (
+        void
+    )
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
+
+
 void
 register_to_all_regions
 (
   void
 )
 {
+  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+//    int thread_num = -1;
+//    int ret = hpcrun_ompt_get_task_info(0, NULL, NULL, NULL, NULL, &thread_num);
+//    if (ret != 2) {
+//      return;
+//    }
+//    if (thread_num != 0) {
+//      return;
+//    }
+    return;
+  }
+
 #if 0
   // If there is no regions on the stack, just return.
   // Thread should be executing sequential code.
@@ -2122,9 +2145,14 @@ initialize_regions_if_needed
   ompt_frame_t *frame0;
   ompt_data_t *task_data = NULL;
   ompt_data_t *parallel_data = NULL;
-  int thread_num = 0;
-  hpcrun_ompt_get_task_info(0, &flags0, &task_data, &frame0,
+  int thread_num = -1;
+  int ret = hpcrun_ompt_get_task_info(0, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
+  if (ret != 2) {
+    //printf("Missing information\n");
+    return;
+  }
+
   // TODO: Any more edge cases about sequential code.
   if (flags0 & ompt_task_initial) {
     // executing sequential code
@@ -2132,8 +2160,18 @@ initialize_regions_if_needed
     return;
   }
 
+  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+    //if (thread_num != 0) {
+      //printf("I guess worker shouldn't do anything\n");
+      return;
+    //}
+  }
+
   if (parallel_data) {
-    initialize_region(0);
+    int retVal = initialize_region(0);
+    if (retVal == -1) {
+      //printf("Something is not initialized properly: %d\n", retVal);
+    }
   } else {
     // TODO: Go one level above?
   }
