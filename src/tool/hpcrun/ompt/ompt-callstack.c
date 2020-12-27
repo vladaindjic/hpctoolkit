@@ -1576,15 +1576,9 @@ ompt_cct_cursor_finalize
     return check_and_return_non_null(cct->unresolved_root, cct_cursor, 877);
   }
 
-  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
-//    int thread_num = -1;
-//    int ret = hpcrun_ompt_get_task_info(0, NULL, NULL, NULL, NULL, &thread_num);
-//    if (ret != 2) {
-//      return cct->partial_unw_root;
-//    }
-//    if (thread_num != 0) {
-//      return cct->partial_unw_root;
-//    }
+  int ancestor_level = try_to_detect_the_case();
+  if (ancestor_level < 0) {
+    // This should be idle?
     return cct->partial_unw_root;
   }
 

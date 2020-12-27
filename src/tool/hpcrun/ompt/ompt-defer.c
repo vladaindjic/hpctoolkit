@@ -983,15 +983,9 @@ register_to_all_regions
   void
 )
 {
-  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
-//    int thread_num = -1;
-//    int ret = hpcrun_ompt_get_task_info(0, NULL, NULL, NULL, NULL, &thread_num);
-//    if (ret != 2) {
-//      return;
-//    }
-//    if (thread_num != 0) {
-//      return;
-//    }
+  int ancestor_level = try_to_detect_the_case();
+  if (ancestor_level < 0) {
+    // Skip registration process.
     return;
   }
 
@@ -1712,6 +1706,9 @@ register_to_all_regions
   }
 #endif
 
+  // FIXME vi3: check whether region at ancestor_level
+  //   really has region_depth.
+
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
@@ -2141,39 +2138,36 @@ initialize_regions_if_needed
   void
 )
 {
+  int ancestor_level = try_to_detect_the_case();
+  if (ancestor_level < 0) {
+    // Cannot initialize anything
+    return;
+  }
   int flags0;
   ompt_frame_t *frame0;
   ompt_data_t *task_data = NULL;
   ompt_data_t *parallel_data = NULL;
   int thread_num = -1;
-  int ret = hpcrun_ompt_get_task_info(0, &flags0, &task_data, &frame0,
+  int ret = hpcrun_ompt_get_task_info(ancestor_level, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
   if (ret != 2) {
-    //printf("Missing information\n");
+    printf("Impossible\n");
     return;
   }
 
   // TODO: Any more edge cases about sequential code.
   if (flags0 & ompt_task_initial) {
     // executing sequential code
-    //printf("Sequential code\n");
     return;
-  }
-
-  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
-    //if (thread_num != 0) {
-      //printf("I guess worker shouldn't do anything\n");
-      return;
-    //}
   }
 
   if (parallel_data) {
     int retVal = initialize_region(0);
     if (retVal == -1) {
-      //printf("Something is not initialized properly: %d\n", retVal);
+      printf("Something is not initialized properly: %d\n", retVal);
     }
   } else {
-    // TODO: Go one level above?
+    printf("Impossible too\n");
   }
 }
 
