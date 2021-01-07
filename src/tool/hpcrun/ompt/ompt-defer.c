@@ -876,9 +876,6 @@ lca_el_fn
   el->unresolved_cct = NULL;
   el->took_sample = false;
 
-  //return_label:
-  // update arguments
-  args->level = level + 1;
 #if KEEP_PARENT_REGION_RELATIONSHIP
   // In order to prevent NULL values get from hpcrun_ompt_get_region_data,
   // use parent as next region to process.
@@ -887,7 +884,44 @@ lca_el_fn
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   args->region_data = hpcrun_ompt_get_region_data(args->level);
 #else
-  args->region_data = hpcrun_ompt_get_region_data_from_task_info(args->level);
+
+  // Since we're implicitly using ompt_get_task_info and is possible to face
+  // with nested tasks, we may need to omit some of them that belongs to this
+  // region.
+  // TODO VI3: move this to function
+  typed_stack_elem(region) *new_region = el->region_data;
+  typed_stack_elem(region) *old_region = new_region;
+
+  typed_stack_elem(region)* enc[10];
+  int top = 0;
+  while(new_region) {
+    if (new_region->depth + 1 == old_region->depth) {
+      break;
+    }
+    old_region = new_region;
+    // get information about outer task
+    new_region = hpcrun_ompt_get_region_data_from_task_info(++level);
+  }
+
+  if (!new_region) {
+    // just a debug stuff
+    int flags0;
+    ompt_frame_t *frame0;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    int thread_num = -1;
+    int ret_val = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
+                                            &parallel_data, &thread_num);
+    if (ret_val == 2 && (flags0 & ompt_task_initial)) {
+      // It is ok to encounter on initial task.
+    } else {
+      printf("Unexpected: %d, task_flags: %x\n", ret_val, flags0);
+    }
+  }
+
+  args->region_data = new_region;
+  args->level = level;
+
 #endif
 #endif
   // indicator to continue processing stack element
@@ -2151,6 +2185,12 @@ initialize_regions_if_needed
   int ret = hpcrun_ompt_get_task_info(ancestor_level, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
   if (ret != 2) {
+    // FIXME vi3: this may happen in the test case with nested explicit tasks.
+    //   If the thread's current taskdata that belonged to the finished task
+    //   has been reused by new task executed by other thread,
+    //   then the thread will think it belongs to it, and ompt_get_task_info
+    //   will return information about the task. This should be resolved inside
+    //   the runtime.
     printf("Impossible\n");
     return;
   }

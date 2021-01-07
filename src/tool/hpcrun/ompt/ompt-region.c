@@ -680,16 +680,6 @@ ompt_parallel_region_register_callbacks
 }
 
 
-static ompt_state_t
-check_state
-(
-  void
-)
-{
-  uint64_t wait_id;
-  return hpcrun_ompt_get_state(&wait_id);
-}
-
 int
 initialize_region
 (
@@ -742,10 +732,7 @@ initialize_region
   typed_stack_elem(region) *new_reg =
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
-  if (new_reg->depth == 0 && level == 0) {
-    printf("zasto se ovo desava: %x\n", check_state());
-  }
-  bool success = false;
+
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
@@ -753,12 +740,8 @@ initialize_region
     ompt_region_release(new_reg);
   } else {
     old_reg = new_reg;
-    //printf("Initialized\n");
-    success = true;
   }
-  if (old_reg->depth == 0 && level == 0) {
-    printf("Only once, level: %d, success: %d, state: %x\n", level, success, check_state());
-  }
+
   return old_reg->depth;
 }
 
