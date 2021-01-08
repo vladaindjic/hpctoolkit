@@ -1002,12 +1002,154 @@ least_common_ancestor
 
 static ompt_state_t
 check_state
-    (
-        void
-    )
+(
+  void
+)
 {
   uint64_t wait_id;
   return hpcrun_ompt_get_state(&wait_id);
+}
+
+void
+attribute_idle_to_cct_node
+(
+  cct_node_t *cct_node
+)
+{
+  // merge children of idle_placeholder to cct_node
+  hpcrun_cct_merge(cct_node, idle_placeholder, merge_metrics, NULL);
+  // Remove and invalidate idle_placeholder as indication that idle samples
+  // have been attributed to the proper position.
+  hpcrun_cct_delete_self(idle_placeholder);
+  // invalidate values
+  idle_placeholder = NULL;
+  idle_region_id = 0;
+  idle_region_depth = -1;
+
+}
+
+void
+attribute_idle_to_global_context
+(
+  void
+)
+{
+  // FIXME vi3: Check whether the logic is good. Apparently, this never happened.
+  // attribute idleness to global context and invalidate idle_* values
+  attribute_idle_to_cct_node(hpcrun_get_thread_epoch()->csdata.partial_unw_root);
+}
+
+
+void
+attribute_idle_to_region
+(
+  void
+)
+{
+  // FIXME vi3: Check whether the logic is good. Apparently, this never happened.
+  // It is possible that there's no cct_node that corresponds to the region
+  // with id idle_region_id.
+  typed_random_access_stack_elem(region) *el =
+      typed_random_access_stack_get(region)
+          (region_stack, idle_region_depth);
+  // FIXME vi3: I think this should be fixed for the case when we're
+  //   providing the call path at the moment of taking the first sample
+  //   by the master thread.
+  if (!el->unresolved_cct) {
+    // This should never happen.
+    printf("There's no node where to attribute the idleness\n");
+  }
+  // attribute idleness to region and invalidate idle_* values
+  // FIXME vi3: Or to use already resolved node???
+  attribute_idle_to_cct_node(el->unresolved_cct);
+
+}
+
+
+void
+process_previous_waiting
+(
+  void
+)
+{
+  if (!idle_region_id) {
+    // No idle samples taken while waiting on some of the
+    // previous implicit barrier.
+    return;
+  }
+
+  int stack_top_idx =
+      typed_random_access_stack_top_index_get(region)(region_stack);
+  typed_stack_elem(region) *top_reg =
+      typed_random_access_stack_top(region)(region_stack)->region_data;
+
+  if (idle_region_depth > stack_top_idx) {
+    // region has been finished
+    attribute_idle_to_global_context();
+  } else if (idle_region_depth < stack_top_idx) {
+    typed_stack_elem(region) *reg =
+        typed_random_access_stack_get(region)
+            (region_stack, idle_region_depth)->region_data;
+    if (reg->region_id == idle_region_id) {
+      // Outer region is still active.
+      // I think it is ok to attribute idleness to it.
+      attribute_idle_to_region();
+    } else {
+      // The region at this level has been changed (finished)
+      // and attribute the idle to global context
+      attribute_idle_to_global_context();
+    }
+  } else {
+    // check the region on the top of the stack
+    if (idle_region_id == top_reg->region_id) {
+      // Region is still active and is the innermost region.
+      // if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+      if (task_ancestor_level == -3) {
+        // Worker thread is still waiting on the implicit barrier of this region.
+        // Do nothing. Just use idle_placeholder as cct_cursor.
+        return;
+      } else {
+        // The state has been changed since the previous sample.
+        // FIXME vi3: Check whether we need to use some specific state
+        attribute_idle_to_region();
+      }
+    } else {
+      // Region at this level had been finished and swapped from the stack.
+      attribute_idle_to_global_context();
+    }
+  }
+}
+
+
+void
+wait_on_the_last_implicit_barrier
+(
+  void
+)
+{
+  process_previous_waiting();
+
+  // if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+  if (task_ancestor_level == -3) {
+    // Worker thread is waiting on the last implicit barrier of the
+    // innermost region.
+    typed_stack_elem(region) *top_reg =
+        typed_random_access_stack_top(region)(region_stack)->region_data;
+    if (idle_region_id == top_reg->region_id) {
+      // The previous sample was taken while waiting on the implicit barrier
+      // of the same innermost region.
+      printf("Ima li mene ovde\n");
+      return;
+    }
+    // Store information about the new innermost region on which implicit
+    // barrier thread is waiting.
+    idle_region_id = top_reg->region_id;
+    idle_region_depth = top_reg->depth;
+    // FIXME vi3: you don't have to allocate placeholder each time, I guess
+    idle_placeholder = hpcrun_cct_top_new(UNRESOLVED, 0);
+    printf("Ima li ovde: %p\n", idle_placeholder);
+  }
+
 }
 
 
@@ -1017,8 +1159,7 @@ register_to_all_regions
   void
 )
 {
-  int ancestor_level = try_to_detect_the_case();
-  if (ancestor_level < 0) {
+  if (task_ancestor_level < 0 && task_ancestor_level != -3) {
     // Skip registration process.
     return;
   }
@@ -1734,8 +1875,14 @@ register_to_all_regions
 #else
   // FIXME vi3: Any information get from runtime that may help?
   if (info_type == 2) {
+    // FIXME vi3: debug this case
+    // printf("Debug this case\n");
     // If elider cannot find task data, I guess it is safe to skip registering,
     // unless we get some secure information from runtime
+    if (task_ancestor_level == -3) {
+      // FIXME vi3: debug this case
+      //printf("Pay attention to this\n");
+    }
     return;
   }
 #endif
@@ -1749,44 +1896,49 @@ register_to_all_regions
   if (!least_common_ancestor(&lca, region_depth)) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
+    if (task_ancestor_level == -3) {
+      printf("How to provide idle_placeholder: %p?\n", idle_placeholder);
+    }
     return;
   }
 
-  int start_from = 0;
-  cct_node_t *parent_cct = NULL;
+  // It is not safe to register to regions in the following cases:
+  // - There's no information about the innermost task/region.
+  // - Worker is waiting on the last implicit barrier of the innermost region.
+  if (task_ancestor_level >= 0) {
+    int start_from = 0;
+    cct_node_t *parent_cct = NULL;
 
-  if (lca) {
-    // Optimization: Thread will register for regions nested
-    // inside lca->region_data
-    start_from = lca->region_data->depth;
-    parent_cct = lca->unresolved_cct;
-  } else {
-    // Thread must register for all active region,
-    // starting from the outermost one.
-    start_from = 0;
-    parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+    if (lca) {
+      // Optimization: Thread will register for regions nested
+      // inside lca->region_data
+      start_from = lca->region_data->depth;
+      parent_cct = lca->unresolved_cct;
+    } else {
+      // Thread must register for all active region,
+      // starting from the outermost one.
+      start_from = 0;
+      parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+    }
+
+    if (!parent_cct) {
+      printf("least_common_ancestor - parent_cct missing: %d (%lx, %p)\n",
+          start_from, lca->region_data->region_id, lca->unresolved_cct);
+    }
+
+    // registration process
+    // start_from: thread will register for regions which
+    //   depths are >= "start_from"
+    // parent_cct: the parent cct_node of the unresolved_cct
+    //   which corresponds to the region at depth "start_from".
+    typed_random_access_stack_reverse_iterate_from(region)(start_from,
+                                                           region_stack,
+                                                           thread_take_sample,
+                                                           &parent_cct);
   }
+  // process idleness if needed
+  wait_on_the_last_implicit_barrier();
 
-  if (!parent_cct) {
-    printf("least_common_ancestor - parent_cct missing: %d (%lx, %p)\n",
-        start_from, lca->region_data->region_id, lca->unresolved_cct);
-  }
-
-  // registration process
-  // start_from: thread will register for regions which
-  //   depths are >= "start_from"
-  // parent_cct: the parent cct_node of the unresolved_cct
-  //   which corresponds to the region at depth "start_from".
-  typed_random_access_stack_reverse_iterate_from(region)(start_from,
-                                                         region_stack,
-                                                         thread_take_sample,
-                                                         &parent_cct);
-  // NOTE vi3 >>> I put this function call inside ompt_cct_cursor_finalize function
-  //   since I'm still not sure why/how thread_data can change its value while
-  //   our tool is in the middle of sample processing.
-      // If any idle samples have been previously taken inside this region,
-      // attribute them to it.
-      // attr_idleness2region_at(vi3_last_to_register);
 }
 
 
@@ -2021,6 +2173,11 @@ ompt_resolve_region_contexts
   attr_idleness2outermost_ctx();
 #endif
 
+  if (idle_region_id) {
+    // Attribute remained idleness to the global context.
+    attribute_idle_to_global_context();
+  }
+
   struct timespec start_time;
 
   size_t i = 0;
@@ -2172,8 +2329,8 @@ initialize_regions_if_needed
   void
 )
 {
-  int ancestor_level = try_to_detect_the_case();
-  if (ancestor_level < 0) {
+  task_ancestor_level = try_to_detect_the_case();
+  if (task_ancestor_level < 0) {
     // Cannot initialize anything
     return;
   }
@@ -2182,7 +2339,7 @@ initialize_regions_if_needed
   ompt_data_t *task_data = NULL;
   ompt_data_t *parallel_data = NULL;
   int thread_num = -1;
-  int ret = hpcrun_ompt_get_task_info(ancestor_level, &flags0, &task_data, &frame0,
+  int ret = hpcrun_ompt_get_task_info(task_ancestor_level, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
   if (ret != 2) {
     // FIXME vi3: this may happen in the test case with nested explicit tasks.

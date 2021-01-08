@@ -103,6 +103,12 @@ extern __thread bool vi3_idle_collapsed;
 // place where all idle samples will be put before resolving
 extern __thread cct_node_t *local_idle_placeholder;
 
+extern __thread int task_ancestor_level;
+
+extern __thread cct_node_t *idle_placeholder;
+extern __thread int idle_region_depth;
+extern __thread uint64_t idle_region_id;
+
 #if FREELISTS_ENABLED
 #if FREELISTS_DEBUG
 extern __thread long notification_used;

@@ -1576,15 +1576,23 @@ ompt_cct_cursor_finalize
     return check_and_return_non_null(cct->unresolved_root, cct_cursor, 877);
   }
 
-  int ancestor_level = try_to_detect_the_case();
-  if (ancestor_level < 0) {
-    // This should be idle?
-    return cct->partial_unw_root;
-  }
-
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+
+  if (task_ancestor_level == -3) {
+    if (info_type == 2) {
+      return check_and_return_non_null(cct_cursor, cct_cursor, 1585);
+    }
+    // Worker is waiting on the last implicit barrier.
+    return check_and_return_non_null(idle_placeholder, cct_cursor, 1588);
+  } else if (task_ancestor_level < 0) {
+    // FIXME vi3: debug this case
+    // printf("This may happen too\n");
+    // This should be idle?
+    return check_and_return_non_null(cct_cursor, cct_cursor, 1588);
+  }
+
 
 #if 0
   // NOTE vi3: code that contains a lot of useful debug information about edge cases

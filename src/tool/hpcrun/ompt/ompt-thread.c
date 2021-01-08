@@ -90,6 +90,16 @@ __thread int vi3_last_to_register = -1;
 __thread bool vi3_idle_collapsed = false;
 __thread cct_node_t *local_idle_placeholder = NULL;
 
+// Non-negative values represents the innermost task ancestor level.
+//    On this level, there's available information about task.
+// -1, -2 shows that there's no information about task/region at this level.
+// -3 shows that worker is waiting on the last implicit barrier
+__thread int task_ancestor_level = 0;
+
+__thread cct_node_t *idle_placeholder = NULL;
+__thread int idle_region_depth = -1;
+__thread uint64_t idle_region_id = 0;
+
 #if FREELISTS_ENABLED
 __thread long notification_used = 0;
 #endif
