@@ -812,10 +812,11 @@ ompt_backtrace_finalize
       resolve_cntxt();
   }
   uint64_t region_id = TD_GET(region_id);
-
-  // initialize region_data if needed
-  initialize_regions_if_needed();
-
+  if (!ompt_eager_context_p()) {
+    // initialize region_data if needed
+    // (only when region creation context is provided lazily)
+    initialize_regions_if_needed();
+  }
   ompt_elide_runtime_frame(bt, region_id, isSync);
 #if 0
   // Old code
