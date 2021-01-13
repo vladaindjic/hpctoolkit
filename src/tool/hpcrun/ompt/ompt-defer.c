@@ -852,7 +852,22 @@ lca_el_fn
   int level = args->level;
   typed_stack_elem(region) *reg = args->region_data;
   // The sample was previously taken in this region
-  if (el->region_data) {
+  if (el->region_data && el->took_sample) {
+    // Region is LCA only if thread executed thread_take_sample
+    // function. See register_to_all_regions function for more info.
+    // Briefly, it is possible that thread updated the regions on stack,
+    // while it was waiting on the last implicit barrier. If this was the case,
+    // then the thread didn't register for their creation context
+    // (didn't execute thread_take_sample function).
+
+    if (!reg) {
+      if (task_ancestor_level == -3) {
+        // check whether parallel_data has been changed
+        hpcrun_ompt_get_region_data_from_task_info(-333);
+      }
+//      printf("Frequent: %d\n", level);
+      return 0;
+    }
     // If the region has not been change since the last sample was taken,
     // then the least common ancestor is found,
     if (el->region_id == reg->region_id) {
@@ -1147,7 +1162,7 @@ wait_on_the_last_implicit_barrier
     idle_region_depth = top_reg->depth;
     // FIXME vi3: you don't have to allocate placeholder each time, I guess
     idle_placeholder = hpcrun_cct_top_new(UNRESOLVED, 0);
-    printf("Ima li ovde: %p\n", idle_placeholder);
+    //printf("Ima li ovde: %p\n", idle_placeholder);
   }
 
 }
@@ -1160,7 +1175,8 @@ register_to_all_regions
 )
 {
   if (task_ancestor_level < 0 && task_ancestor_level != -3) {
-    // Skip registration process.
+    // Thread is either executing the sequential code, or there's no
+    // information about the tasks/regions.
     return;
   }
 
@@ -1852,6 +1868,7 @@ register_to_all_regions
   }
 #endif
 
+#if 0
   // invalidate value
   vi3_last_to_register = -1;
 
@@ -1859,6 +1876,26 @@ register_to_all_regions
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
                                            &omp_task_context, &region_depth);
+
+    // FIXME vi3: check whether region at ancestor_level
+  //   really has region_depth.
+  if (task_ancestor_level > 0) {
+    // FIXME vi3: check whether this is right.
+    // It should be safe to register for the regions on levels
+    // task_ancestor_level and above
+    typed_stack_elem(region) *reg =
+        hpcrun_ompt_get_region_data_from_task_info(task_ancestor_level);
+    if (!reg) {
+      printf("Something is very wrong: %d, %p\n", task_ancestor_level, reg);
+    }
+
+    if (info_type == 1) {
+      if (reg && reg->depth != region_depth) {
+        printf("this may be possible, I guess\n");
+      }
+    }
+  }
+#endif
 
 #if DETECT_IDLENESS_LAST_BARRIER
   if (waiting_on_last_implicit_barrier) {
@@ -1873,6 +1910,8 @@ register_to_all_regions
     }
   }
 #else
+
+#if 0
   // FIXME vi3: Any information get from runtime that may help?
   if (info_type == 2) {
     // FIXME vi3: debug this case
@@ -1882,13 +1921,61 @@ register_to_all_regions
     if (task_ancestor_level == -3) {
       // FIXME vi3: debug this case
       //printf("Pay attention to this\n");
+    } else {
+      if (task_ancestor_level != 0) {
+        printf("This never happened: %d\n", task_ancestor_level);
+      }
+      // The most frequent is task_ancestor_level == 0
+      // It may also have the following values:
+      //    - 1
+      // task_ancestor_level == 1 inside
+      /*
+       * __kmp_wait_template<kmp_flag_64, 1> (this_thr=0x1b0ae00, flag=0x7f37be9f8bf0, itt_sync_obj=0x0)
+         kmp_flag_64::wait (this=0x7f37be9f8bf0, this_thr=0x1b0ae00, final_spin=1, itt_sync_obj=0x0)
+         __kmp_hyper_barrier_release (bt=bs_forkjoin_barrier, this_thr=0x1b0ae00, gtid=9, tid=-2, propagate_icvs=1, itt_sync_obj=0x0)
+         __kmp_fork_barrier (gtid=9, tid=-2) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_barrier.cpp:1967
+         __kmp_launch_thread (this_thr=0x1b0ae00) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/kmp_runtime.cpp:5742
+         __kmp_launch_worker (thr=0x1b0ae00) at /home/vi3/pkgs-src/llvm-openmp-5/runtime/src/z_Linux_util.cpp:564
+         monitor_thread_fence2 () at pthread.c:978
+         start_thread (arg=0x7f37be9fab80) at pthread_create.c:307
+         clone () from /lib64/libc.so.6
+       *
+       *
+       * state is ompt_state_idle
+       * it is possible that this is happening after exiting the barrier
+       * */
+
+      // FIXME check whether this is right:
+      //   I think it is ok to register for the region on level
+      //   task_ancestor_level and above.
     }
     return;
   }
 #endif
 
-  // FIXME vi3: check whether region at ancestor_level
-  //   really has region_depth.
+#endif
+
+  int region_depth = -1;
+  typed_stack_elem(region) *innermost_reg = NULL;
+  if (task_ancestor_level >= 0) {
+    // If task_ancestor_level >= 0, then tasks at mentioned level or above
+    // should be active, as well as regions in which the tasks are executed.
+    innermost_reg = hpcrun_ompt_get_region_data_from_task_info(task_ancestor_level);
+  } else if (task_ancestor_level == -3) {
+    // If task_ancestor_level == -3, then the worker thread is waiting on the
+    // last implicit barrier of the innermost region. The information about
+    // mentioned region and its ancestors should be still present. It should
+    // be OK to update the stack, but omit the registration process, since thread
+    // cannot be sure that these regions are still active (the region descriptors
+    // may be ready to be destroyed)
+    innermost_reg = hpcrun_ompt_get_region_data_from_task_info(0);
+  }
+
+  if (!innermost_reg) {
+    //printf("I cannot updated stack: %d, %p\n", task_ancestor_level, innermost_reg);
+    return;
+  }
+  region_depth = innermost_reg->depth;
 
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
@@ -1902,9 +1989,9 @@ register_to_all_regions
     return;
   }
 
-  // It is not safe to register to regions in the following cases:
-  // - There's no information about the innermost task/region.
-  // - Worker is waiting on the last implicit barrier of the innermost region.
+  // It is not safe to register to regions if worker is waiting on
+  // the last implicit barrier of the innermost region.
+  //   (task_ancestor_level equals to -3).
   if (task_ancestor_level >= 0) {
     int start_from = 0;
     cct_node_t *parent_cct = NULL;
@@ -1938,6 +2025,7 @@ register_to_all_regions
   }
   // process idleness if needed
   wait_on_the_last_implicit_barrier();
+  // FIXME vi3: resolve if idling?
 
 }
 
@@ -2330,16 +2418,37 @@ initialize_regions_if_needed
 )
 {
   task_ancestor_level = try_to_detect_the_case();
+  int innermost_task_level = task_ancestor_level;
   if (task_ancestor_level < 0) {
-    // Cannot initialize anything
-    return;
+    if (task_ancestor_level == -3) {
+      // Worker thread is waiting on the last implicit barrier.
+      // The information about the tasks and regions are still
+      // available. I'll try to initialize region descriptors;
+      innermost_task_level = 0;
+
+      // FIXME vi3: If this cannot be done, then the idleness on the
+      //   last implicit barrier cannot be done properly without
+      //   ompt_callback_parallel_begin.
+      // If the worker thread is waiting on the last implicit barrier.
+      // and if the information about the regions are available (thread_num,
+      // parallel_data, etc.), I think it is ok to try to initialize the
+      // region descriptors.
+
+    } else {
+      // Cannot initialize anything because one of the following:
+      // - since the information about task at level 0 and 1 are not available
+      // - thread is executing the sequential code
+      return;
+    }
   }
+
+
   int flags0;
   ompt_frame_t *frame0;
   ompt_data_t *task_data = NULL;
   ompt_data_t *parallel_data = NULL;
   int thread_num = -1;
-  int ret = hpcrun_ompt_get_task_info(task_ancestor_level, &flags0, &task_data, &frame0,
+  int ret = hpcrun_ompt_get_task_info(innermost_task_level, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
   if (ret != 2) {
     // FIXME vi3: this may happen in the test case with nested explicit tasks.
@@ -2359,7 +2468,7 @@ initialize_regions_if_needed
   }
 
   if (parallel_data) {
-    int retVal = initialize_region(0);
+    int retVal = initialize_region(innermost_task_level);
     if (retVal == -1) {
       printf("Something is not initialized properly: %d\n", retVal);
     }

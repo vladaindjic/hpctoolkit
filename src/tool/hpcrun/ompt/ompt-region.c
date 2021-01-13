@@ -282,6 +282,7 @@ ompt_parallel_end_internal
       // notify first thread in chain
       typed_channel_shared_push(notification)(to_notify->notification_channel, to_notify);
     } else {
+      // FIXME vi3: push to the public queue of creator
       // if none, you can reuse region
       // this thread is region creator, so it could push to private stack of region channel
       ompt_region_release(region_data);
@@ -670,6 +671,7 @@ ompt_parallel_region_register_callbacks
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
 #endif
+  // FIXME vi3: This is not used in eager approach.
   retval = ompt_set_callback_fn(ompt_callback_parallel_end,
                     (ompt_callback_t)ompt_parallel_end);
   assert(ompt_event_may_occur(retval));

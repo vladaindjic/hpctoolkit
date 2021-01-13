@@ -104,6 +104,7 @@ extern __thread bool vi3_idle_collapsed;
 extern __thread cct_node_t *local_idle_placeholder;
 
 extern __thread int task_ancestor_level;
+extern __thread ompt_data_t *initial_parallel_data;
 
 extern __thread cct_node_t *idle_placeholder;
 extern __thread int idle_region_depth;

@@ -1589,8 +1589,9 @@ ompt_cct_cursor_finalize
     return check_and_return_non_null(idle_placeholder, cct_cursor, 1588);
   } else if (task_ancestor_level < 0) {
     // FIXME vi3: debug this case
-    // printf("This may happen too\n");
-    // This should be idle?
+    // Thread may be executing the initial task (sequential code).
+    // There's no available information about the task at level 0 and 1,
+    // so thread is probably idling and waiting to be destroyed.
     return check_and_return_non_null(cct_cursor, cct_cursor, 1588);
   }
 

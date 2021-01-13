@@ -95,6 +95,8 @@ __thread cct_node_t *local_idle_placeholder = NULL;
 // -1, -2 shows that there's no information about task/region at this level.
 // -3 shows that worker is waiting on the last implicit barrier
 __thread int task_ancestor_level = 0;
+__thread ompt_data_t *initial_parallel_data = NULL;
+
 
 __thread cct_node_t *idle_placeholder = NULL;
 __thread int idle_region_depth = -1;

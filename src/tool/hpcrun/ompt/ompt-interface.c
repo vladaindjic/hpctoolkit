@@ -874,6 +874,11 @@ hpcrun_ompt_get_region_data_from_task_info
   int ancestor_level
 )
 {
+  int old_anc = ancestor_level;
+  if (ancestor_level == -333) {
+    ancestor_level = 0;
+  }
+
   if (ompt_initialized){
     int task_type_flags;
     ompt_data_t *task_data = NULL;
@@ -885,6 +890,18 @@ hpcrun_ompt_get_region_data_from_task_info
                           &task_frame, &parallel_data, &thread_num);
     if (retVal != 2) {
       return NULL;
+    }
+
+    if (old_anc == -333) {
+      if (initial_parallel_data != parallel_data) {
+        // FIXME FIXME FIXME VI3: IDLENESS ON THE LAST IMPLICIT BARRIER CANNOT
+        //   BE HANDLED WITHOUT INSTRUMENTATION CALLBACKS???
+        // Thread is waiting on the last implicit barrier.
+        // The team has been recycled, that's why we get different
+        // values for the parallel_data at level 0 when calling
+        // this multiple time while processing the same sample.
+        printf("*************************** This may represent the problem: %p, %p\n\n\n", initial_parallel_data, parallel_data);
+      }
     }
 
     if (task_type_flags & ompt_task_initial) {
@@ -1236,6 +1253,7 @@ try_to_detect_the_case
   int ret = hpcrun_ompt_get_task_info(ancestor_level, &flags, &task_data, &frame,
                                       &parallel_data, &thread_num);
 
+  initial_parallel_data = parallel_data;
   if (ret != 2 || !parallel_data) {
     // Check one level above
     ancestor_level++;
@@ -1268,6 +1286,11 @@ try_to_detect_the_case
       // TODO vi3: Accumulate idleness.
       return -3;
     }
+  }
+
+  if (ancestor_level == 0 && (flags & ompt_task_initial)) {
+    // Thread is executing the sequential code.
+    return -4;
   }
 
 
