@@ -218,7 +218,8 @@ ompt_parallel_end_internal
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   if (!ompt_eager_context_p()){
 #else
-  if (!ompt_eager_context_p() && region_data){
+  // if (!ompt_eager_context_p() && region_data){
+  if (region_data){
     // It is possible that region_data is not initialized, if none thread took
     // sample while region was active.
 #endif
@@ -315,6 +316,7 @@ ompt_parallel_end_internal
     ending_region = NULL;
   }
 
+#if 0
   // FIXME: vi3: what is this?
   // FIXME: not using team_master but use another routine to
   // resolve team_master's tbd. Only with tasking, a team_master
@@ -328,6 +330,7 @@ ompt_parallel_end_internal
 
   // FIXME: vi3 do we really need to keep this line
   hpcrun_get_thread_data()->region_id = 0;
+#endif
 }
 
 
@@ -670,9 +673,13 @@ ompt_parallel_region_register_callbacks
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
 #endif
-  retval = ompt_set_callback_fn(ompt_callback_parallel_end,
-                    (ompt_callback_t)ompt_parallel_end);
-  assert(ompt_event_may_occur(retval));
+
+  if (!hpcrun_trace_isactive()) {
+    // Only lazy approach needs parallel end callback.
+    retval = ompt_set_callback_fn(ompt_callback_parallel_end,
+                                  (ompt_callback_t)ompt_parallel_end);
+    assert(ompt_event_may_occur(retval));
+  }
 
 #if USE_IMPLICIT_TASK_CALLBACKS == 1
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
