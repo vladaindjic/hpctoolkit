@@ -1164,7 +1164,19 @@ ompt_provide_callpaths_while_elide_runtime_frame_internal
                 return -333;
               }
           } else {
-            return -33;
+            if (flags0 & ompt_task_initial) {
+              // Sample is taken while thread is trying to create outermost
+              // parallel region. Unfortunately, the parallel_data hasn't
+              // been initialized yet (ompt_callback_parallel_end), so region_data
+              // hasn't been allocated. Even though thread knows the region creation
+              // context, it doesn't know where to store it (region_data is missing).
+              // Skip for now.
+              // FIXME VI3: pay attention to this
+              //printf("paren_data: %p, child_data: %p\n",
+              //       parent_region, child_region);
+            } else {
+              return -33;
+            }
           }
           // FIXME vi3
         }
