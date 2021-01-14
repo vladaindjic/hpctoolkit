@@ -1128,10 +1128,12 @@ hpcrun_cct_node_alloc(){
 
 void
 hpcrun_cct_node_free(cct_node_t *cct){
+#if 0
   // Invalidating cntent of cct_node_t struct is done in
   // function cct_node_create
   // memset(cct, 0, sizeof(cct_node_t));
   add_node_to_freelist(cct);
+#endif
 }
 
 

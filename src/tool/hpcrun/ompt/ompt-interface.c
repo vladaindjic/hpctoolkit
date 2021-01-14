@@ -578,8 +578,12 @@ init_mutex_blame_shift
 {
   int mutex_blame_shift_avail = 0;
   int retval = 0;
-
-  ompt_mutex_blame_shift_request();
+  // vi3: ompt_idle_blame_shift_request has been removed from
+  // init_idle_blame_shift.
+  // If this remains here and if hpcrun is called without -e, then
+  // merge_metrics (ompt-defer.c). It seems that in this case some metrics
+  // remained uninitialized.
+  // ompt_mutex_blame_shift_request();
 
   if (!ompt_mutex_blame_requested) return;
 
