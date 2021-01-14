@@ -306,4 +306,18 @@ try_to_detect_the_case
   void
 );
 
+
+void
+ompt_idle_begin
+(
+ void
+);
+
+
+void
+ompt_idle_end
+(
+ void
+);
+
 #endif // _OMPT_INTERFACE_H_

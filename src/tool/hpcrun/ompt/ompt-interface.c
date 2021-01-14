@@ -124,6 +124,8 @@ static directed_blame_info_t omp_mutex_blame_info;
 // state for undirected blame shifting away from spinning waiting for work
 static undirected_blame_info_t omp_idle_blame_info;
 
+static __thread int thread_is_idle = 0;
+
 //-----------------------------------------
 // declare ompt interface function pointers
 //-----------------------------------------
@@ -251,14 +253,28 @@ ompt_thread_needs_blame
     ompt_wait_id_t wait_id;
     ompt_state_t state = hpcrun_ompt_get_state(&wait_id);
     switch(state) {
-      case ompt_state_idle:
       case ompt_state_wait_barrier:
       case ompt_state_wait_barrier_implicit:
       case ompt_state_wait_barrier_explicit:
+      case ompt_state_wait_barrier_implicit_parallel:
+      case ompt_state_wait_barrier_implicit_workshare:
+	
+	// johnmc ompt-blame: check this
+	// it seems like having thread 0 accept idle samples while charging itself one 
+	// for barriers will get the costs in the right place. otherwise, they don't 
+	// score as idleness 
+#if 0
+	return (hpcrun_ompt_get_thread_num(0) == 0);
+#endif
+
+      case ompt_state_idle:
       case ompt_state_wait_taskwait:
       case ompt_state_wait_taskgroup:
-         return false;
       default:
+	return false;
+
+      case ompt_state_work_serial:
+      case ompt_state_work_parallel:
         return true;
     }
   }
@@ -309,7 +325,6 @@ ompt_register_mutex_metrics
 
 
 static void
-__attribute__ ((unused))
 ompt_register_idle_metrics
 (
  void
@@ -322,7 +337,7 @@ ompt_register_idle_metrics
 
   omp_idle_blame_info.work_metric_id = 
     hpcrun_set_new_metric_info_and_period(idl_kind, "OMP_WORK",
-				    MetricFlags_ValFmt_Int, 1, metric_property_none);
+				    MetricFlags_ValFmt_Real, 1, metric_property_none);
   hpcrun_close_kind(idl_kind);
 }
 
@@ -422,26 +437,32 @@ ompt_thread_end
 // support undirected blame shifting
 //-------------------------------------------------
 
-static void
+void
 ompt_idle_begin
 (
  void
 )
 {
-  undirected_blame_idle_begin(&omp_idle_blame_info);
-  if (!ompt_eager_context_p()) {
-    while(try_resolve_one_region_context());
+  if (!thread_is_idle) {
+    undirected_blame_idle_begin(&omp_idle_blame_info);
+    if (!ompt_eager_context_p()) {
+      while(try_resolve_one_region_context());
+    }
+    thread_is_idle = 1;
   }
 }
 
 
-static void
+void
 ompt_idle_end
 (
  void
 )
 {
-  undirected_blame_idle_end(&omp_idle_blame_info);
+  if (thread_is_idle) {
+    undirected_blame_idle_end(&omp_idle_blame_info);
+    thread_is_idle = 0;
+  }
 }
 
 
@@ -469,12 +490,23 @@ ompt_sync
  const void *codeptr_ra
 )
 {
-  if (kind == ompt_sync_region_barrier) {
-    if (endpoint == ompt_scope_begin) ompt_idle_begin();
-    else if (endpoint == ompt_scope_end) ompt_idle_end();
-    else assert(0);
-
-    //printf("Thread id = %d, \tBarrier %s\n", omp_get_thread_num(), endpoint==1?"begin":"end");
+#if 0
+  printf("Thread id = %d, \tBarrier %s\n", omp_get_thread_num(), 
+	 endpoint==1 ? "begin" : "end"
+	);
+#endif
+  switch(kind) {
+    case ompt_sync_region_barrier:
+    case ompt_sync_region_barrier_implicit:
+    case ompt_sync_region_barrier_explicit:
+    case ompt_sync_region_barrier_implementation:
+    case ompt_sync_region_taskwait:
+    case ompt_sync_region_taskgroup:
+      if (endpoint == ompt_scope_begin) ompt_idle_begin();
+      else if (endpoint == ompt_scope_end) ompt_idle_end();
+      else assert(0);
+  default:
+    break;
   }
 }
 
@@ -642,12 +674,8 @@ ompt_initialize
   init_threads();
   init_parallel_regions();
 
-#if 0
-  // johnmc: disable blame shifting for OpenMP 5 until we have 
-  // an appropriate plan
   init_mutex_blame_shift(ompt_runtime_version);
   init_idle_blame_shift(ompt_runtime_version);
-#endif
 
   char* ompt_task_full_ctxt_str = getenv("OMPT_TASK_FULL_CTXT");
   if (ompt_task_full_ctxt_str) {
@@ -997,6 +1025,17 @@ ompt_mutex_blame_shift_request
 {
   ompt_mutex_blame_requested = 1;
   ompt_register_mutex_metrics();
+}
+
+
+void
+ompt_idle_blame_shift_request
+(
+  void
+)
+{
+  ompt_idle_blame_requested = 1;
+  ompt_register_idle_metrics();
 }
 
 

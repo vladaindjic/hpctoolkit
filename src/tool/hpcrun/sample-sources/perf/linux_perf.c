@@ -553,12 +553,22 @@ record_sample(event_thread_t *current, perf_mmap_data_t *mmap_data,
   // ----------------------------------------------------------------------------
   sampling_info_t info = {.sample_clock = 0, .sample_data = mmap_data};
 
+#if 1
   *sv = hpcrun_sample_callpath(context, current->event->hpcrun_metric_id,
-        (hpcrun_metricVal_t) {.r=counter},
+        (hpcrun_metricVal_t) {.r = counter},
         0/*skipInner*/, 0/*isSync*/, &info);
+#else
+  *sv = hpcrun_sample_callpath(context, current->event->hpcrun_metric_id,
+        (hpcrun_metricVal_t) {.r = scale_f},
+        0/*skipInner*/, 0/*isSync*/, &info);
+#endif
 
-  blame_shift_apply(current->event->hpcrun_metric_id, sv->sample_node, 
-                    counter /*metricIncr*/);
+  if (sv->sample_node) {
+    float blame = counter; 
+    if (current->event->attr.freq==0) blame *= current->event->attr.sample_period;
+    blame_shift_apply(current->event->hpcrun_metric_id, sv->sample_node, 
+		      blame /*metricIncr*/);
+  }
 
   return sv;
 }

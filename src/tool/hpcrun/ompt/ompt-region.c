@@ -486,6 +486,7 @@ ompt_implicit_task_internal_end
     }
 #endif
   }
+  ompt_task_release(task_data);
 }
 
 

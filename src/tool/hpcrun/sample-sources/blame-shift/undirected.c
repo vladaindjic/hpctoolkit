@@ -95,8 +95,8 @@
 static inline void 
 undirected_blame_workers(undirected_blame_info_t *bi, long adjustment)
 {
-  atomic_add(&bi->active_worker_count, adjustment);
   atomic_add(&bi->total_worker_count, adjustment);
+  atomic_add(&bi->active_worker_count, adjustment);
 }
 
 
@@ -144,6 +144,8 @@ undirected_blame_idle_end(undirected_blame_info_t *bi)
 {
   // if (--(idle_count(bi)) > 0) return;
   atomic_add(&bi->active_worker_count, 1);
+  assert(atomic_load(&bi->active_worker_count) <= 
+	 atomic_load(&bi->total_worker_count));
 }
 
 void
@@ -164,17 +166,19 @@ undirected_blame_idle_end_trace(undirected_blame_info_t *bi)
 
 void
 undirected_blame_sample(void* arg, int metric_id, cct_node_t *node, 
-                        int metric_incr)
+                        float metric_incr)
 {
   undirected_blame_info_t *bi = (undirected_blame_info_t *) arg;
 
   if (!participates(bi) || !working(bi)) return;
 
-  int metric_period;
-
-  if (!metric_is_timebase(metric_id, &metric_period)) return;
+  if (!metric_is_timebase(metric_id)) return;
   
-  double metric_value = metric_period * metric_incr;
+#if 0
+  // cast to doubles to avoid overflow
+  double metric_value = ((double) metric_period) * ((double) metric_incr);
+#endif
+  float metric_value = metric_incr;
 
   // if (idle_count(bi) == 0) 
   { // if this thread is not idle
@@ -182,8 +186,8 @@ undirected_blame_sample(void* arg, int metric_id, cct_node_t *node,
     // that the count doesn't change between the time we test it and 
     // the time we use the value
 
-    long active = atomic_load_explicit(&bi->active_worker_count, memory_order_relaxed);
-    long total = atomic_load_explicit(&bi->total_worker_count, memory_order_relaxed);
+    long active = atomic_load(&bi->active_worker_count);
+    long total = atomic_load(&bi->total_worker_count);
 
     active = (active > 0 ? active : 1 ); // ensure active is positive
 
@@ -197,8 +201,9 @@ undirected_blame_sample(void* arg, int metric_id, cct_node_t *node,
       cct_metric_data_increment(bi->idle_metric_id, node, 
 				(cct_metric_data_t){.r = idleness});
     }
-
-    cct_metric_data_increment(bi->work_metric_id, node, 
-                              (cct_metric_data_t){.i = metric_value});
+    if (working_threads > 0) {
+      cct_metric_data_increment(bi->work_metric_id, node, 
+				(cct_metric_data_t){.r = metric_value});
+    }
   }
 }
