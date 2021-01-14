@@ -793,6 +793,76 @@ ompt_parallel_begin_context
   return context;
 }
 
+// ====================== vi3: idle_blame_shifting
+// set it to ompt_state_undefined by default
+static __thread ompt_state_t current_state = ompt_state_undefined;
+
+// Check whether the state matches one of the waiting state that
+// represents idling in sense of blaming.
+static
+bool
+is_state_in_idle_group
+(
+  ompt_state_t thread_state
+)
+{
+  // TODO vi3: improve this implementation
+  switch (thread_state) {
+    case ompt_state_wait_barrier:
+    case ompt_state_wait_barrier_implicit_parallel:
+    case ompt_state_wait_barrier_implicit_workshare:
+    case ompt_state_wait_barrier_implicit:
+    case ompt_state_wait_barrier_explicit:
+    case ompt_state_wait_taskwait:
+    case ompt_state_wait_taskgroup:
+    case ompt_state_idle:
+      return true;
+    default:
+      return false;
+  }
+  // I guess this states does not represent idling
+  //  ompt_state_wait_target
+  //  ompt_state_wait_target_map
+  //  ompt_state_wait_target_update
+  //  ompt_state_wait_mutex
+  //  ompt_state_wait_lock
+  //  ompt_state_wait_critical
+  //  ompt_state_wait_atomic
+  //  ompt_state_wait_ordered
+}
+
+static
+void
+idle_blame_shift
+(
+  void
+)
+{
+  ompt_state_t old_state = current_state;
+  current_state = check_state();
+
+  // check whether the thread was idling previously
+  bool old_idle_group = is_state_in_idle_group(old_state);
+
+  // check whether thread is idling at the moment
+  bool current_idle_group = is_state_in_idle_group(current_state);
+
+  // Check whether the state has been changed since the previous sample.
+  // This is done in the sense of idling, which means that we care if thread
+  // change the group of states that represents idling.
+  // See is_thread_state_blame_idling_state for more.
+  if (!old_idle_group && current_idle_group) {
+    // Thread was working and now is idling, which means that idle began
+    // since the last sample.
+    ompt_idle_begin();
+  } else if (old_idle_group && !current_idle_group) {
+    // Thread was idling and now is working, which means that idle ended since
+    // the last sample.
+    ompt_idle_end();
+  }
+}
+
+// ======================
 
 static void
 ompt_backtrace_finalize
@@ -815,6 +885,7 @@ ompt_backtrace_finalize
   if (!ompt_eager_context_p()) {
     // initialize region_data if needed
     // (only when region creation context is provided lazily)
+    // FIXME vi3: should this execute when synchronous sample is delivered
     initialize_regions_if_needed();
   }
   ompt_elide_runtime_frame(bt, region_id, isSync);
@@ -834,9 +905,14 @@ ompt_backtrace_finalize
   //  for regions' call paths.
   //  Note: see  register_to_all_regions and ompt_cct_cursor_finalize functions
   //    for more information.
+  // FIXME vi3: check synchronous samples
   if(!isSync && !ompt_eager_context_p()) {
     register_to_all_regions();
   }
+
+  // check whether thread chage the group state
+  idle_blame_shift();
+
 }
 
 

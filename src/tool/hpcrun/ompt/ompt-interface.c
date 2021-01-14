@@ -445,9 +445,9 @@ ompt_idle_begin
 {
   if (!thread_is_idle) {
     undirected_blame_idle_begin(&omp_idle_blame_info);
-    if (!ompt_eager_context_p()) {
-      while(try_resolve_one_region_context());
-    }
+//    if (!ompt_eager_context_p()) {
+//      while(try_resolve_one_region_context());
+//    }
     thread_is_idle = 1;
   }
 }
