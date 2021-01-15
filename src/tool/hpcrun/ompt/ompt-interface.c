@@ -620,7 +620,9 @@ init_idle_blame_shift
 )
 {
   int idle_blame_shift_avail = 0;
+#if 0
   int retval = 0;
+#endif
 
   if (!ompt_idle_blame_requested) return;
 

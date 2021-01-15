@@ -840,6 +840,11 @@ is_thread_owner_of_the_region
   int thread_num = -1;
   int retVal = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
                                          &parallel_data, &thread_num);
+  if (retVal != 2) {
+    // Task either doesn't exist or the information about it isn't available.
+    // I guess the false is the right value to return.
+    return false;
+  }
   return thread_num == 0;
 }
 
@@ -896,8 +901,6 @@ lca_el_fn
   typed_stack_elem(region) *new_region = el->region_data;
   typed_stack_elem(region) *old_region = new_region;
 
-  typed_stack_elem(region)* enc[10];
-  int top = 0;
   while(new_region) {
     if (new_region->depth + 1 == old_region->depth) {
       break;
