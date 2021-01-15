@@ -445,6 +445,7 @@ ompt_idle_begin
 {
   if (!thread_is_idle) {
     undirected_blame_idle_begin(&omp_idle_blame_info);
+    // FIXME VI3(urgent): try to solve this
 //    if (!ompt_eager_context_p()) {
 //      while(try_resolve_one_region_context());
 //    }
@@ -480,6 +481,7 @@ ompt_idle
   //printf("Thread id = %d, \tIdle %s\n", omp_get_thread_num(), endpoint==1?"begin":"end");
 }
 
+#if 0
 static void
 ompt_sync
 (
@@ -509,6 +511,7 @@ ompt_sync
     break;
   }
 }
+#endif
 
 
 //-------------------------------------------------

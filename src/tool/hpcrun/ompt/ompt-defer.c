@@ -161,7 +161,7 @@ msg_deferred_resolution_breakpoint
   printf("********** %s\n", msg);
 }
 
-
+#if 0
 static void
 omp_resolve
 (
@@ -428,6 +428,7 @@ hpcrun_region_lookup
 
   return result;
 }
+#endif
 
 // added by vi3
 
@@ -446,7 +447,7 @@ help_notification_alloc
   return notification;
 }
 
-
+#if 0
 void
 swap_and_free
 (
@@ -538,6 +539,7 @@ add_region_and_ancestors_to_stack
   // Values of argument team_master says if the thread is the master of region_data
   typed_random_access_stack_top(region)(region_stack)->team_master = team_master;
 }
+#endif
 
 
 void
@@ -719,6 +721,7 @@ typedef struct lca_args_s {
 } lca_args_t;
 
 
+#if 0
 void
 check_thread_num
 (
@@ -772,6 +775,7 @@ check_thread_num
     }
   }
 }
+#endif
 
 bool
 is_thread_owner_of_the_region
@@ -1000,6 +1004,7 @@ least_common_ancestor
 }
 
 
+#if 0
 static ompt_state_t
 check_state
 (
@@ -1009,6 +1014,7 @@ check_state
   uint64_t wait_id;
   return hpcrun_ompt_get_state(&wait_id);
 }
+#endif
 
 void
 attribute_idle_to_cct_node
@@ -1317,9 +1323,9 @@ register_to_all_regions
     parent_cct = lca->notification->unresolved_cct;
   }
   typed_random_access_stack_reverse_iterate_from(region)(start_from, region_stack, thread_take_sample, &parent_cct);
-#endif
+// =============================
 
-#if 0
+// =============================
   // invalidate value
   vi3_last_to_register = -1;
   // If there is no regions on the stack, just return.
@@ -1392,9 +1398,9 @@ register_to_all_regions
                                                          region_stack,
                                                          thread_take_sample,
                                                          &parent_cct);
-#endif
+// =============================
 
-#if 0
+// =============================
   // Used to provide some debug information
 
   // invalidate value
@@ -1937,7 +1943,7 @@ register_to_all_regions
                                                            &parent_cct);
   }
   // process idleness if needed
-  wait_on_the_last_implicit_barrier();
+  // wait_on_the_last_implicit_barrier();
 
 }
 

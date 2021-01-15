@@ -277,7 +277,6 @@ collapse_callstack
 //  bt->fence = FENCE_MAIN;
 }
 
-__thread int nested_regions_before_explicit_task = 0;
 
 static void
 ompt_elide_runtime_frame(
@@ -291,7 +290,6 @@ ompt_elide_runtime_frame(
   TD_GET(omp_task_context) = 0;
 
   vi3_idle_collapsed = false;
-  nested_regions_before_explicit_task = 0;
   frame_t **bt_outer = &bt->last;
   frame_t **bt_inner = &bt->begin;
 
@@ -563,9 +561,6 @@ ompt_elide_runtime_frame(
 
       exit0 = reenter1 = NULL;
       // --------------------------------
-
-      nested_regions_before_explicit_task++;
-
     } else if (exit0 && !reenter1) {
       // corner case: reenter1 is in the team master's stack, not mine. eliminate all
       // frames below the exit frame.
@@ -871,6 +866,7 @@ ompt_backtrace_finalize
  int isSync
 ) 
 {
+#if 0
   // ompt: elide runtime frames
   // if that is the case, then it will later become available in a deferred fashion.
   int master = TD_GET(master);
@@ -881,6 +877,7 @@ ompt_backtrace_finalize
     if (!ompt_eager_context)
       resolve_cntxt();
   }
+#endif
   uint64_t region_id = TD_GET(region_id);
   if (!ompt_eager_context_p()) {
     // initialize region_data if needed
@@ -910,7 +907,8 @@ ompt_backtrace_finalize
     register_to_all_regions();
   }
 
-  // check whether thread chage the group state
+  // check whether thread change the group state
+  // FIXME VI3(urgent): I guess it should be good to check whether we're using this?
   idle_blame_shift();
 
 }

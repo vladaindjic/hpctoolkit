@@ -71,6 +71,7 @@
 #include "ompt-thread.h"
 
 
+#if 0
 struct ompt_task_data_t {
   ompt_task_flag_t task_type;
   cct_node_t *callpath;
@@ -169,6 +170,7 @@ ompt_task_release
   t->ptr = 0;
 }
 
+#endif
 
 //----------------------------------------------------------------------------
 // note the creation context for an OpenMP task
@@ -244,6 +246,7 @@ ompt_task_create
   hpcrun_safe_exit();
 }
 
+#if 0
 
 static void
 ompt_task_schedule
@@ -299,6 +302,7 @@ ompt_task_type
   return t ? t->task_type : 0;
 }
 
+#endif
 
 void
 ompt_task_register_callbacks

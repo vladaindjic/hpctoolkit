@@ -101,7 +101,9 @@ ompt_region_release
 // private operations
 //*****************************************************************************
 
+#if 0
 #define MAX_THREAD_IN_TEAM -101
+#endif
 
 static typed_stack_elem_ptr(region)
 ompt_region_data_new
@@ -683,6 +685,7 @@ ompt_parallel_region_register_callbacks
   }
 
 #if USE_IMPLICIT_TASK_CALLBACKS == 1
+  printf("Using implicit task callbacks\n");
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);
   assert(ompt_event_may_occur(retval));
