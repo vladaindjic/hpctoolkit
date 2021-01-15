@@ -202,6 +202,12 @@ ompt_idle_blame_shift_request
  void
 );
 
+bool
+ompt_idle_blame_shift_enabled
+(
+  void
+);
+
 
 int
 ompt_task_full_context_p

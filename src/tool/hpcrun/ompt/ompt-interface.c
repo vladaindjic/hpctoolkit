@@ -652,6 +652,15 @@ init_idle_blame_shift
 }
 
 
+bool
+ompt_idle_blame_shift_enabled
+(
+  void
+)
+{
+  return ompt_idle_blame_enabled;
+}
+
 //*****************************************************************************
 // interface operations
 //*****************************************************************************
