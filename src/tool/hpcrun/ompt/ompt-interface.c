@@ -629,10 +629,12 @@ init_idle_blame_shift
   idle_blame_shift_avail |= ompt_event_may_occur(retval);
 #endif
 
+#if 0
   retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
                                 (ompt_callback_t)ompt_sync);
   idle_blame_shift_avail |= ompt_event_may_occur(retval);
-
+#endif
+  idle_blame_shift_avail = 1;
 
   if (idle_blame_shift_avail) {
     ompt_idle_blame_shift_register();
