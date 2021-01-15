@@ -1306,8 +1306,8 @@ try_to_detect_the_case
     printf("No region at this level? Out of bounds\n");
     return -2;
   }
-
-  if (check_state() == ompt_state_wait_barrier_implicit_parallel) {
+  ompt_state_t current_state = check_state();
+  if (current_state == ompt_state_wait_barrier_implicit_parallel) {
     // Waiting on the last implicit barrier.
 
     // FIXME vi3: This may be the barrier of the region on the level 0.
@@ -1318,7 +1318,15 @@ try_to_detect_the_case
       // TODO vi3: Accumulate idleness.
       return -3;
     }
+  } else if (current_state == ompt_state_idle) {
+    if (thread_num != 0) {
+      // FIXME VI3: I guesS it is more safe to omit registration process
+      //  in this case?
+      return -4;
+    }
   }
+
+
 
 
   return ancestor_level;

@@ -1655,6 +1655,7 @@ ompt_cct_cursor_finalize
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
 
+#if 0
   if (task_ancestor_level == -3) {
     if (info_type == 2) {
       return check_and_return_non_null(cct_cursor, cct_cursor, 1585);
@@ -1667,7 +1668,7 @@ ompt_cct_cursor_finalize
     // This should be idle?
     return check_and_return_non_null(cct_cursor, cct_cursor, 1588);
   }
-
+#endif
 
 #if 0
   // NOTE vi3: code that contains a lot of useful debug information about edge cases

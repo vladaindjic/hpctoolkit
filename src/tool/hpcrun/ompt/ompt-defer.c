@@ -1007,7 +1007,7 @@ least_common_ancestor
 }
 
 
-#if 0
+#if 1
 static ompt_state_t
 check_state
 (
@@ -1019,6 +1019,7 @@ check_state
 }
 #endif
 
+#if 0
 void
 attribute_idle_to_cct_node
 (
@@ -1160,7 +1161,7 @@ wait_on_the_last_implicit_barrier
   }
 
 }
-
+#endif
 
 void
 register_to_all_regions
@@ -1168,7 +1169,7 @@ register_to_all_regions
   void
 )
 {
-  if (task_ancestor_level < 0 && task_ancestor_level != -3) {
+  if (task_ancestor_level < 0) {
     // Skip registration process.
     return;
   }
@@ -2357,7 +2358,8 @@ initialize_regions_if_needed
     //   then the thread will think it belongs to it, and ompt_get_task_info
     //   will return information about the task. This should be resolved inside
     //   the runtime.
-    printf("Impossible\n");
+    // This happened in the idle state so far.
+    printf("Impossible: %x\n", check_state());
     return;
   }
 
@@ -2370,7 +2372,8 @@ initialize_regions_if_needed
   if (parallel_data) {
     int retVal = initialize_region(0);
     if (retVal == -1) {
-      printf("Something is not initialized properly: %d\n", retVal);
+      // This happened in the idle state so far.
+      printf("Something is not initialized properly: %d, %x\n", retVal, check_state());
     }
   } else {
     printf("Impossible too\n");
