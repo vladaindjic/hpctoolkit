@@ -2017,7 +2017,7 @@ try_resolve_one_region_context
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
     // notify creator of region that region_data can be put in region's freelist
-    hpcrun_ompt_region_free(old_head->region_data);
+    //hpcrun_ompt_region_free(old_head->region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 
@@ -2183,10 +2183,12 @@ ompt_resolve_region_contexts
   attr_idleness2outermost_ctx();
 #endif
 
+#if 0
   if (idle_region_id) {
     // Attribute remained idleness to the global context.
     attribute_idle_to_global_context();
   }
+#endif
 
   struct timespec start_time;
 
@@ -2288,7 +2290,7 @@ ompt_resolve_region_contexts_poll
 )
 {
   // if there are any unresolved contexts
-  if (unresolved_cnt) {
+  if (unresolved_cnt > 0) {
     // attempt to resolve contexts by consuming any notifications that
     // are currently pending.
     while (try_resolve_one_region_context());

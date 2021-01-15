@@ -907,9 +907,8 @@ ompt_backtrace_finalize
     register_to_all_regions();
   }
 
-  // check whether thread change the group state
-  // FIXME VI3(urgent): I guess it should be good to check whether we're using this?
   if (ompt_idle_blame_shift_enabled()) {
+    // check whether thread change the group state
     idle_blame_shift();
   }
 

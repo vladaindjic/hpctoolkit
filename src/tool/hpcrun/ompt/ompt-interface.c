@@ -446,9 +446,11 @@ ompt_idle_begin
   if (!thread_is_idle) {
     undirected_blame_idle_begin(&omp_idle_blame_info);
     // FIXME VI3(urgent): try to solve this
-//    if (!ompt_eager_context_p()) {
-//      while(try_resolve_one_region_context());
-//    }
+    if (!ompt_eager_context_p()) {
+      // FIXME VI3(urgent) This should be called even
+      //  when undirected blame isn't active.
+      ompt_resolve_region_contexts_poll();
+    }
     thread_is_idle = 1;
   }
 }
