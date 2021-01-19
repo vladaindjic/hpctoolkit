@@ -78,10 +78,10 @@
 //******************************************************************************
 
 // freelists of region_data and notification structures
-#define FREELISTS_ENABLED 0
+#define FREELISTS_ENABLED 1
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
-#define FREELISTS_DEBUG FREELISTS_ENABLED && 0
+#define FREELISTS_DEBUG FREELISTS_ENABLED && 1
 // when finalizing thread, wait for all regions to be resolved
 // and then check if all region_data are freed
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1

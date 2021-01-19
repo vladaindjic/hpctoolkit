@@ -49,7 +49,10 @@
 //*****************************************************************************
 
 #include "ompt-queues.h"
+#include <stdio.h>
+#include <stdlib.h>
 
+#define USE_TREIBER_STACK 0
 //*****************************************************************************
 // interface functions
 //*****************************************************************************
@@ -251,7 +254,7 @@ vi3_cstack_push
   s_element_t *e
 )
 {
-
+#if USE_TREIBER_STACK == 0
   s_element_t *new_head = e;
 
   // push a singleton or a chain on the list
@@ -275,6 +278,23 @@ vi3_cstack_push
   s_element_t *head = (s_element_t *)atomic_exchange(&Ap(q), new_head);
   // connect chain wih old head
   atomic_store(&e->Ad(next), head);
+#else
+
+  s_element_t *head = (s_element_t *) atomic_load(&Ap(q));
+  s_element_t *new_head = e;
+
+  // push a singleton or a chain on the list
+  for (;;) {
+    s_element_t *enext = (s_element_t *) atomic_load(&e->Ad(next));
+    if (enext == 0) break;
+    e = enext;
+  }
+
+  do {
+    printf("cmp_swp_push\n");
+    atomic_store(&e->Ad(next), head);
+  } while (!atomic_compare_exchange_strong(&Ap(q), &head, new_head));
+#endif
 }
 
 // popping from stack can happen after all pushing has finished
@@ -284,6 +304,7 @@ vi3_cstack_pop
   s_element_ptr_t *q
 )
 {
+#if USE_TREIBER_STACK == 0
 #if 0
   s_element_t *oldhead = atomic_load(&Ap(q));
   s_element_t *next = 0;
@@ -308,6 +329,20 @@ vi3_cstack_pop
     vi3_cstack_next_set(head, 0);
   }
   return head;
+#else
+  s_element_t *oldhead = (s_element_t *) atomic_load(&Ap(q));
+  s_element_t *next = 0;
+
+  do {
+    printf("cmp_swp_pop\n");
+    if (oldhead == 0) return 0;
+    next = (s_element_t *) atomic_load(&oldhead->Ad(next));
+  } while (!atomic_compare_exchange_strong(&Ap(q), &oldhead, next));
+
+  atomic_store(&oldhead->Ad(next), 0);
+
+  return oldhead;
+#endif
 }
 
 
@@ -331,6 +366,7 @@ vi3_cstack_forall
   void *arg
 )
 {
+#if USE_TREIBER_STACK == 0
   s_element_t *current = atomic_load(&Ap(q));
   while (current) {
     fn(current, arg);
@@ -339,6 +375,13 @@ vi3_cstack_forall
 #endif
     current = vi3_cstack_next_get(current);
   }
+#else
+  s_element_t *current = (s_element_t *) atomic_load(&Ap(q));
+  while (current) {
+    fn(current, arg);
+    current = (s_element_t *) atomic_load(&current->Ad(next));
+  }
+#endif
 }
 
 s_element_t*

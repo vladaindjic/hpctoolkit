@@ -954,7 +954,7 @@ ompt_backtrace_finalize
   if (!ompt_eager_context_p()) {
     // If thread is in wait state, then try to resolved
     // remained unresolved regions.
-    //resolve_if_waiting();
+    resolve_if_waiting();
   }
 
 }

@@ -2396,7 +2396,10 @@ initialize_regions_if_needed
   }
 
   if (parallel_data) {
-    int retVal = initialize_region(0);
+    if (task_ancestor_level > 0) {
+      printf("this can happen too\n");
+    }
+    int retVal = initialize_region(task_ancestor_level);
     if (retVal == -1) {
       // This happened in the idle state so far.
       printf("Something is not initialized properly: %d, %x\n", retVal, check_state());
