@@ -126,9 +126,11 @@ typedef struct ompt_region_data_s {
   cct_node_t *call_path;
   // depth of the region, starts from zero
   int depth;
+#if 0
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
+#endif
 #if DEBUG_BARRIER_CNT
   // barrier counter which indicates if region is active
   _Atomic(int) barrier_cnt;

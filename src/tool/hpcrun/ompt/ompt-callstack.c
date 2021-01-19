@@ -124,6 +124,11 @@ static int ompt_eager_context = 0;
 static int ompt_callstack_debug = 0;
 #endif
 
+// thread local variabled
+// set it to ompt_state_undefined by default
+static __thread ompt_state_t current_state = ompt_state_undefined;
+// keep and old_state in order to detect state transition
+static __thread ompt_state_t old_state = ompt_state_undefined;
 
 
 //******************************************************************************
@@ -309,7 +314,7 @@ ompt_elide_runtime_frame(
 
   int on_explicit_barrier = 0;
   // collapse callstack if a thread is idle or waiting in a barrier
-  switch(check_state()) {
+  switch(current_state) {
     case ompt_state_wait_barrier:
     case ompt_state_wait_barrier_implicit: // mark it idle
       // previous two states should be deprecated
@@ -789,12 +794,23 @@ ompt_parallel_begin_context
 }
 
 // ====================== vi3: idle_blame_shifting
-// set it to ompt_state_undefined by default
-static __thread ompt_state_t current_state = ompt_state_undefined;
+
+static inline
+void
+find_current_thread_state
+(
+  void
+)
+{
+  // memoize old state
+  old_state = current_state;
+  // inquire current state
+  current_state = check_state();
+}
 
 // Check whether the state matches one of the waiting state that
 // represents idling in sense of blaming.
-static
+static inline
 bool
 is_state_in_idle_group
 (
@@ -833,9 +849,6 @@ idle_blame_shift
   void
 )
 {
-  ompt_state_t old_state = current_state;
-  current_state = check_state();
-
   // check whether the thread was idling previously
   bool old_idle_group = is_state_in_idle_group(old_state);
 
@@ -859,6 +872,20 @@ idle_blame_shift
 
 // ======================
 
+// ====================== resolve idleness if waiting
+void
+resolve_if_waiting
+(
+    void
+)
+{
+  if (is_state_in_idle_group(current_state)) {
+    ompt_resolve_region_contexts_poll();
+  }
+}
+// ======================
+
+
 static void
 ompt_backtrace_finalize
 (
@@ -878,6 +905,9 @@ ompt_backtrace_finalize
       resolve_cntxt();
   }
 #endif
+
+  find_current_thread_state();
+
   uint64_t region_id = TD_GET(region_id);
   if (!ompt_eager_context_p()) {
     // initialize region_data if needed
@@ -910,6 +940,12 @@ ompt_backtrace_finalize
   if (ompt_idle_blame_shift_enabled()) {
     // check whether thread change the group state
     idle_blame_shift();
+  }
+
+  if (!ompt_eager_context_p()) {
+    // If thread is in wait state, then try to resolved
+    // remained unresolved regions.
+    resolve_if_waiting();
   }
 
 }

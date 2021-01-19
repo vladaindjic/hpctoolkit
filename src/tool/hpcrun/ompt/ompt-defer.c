@@ -2010,7 +2010,7 @@ try_resolve_one_region_context
 
   // check if the notification needs to be forwarded
   typed_stack_elem_ptr(notification) next =
-    typed_stack_pop(notification, sstack)(&old_head->region_data->notification_stack);
+    typed_stack_pop(notification, cstack)(&old_head->region_data->notification_stack);
   if (next) {
     // store region_prefix and notify next worker in the chain
     next->region_prefix = old_head->region_prefix;

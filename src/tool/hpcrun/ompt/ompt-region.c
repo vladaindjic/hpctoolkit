@@ -255,7 +255,7 @@ ompt_parallel_end_internal
     // check if there is any thread registered that should be notified
     // that region call path is available
     typed_stack_elem_ptr(notification) to_notify =
-      typed_stack_pop(notification, sstack)(&region_data->notification_stack);
+      typed_stack_pop(notification, cstack)(&region_data->notification_stack);
 
     // mark that current region is ending
     ending_region = region_data;
