@@ -1330,6 +1330,16 @@ try_to_detect_the_case
       return -4;
     }
   }
+#if 0
+  else if (current_state == ompt_state_overhead) {
+    if (thread_num != 0) {
+      // FIXME VI3: I guesS it is more safe to omit registration process
+      //  in this case?
+      printf("Stop here\n");
+      return -5;
+    }
+  }
+#endif
 
 
 

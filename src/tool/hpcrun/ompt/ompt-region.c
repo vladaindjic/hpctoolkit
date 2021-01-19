@@ -457,7 +457,7 @@ ompt_implicit_task_internal_end
 
   if (!ompt_eager_context_p()) {
     // try to resolve some regions, if any
-    ompt_resolve_region_contexts_poll();
+    //ompt_resolve_region_contexts_poll();
 #if VI3_DEBUG == 1
     typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
     if (top) {
@@ -488,7 +488,7 @@ ompt_implicit_task_internal_end
     }
 #endif
   }
-  ompt_task_release(task_data);
+  // ompt_task_release(task_data);
 }
 
 
@@ -511,9 +511,9 @@ ompt_implicit_task
   hpcrun_safe_enter();
 
   if (endpoint == ompt_scope_begin) {
-    ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
+    //ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
   } else if (endpoint == ompt_scope_end) {
-    ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
+    //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
   } else {
     // should never occur. should we add a message to the log?
   }

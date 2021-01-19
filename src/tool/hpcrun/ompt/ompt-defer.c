@@ -542,6 +542,18 @@ add_region_and_ancestors_to_stack
 #endif
 
 
+static ompt_state_t
+check_state
+    (
+        void
+    )
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
+
+#define VI3_LAST_PROBLEMS 0
+
 void
 register_to_region
 (
@@ -567,10 +579,17 @@ register_to_region
   }
 #endif
 
+  assert(region_data->notification_stack != (typed_stack_elem(notification) *) 0xdeadbeef);
   // register thread for region's call path by pushing
   // notification to to region's wait free queue
   typed_stack_push(notification, cstack)(&region_data->notification_stack,
                                          notification);
+
+#if VI3_LAST_PROBLEMS == 1
+  printf("Register>>> thr: %p, reg: %p, reg_id: %lx, next: %p, state: %x\n",
+         &thread_notification_channel, region_data, region_data->region_id,
+         typed_stack_next_get(notification, cstack)(notification), check_state());
+#endif
 
 #if DEBUG_BARRIER_CNT
   // debug information
@@ -1007,7 +1026,7 @@ least_common_ancestor
 }
 
 
-#if 1
+#if 0
 static ompt_state_t
 check_state
 (
@@ -2005,6 +2024,10 @@ try_resolve_one_region_context
 
   if (!old_head) return 0;
 
+#if VI3_LAST_PROBLEMS == 1
+  printf("Resolving>>> thr: %p, reg: %p, reg_id: %lx\n",
+         &thread_notification_channel, old_head->region_data, old_head->region_data->region_id);
+#endif
   unresolved_cnt--;
   ompt_region_debug_notify_received(old_head);
 
@@ -2016,8 +2039,9 @@ try_resolve_one_region_context
     next->region_prefix = old_head->region_prefix;
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
+    old_head->region_data->notification_stack = (typed_stack_elem(notification) *)(0xdeadbeef);
     // notify creator of region that region_data can be put in region's freelist
-    //hpcrun_ompt_region_free(old_head->region_data);
+    hpcrun_ompt_region_free(old_head->region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 

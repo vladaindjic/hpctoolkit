@@ -349,6 +349,15 @@ ompt_elide_runtime_frame(
       TD_GET(omp_task_context) = 0;
       collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
       goto return_label;
+#if 0
+    case ompt_state_overhead:
+      TD_GET(omp_task_context) = 0;
+      if (hpcrun_ompt_get_thread_num(0) != 0) {
+        collapse_callstack(bt, &ompt_placeholders.ompt_overhead_state);
+        goto return_label;
+      }
+      break;
+#endif
     default:
       break;
   }
@@ -945,7 +954,7 @@ ompt_backtrace_finalize
   if (!ompt_eager_context_p()) {
     // If thread is in wait state, then try to resolved
     // remained unresolved regions.
-    resolve_if_waiting();
+    //resolve_if_waiting();
   }
 
 }
@@ -1004,7 +1013,7 @@ check_and_return_non_null
   }
 
   if (!to_return) {
-    printf("***************** Why this happens: ompt-callstack.c:%d\n", line_of_code);
+    printf("***************** Why this happens: ompt-callstack.c:%d, state: %x\n", line_of_code, current_state);
     return default_value;
   }
 
