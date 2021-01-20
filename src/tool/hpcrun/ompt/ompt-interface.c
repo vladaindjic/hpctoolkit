@@ -1329,7 +1329,20 @@ try_to_detect_the_case
       //  in this case?
       return -4;
     }
+  } else if (current_state == ompt_state_overhead) {
+
+  } else if (current_state == ompt_state_work_parallel) {
+
+  } else if (current_state == ompt_state_work_serial) {
+    return -5;
+  } else {
+    printf("Unexpected: %x\n", current_state);
   }
+
+  if (flags & ompt_task_initial) {
+    return -6;
+  }
+
 #if 0
   else if (current_state == ompt_state_overhead) {
     if (thread_num != 0) {

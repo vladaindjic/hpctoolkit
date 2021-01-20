@@ -511,9 +511,9 @@ ompt_implicit_task
   hpcrun_safe_enter();
 
   if (endpoint == ompt_scope_begin) {
-    //ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
+    ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
   } else if (endpoint == ompt_scope_end) {
-    //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
+    ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
   } else {
     // should never occur. should we add a message to the log?
   }
@@ -664,7 +664,7 @@ ompt_parallel_region_register_callbacks
 )
 {
   int retval;
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   // FIXME ompt_eager_context is initialized inside ompt_callstack_init_deferred
   //   which is called after this function.
   //if (ompt_eager_context_p()) {
@@ -674,7 +674,7 @@ ompt_parallel_region_register_callbacks
     retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
                                   (ompt_callback_t) ompt_parallel_begin);
     assert(ompt_event_may_occur(retval));
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
 #endif
 
@@ -744,7 +744,6 @@ initialize_region
 
   // initialize parent region if needed
   int parent_depth = initialize_region(level + 1);
-//  int parent_depth = -1;
   // If there's no parent region, parent_depth will be -1.
 
   // try to initilize region_data
@@ -755,7 +754,6 @@ initialize_region
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
-    //printf("Freed\n");
     ompt_region_release(new_reg);
   } else {
     old_reg = new_reg;

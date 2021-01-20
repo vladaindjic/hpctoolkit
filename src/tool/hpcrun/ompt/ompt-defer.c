@@ -2370,6 +2370,9 @@ initialize_regions_if_needed
     // Cannot initialize anything
     return;
   }
+  assert(task_ancestor_level == 0);
+  initialize_region(task_ancestor_level);
+#if 0
   int flags0;
   ompt_frame_t *frame0;
   ompt_data_t *task_data = NULL;
@@ -2407,6 +2410,7 @@ initialize_regions_if_needed
   } else {
     printf("Impossible too\n");
   }
+#endif
 }
 
 #if DEFER_DEBUGGING

@@ -266,14 +266,14 @@ typedef struct ompt_atomic_data_s {
 } ompt_atomic_data_t;
 
 #define ATOMIC_STORE_RD(parallel_data, region_data) \
-  atomic_store(&(((ompt_atomic_data_t *)parallel_data)->ptr), region_data)
+  atomic_store(&((ompt_atomic_data_t *)parallel_data)->ptr, region_data)
 
 #define ATOMIC_LOAD_RD(parallel_data) \
   (typed_stack_elem(region) *)        \
-      atomic_load(&(((ompt_atomic_data_t *)parallel_data)->ptr))
+      atomic_load(&((ompt_atomic_data_t *)parallel_data)->ptr)
 
 #define ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg) \
-  atomic_compare_exchange_strong(&(((ompt_atomic_data_t *)parallel_data)->ptr), \
+  atomic_compare_exchange_strong(&((ompt_atomic_data_t *)parallel_data)->ptr, \
     &old_reg, new_reg)
 
 #define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
