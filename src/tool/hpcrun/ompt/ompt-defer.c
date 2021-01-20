@@ -444,6 +444,7 @@ help_notification_alloc
   notification->unresolved_cct = unresolved_cct;
   notification->region_prefix = NULL;
   notification->notification_channel = &thread_notification_channel;
+  notification->region_id = region_data->region_id;
   return notification;
 }
 

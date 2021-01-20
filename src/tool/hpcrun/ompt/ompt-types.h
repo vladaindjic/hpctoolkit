@@ -126,7 +126,7 @@ typedef struct ompt_region_data_s {
   cct_node_t *call_path;
   // depth of the region, starts from zero
   int depth;
-#if 0
+#if 1
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
@@ -153,6 +153,7 @@ typedef struct ompt_notification_s {
   // that region_data may be recycled when thead tries to resolve region.
   cct_node_t *region_prefix;
   struct mpsc_channel_notification_s *notification_channel;
+  uint64_t region_id;
 } typed_stack_elem(notification);
 
 // declare pointer to previous struct
