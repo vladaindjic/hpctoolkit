@@ -719,20 +719,11 @@ initialize_region
   int ret_val = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
                             &parallel_data, &thread_num);
 #endif
-
-  if (ret_val != 2) {
-    // no information available
-    //printf("initialize_one_region >>> No information available\n");
-    return -1;
-  }
+  assert(ret_val == 2);
+  assert(parallel_data != NULL);
 
   if (flags0 & ompt_task_initial) {
     // ignore initial tasks
-    return -1;
-  }
-
-  if (!parallel_data) {
-    printf("initialize_one_region >>> No parallel_data\n");
     return -1;
   }
 
