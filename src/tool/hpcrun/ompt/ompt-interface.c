@@ -1314,21 +1314,9 @@ try_to_detect_the_case
   ompt_state_t current_state = check_state();
   if (current_state == ompt_state_wait_barrier_implicit_parallel) {
     // Waiting on the last implicit barrier.
-
-    // FIXME vi3: This may be the barrier of the region on the level 0.
-    //   I'm not sure whether to attribute this waiting to the region
-    //   at level 1.
-    if (thread_num != 0) {
-      // Thread is the worker and is waiting on the barrier.
-      // TODO vi3: Accumulate idleness.
-      return -3;
-    }
+    return -3;
   } else if (current_state == ompt_state_idle) {
-    if (thread_num != 0) {
-      // FIXME VI3: I guesS it is more safe to omit registration process
-      //  in this case?
-      return -4;
-    }
+    return -4;
   } else if (current_state == ompt_state_overhead) {
 
   } else if (current_state == ompt_state_work_parallel) {

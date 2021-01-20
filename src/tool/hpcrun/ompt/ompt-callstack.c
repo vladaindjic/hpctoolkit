@@ -319,12 +319,19 @@ ompt_elide_runtime_frame(
     case ompt_state_wait_barrier_implicit: // mark it idle
       // previous two states should be deprecated
     case ompt_state_wait_barrier_implicit_parallel:
+    case ompt_state_idle:
+      // collapse idle state
+      TD_GET(omp_task_context) = 0;
+      collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
+      goto return_label;
+#if 0
       TD_GET(omp_task_context) = 0;
       if (hpcrun_ompt_get_thread_num(0) != 0) {
         collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
         goto return_label;
       }
       break;
+#endif
     case ompt_state_wait_barrier_explicit: // attribute them to the corresponding
       // We are inside implicit or explicit task.
       // If we are collecting regions' callpaths synchronously, then we
@@ -344,11 +351,13 @@ ompt_elide_runtime_frame(
 #endif
       on_explicit_barrier = 1;
       break;
+#if 0
     case ompt_state_idle:
       // collapse idle state
       TD_GET(omp_task_context) = 0;
       collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
       goto return_label;
+#endif
 #if 0
     case ompt_state_overhead:
       TD_GET(omp_task_context) = 0;
