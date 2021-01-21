@@ -66,6 +66,7 @@
 
 #include "ompt-region-debug.h"
 #include "ompt-queues.h"
+#include "ompt-interface.h"
 
 #if REGION_DEBUG == 1
 
@@ -74,7 +75,15 @@
 
 #include <hpcrun/memory/hpcrun-malloc.h>
 
-
+static ompt_state_t
+check_state
+(
+  void
+)
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
 
 
 //*****************************************************************************
@@ -87,10 +96,21 @@ typedef struct region_resolve_tracker_s {
   uint64_t region_id;
   int thread_id;
   typed_stack_elem(notification) *notification;
+  ompt_state_t curr_thr_state;
 } typed_stack_elem(rn);
 
 typed_stack_declare_type(rn);
 
+
+typedef struct region_tracker_s {
+  s_element_ptr_t next;
+  typed_stack_elem(region) *region;
+  uint64_t region_id;
+  int thread_id;
+  ompt_state_t curr_thr_state;
+} typed_stack_elem(r);
+
+typed_stack_declare_type(r);
 
 
 //*****************************************************************************
@@ -99,13 +119,20 @@ typed_stack_declare_type(rn);
 
 static spinlock_t debuginfo_lock = SPINLOCK_UNLOCKED;
 
-typed_stack_elem(region) *global_region_list = 0;
+//typed_stack_elem(region) *global_region_list = 0;
 
 // (pending) region notification list
 typed_stack_elem_ptr(rn) rn_list;
 
 // region notification freelist
 typed_stack_elem_ptr(rn) rn_freelist;
+
+
+// (pending) region notification list
+typed_stack_elem_ptr(r) r_list;
+
+// region notification freelist
+typed_stack_elem_ptr(r) r_freelist;
 
 
 //*****************************************************************************
@@ -173,10 +200,11 @@ rn_print
 )
 {
   printf("region %p id 0x%lx notification %p notification->next %14p thread %3d "
-	 "region->region_id 0x%lx  region_prefix: %p    %s, \n", rn->region,
+	 "region->region_id 0x%lx  region_prefix: %p, thr_state: %x   %s, \n", rn->region,
 	 rn->region_id, rn->notification,
 	 typed_stack_elem_ptr_get(notification, cstack)(&rn->notification->next),
 	 rn->thread_id, rn->region->region_id, rn->notification->region_prefix,
+	 rn->curr_thr_state,
 	 what);
 }
  
@@ -202,7 +230,7 @@ rn_queue_drop
     if (rn_matches(next, region, thread_id)) {
       typed_stack_elem(rn) *rn = typed_stack_pop(rn, sstack)(cur);
 
-      rn_print("(notify received)", rn);
+      //rn_print("(notify received)", rn);
       rn_free(rn);
 
       return;
@@ -214,10 +242,119 @@ rn_queue_drop
           &typed_stack_elem_ptr_get(rn, sstack)(cur)->next);
   }
 
-  printf("rn_queue_drop failed: (region %p, id 0x%lx, thread %3d)", 
+  printf("rn_queue_drop failed: (region %p, id 0x%lx, thread %3d)\n",
 	 region, notification->region_id, thread_id);
 }
 
+
+// ========================== region tracker
+
+// instantiate a concurrent queue
+typed_stack_declare(r, cstack)
+typed_stack_impl(r, cstack)
+
+// instantiate a serial queue
+typed_stack_declare(r, sstack)
+typed_stack_impl(r, sstack)
+
+
+static typed_stack_elem(r) *
+r_alloc()
+{
+  typed_stack_elem(r) *r =
+      (typed_stack_elem(r) *) hpcrun_malloc(sizeof(typed_stack_elem(r)));
+
+  return r;
+}
+
+
+static typed_stack_elem(r) *
+r_get()
+{
+  typed_stack_elem(r) *r =
+      (typed_stack_elem_ptr_get(r, sstack)(&r_freelist) ?
+       typed_stack_pop(r, sstack)(&r_freelist) : r_alloc());
+
+  return r;
+}
+
+
+static void
+r_free
+(
+  typed_stack_elem(r) *r
+)
+{
+  typed_stack_push(r, sstack)(&r_freelist, r);
+}
+
+
+static int
+r_matches
+(
+  typed_stack_elem(r) *r,
+  typed_stack_elem(region) *region,
+  int thread_id
+)
+{
+  // it is possible that one thread send the region to another
+  // thread's region free list
+  return r->region == region;
+}
+
+void
+r_print
+(
+  char *what,
+  typed_stack_elem(r) *r
+)
+{
+  printf("region %p id 0x%lx thread %3d "
+         "region->region_id 0x%lx  thr_state: %x   %s, \n",
+         r->region,
+         r->region_id,
+         r->thread_id,
+         r->region->region_id,
+         r->curr_thr_state,
+         what);
+}
+
+
+static void
+r_queue_drop
+(
+  typed_stack_elem(region) *region,
+  int thread_id
+)
+{
+
+  // invariant: cur is pointer to container for next element
+  typed_stack_elem_ptr(r) *cur = &r_list;
+
+  // invariant: cur is pointer to container for next element
+  typed_stack_elem(r) *next;
+
+  // for each element in the queue 
+  for (; (next = typed_stack_elem_ptr_get(r, sstack)(cur));) {
+    // if a match is found, remove and retur it
+    if (r_matches(next, region, thread_id)) {
+      typed_stack_elem(r) *r = typed_stack_pop(r, sstack)(cur);
+      assert(r->region->notification_stack == NULL);
+      r_print("(region freed)", r);
+      r_free(r);
+
+      return;
+    }
+
+    // preserve invariant that cur is pointer to container for next element
+    cur =
+        ((typed_stack_elem_ptr(r) *)
+            &typed_stack_elem_ptr_get(r, sstack)(cur)->next);
+  }
+
+  printf("r_queue_drop failed: (region %p, id 0x%lx, thread %3d)\n",
+         region, region->region_id, thread_id);
+}
 
 
 //*****************************************************************************
@@ -240,10 +377,10 @@ ompt_region_debug_notify_needed
   rn->region_id = notification->region_id;
   rn->thread_id = tid;
   rn->notification = notification;
-
+  rn->curr_thr_state = check_state();
   typed_stack_push(rn, cstack)(&rn_list, rn);
 
-  rn_print("(notify needed)", rn);
+  //rn_print("(notify needed)", rn);
 
   spinlock_unlock(&debuginfo_lock);
 }
@@ -279,14 +416,38 @@ ompt_region_debug_notify_received
 void
 ompt_region_debug_region_create
 (
-  typed_stack_elem(region)* r
+  typed_stack_elem(region)* region
 )
 {
-  // region tracking for debugging
+  int tid = monitor_get_thread_num();
+
   spinlock_lock(&debuginfo_lock);
 
-  r->next_region = global_region_list;
-  global_region_list = r;
+  typed_stack_elem(r) *r = r_get();
+
+  r->region = region;
+  r->region_id = region->region_id;
+  r->thread_id = tid;
+  r->curr_thr_state = check_state();
+  typed_stack_push(r, cstack)(&r_list, r);
+
+  r_print("(region recycled)", r);
+
+  spinlock_unlock(&debuginfo_lock);
+}
+
+
+void 
+ompt_region_debug_region_freed
+(
+  typed_stack_elem(region) *region
+)
+{
+  int thread_id = monitor_get_thread_num();
+
+  spinlock_lock(&debuginfo_lock);
+
+  r_queue_drop(region, thread_id);
 
   spinlock_unlock(&debuginfo_lock);
 }
@@ -298,19 +459,20 @@ hpcrun_ompt_region_check
   void
 )
 {
-   typed_stack_elem(region) *e = global_region_list;
+   typed_stack_elem(r) *e = typed_stack_elem_ptr_get(r, cstack)(&r_list);
    while (e) {
      printf("region %p region id 0x%lx call_path = %p queue head = %p\n", 
-	    e, e->region_id, e->call_path, typed_stack_elem_ptr_get(notification, cstack)(&e->notification_stack));
+	    e->region, e->region_id, e->region->call_path,
+	    typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack));
 
-     typed_stack_elem(notification) *n = typed_stack_elem_ptr_get(notification, cstack)(&e->notification_stack);
+     typed_stack_elem(notification) *n = typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack);
      while(n) {
        printf("   notification %p region %p region_id 0x%lx threads_queue %p unresolved_cct %p next %p\n",
 	      n, n->region_data, n->region_id, n->notification_channel, n->unresolved_cct,
 	      typed_stack_elem_ptr_get(notification, sstack)(&n->next));
        n = (typed_stack_elem(notification) *) typed_stack_elem_ptr_get(notification, cstack)(&n->next);
      }
-     e = (typed_stack_elem(region) *) e->next_region;
+     e = typed_stack_elem_ptr_get(r,sstack)(&e->next);
    } 
 
    typed_stack_elem(rn) *rn =

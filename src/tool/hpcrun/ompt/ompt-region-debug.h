@@ -51,7 +51,7 @@
 // macros
 //*****************************************************************************
 
-#define REGION_DEBUG 0
+#define REGION_DEBUG 1
 
 //*****************************************************************************
 // macros
@@ -65,6 +65,7 @@
 #define ompt_region_debug_notify_received(notification)
 #define ompt_region_debug_init()
 #define ompt_region_debug_region_create(region)
+#define ompt_region_debug_region_freed(region)
 #define hpcrun_ompt_region_check() (0)
 
 #else
@@ -113,6 +114,13 @@ ompt_region_debug_region_create
 (
   typed_stack_elem(region)* region
 );
+
+void
+ompt_region_debug_region_freed
+(
+  typed_stack_elem(region)* region
+);
+
 
 
 int 

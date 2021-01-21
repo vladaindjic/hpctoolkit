@@ -580,7 +580,7 @@ register_to_region
   }
 #endif
 
-  assert(region_data->notification_stack != (typed_stack_elem(notification) *) 0xdeadbeef);
+  //assert(region_data->notification_stack != (typed_stack_elem(notification) *) 0xdeadbeef);
   // register thread for region's call path by pushing
   // notification to to region's wait free queue
   typed_stack_push(notification, cstack)(&region_data->notification_stack,
@@ -2041,7 +2041,7 @@ try_resolve_one_region_context
     next->region_prefix = old_head->region_prefix;
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
-    old_head->region_data->notification_stack = (typed_stack_elem(notification) *)(0xdeadbeef);
+    //old_head->region_data->notification_stack = (typed_stack_elem(notification) *)(0xdeadbeef);
     // notify creator of region that region_data can be put in region's freelist
     hpcrun_ompt_region_free(old_head->region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)

@@ -319,6 +319,8 @@ ompt_elide_runtime_frame(
     case ompt_state_wait_barrier_implicit: // mark it idle
       // previous two states should be deprecated
     case ompt_state_wait_barrier_implicit_parallel:
+    case ompt_state_overhead:
+      if (ending_region) break;
     case ompt_state_idle:
       // collapse idle state
       TD_GET(omp_task_context) = 0;
@@ -662,6 +664,394 @@ ompt_elide_runtime_frame(
 }
 
 
+
+
+static int
+hack_ompt_elide_runtime_frame(
+  backtrace_info_t *bt,
+  uint64_t region_id,
+  int isSync
+)
+{
+  // invalidate omp_task_context of previous sample
+  // FIXME vi3 >>> It should be ok to do this.
+  TD_GET(omp_task_context) = 0;
+
+  vi3_idle_collapsed = false;
+  frame_t **bt_outer = &bt->last;
+  frame_t **bt_inner = &bt->begin;
+
+  frame_t *bt_outer_at_entry = *bt_outer;
+
+  ompt_thread_t thread_type = ompt_thread_type_get();
+  switch(thread_type) {
+    case ompt_thread_initial:
+      break;
+    case ompt_thread_worker:
+      break;
+    case ompt_thread_other:
+    case ompt_thread_unknown:
+    default:
+      goto return_label;
+  }
+
+  int on_explicit_barrier = 0;
+  // collapse callstack if a thread is idle or waiting in a barrier
+  switch(current_state) {
+    case ompt_state_wait_barrier:
+    case ompt_state_wait_barrier_implicit: // mark it idle
+      // previous two states should be deprecated
+    case ompt_state_wait_barrier_implicit_parallel:
+    case ompt_state_overhead:
+      if (ending_region) break;
+      else return 0;
+    case ompt_state_idle:
+      return 0;
+#if 0
+      TD_GET(omp_task_context) = 0;
+      if (hpcrun_ompt_get_thread_num(0) != 0) {
+        collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
+        goto return_label;
+      }
+      break;
+#endif
+    case ompt_state_wait_barrier_explicit: // attribute them to the corresponding
+      // We are inside implicit or explicit task.
+      // If we are collecting regions' callpaths synchronously, then we
+      // are sure that hpcrun_ompt_get_task_data(0) exists.
+      // If we are asynchronously resolving call paths, then
+      // TD_GET(omp_task_context) will be NULL. We will handle this
+      // in ompt_cct_cursor_finalize.
+#if 0
+      // Old code
+      TD_GET(omp_task_context) = hpcrun_ompt_get_task_data(0)->ptr;
+      // collapse barriers on non-master ranks
+      if (hpcrun_ompt_get_thread_num(0) != 0) {
+	      collapse_callstack(bt, &ompt_placeholders.ompt_barrier_wait_state);
+	      goto return_label;
+      }
+      break;
+#endif
+      on_explicit_barrier = 1;
+      break;
+#if 0
+      case ompt_state_idle:
+      // collapse idle state
+      TD_GET(omp_task_context) = 0;
+      collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
+      goto return_label;
+#endif
+#if 0
+      case ompt_state_overhead:
+      TD_GET(omp_task_context) = 0;
+      if (hpcrun_ompt_get_thread_num(0) != 0) {
+        collapse_callstack(bt, &ompt_placeholders.ompt_overhead_state);
+        goto return_label;
+      }
+      break;
+#endif
+    default:
+      break;
+  }
+
+  int i = 0;
+  frame_t *it = NULL;
+
+  ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(i);
+
+  TD_GET(omp_task_context) = 0;
+
+  elide_debug_dump("ORIGINAL", *bt_inner, *bt_outer, region_id);
+  elide_frame_dump();
+
+  //---------------------------------------------------------------
+  // handle all of the corner cases that can occur at the top of
+  // the stack first
+  //---------------------------------------------------------------
+
+  if (!frame0) {
+    // corner case: the innermost task (if any) has no frame info.
+    // no action necessary. just return.
+    return 0;
+  }
+
+  while ((fp_enter(frame0) == 0) &&
+         (fp_exit(frame0) == 0)) {
+    // corner case: the top frame has been set up,
+    // but not filled in. ignore this frame.
+    frame0 = hpcrun_ompt_get_task_frame(++i);
+
+    if (!frame0) {
+      if (thread_type == ompt_thread_initial) return 0;
+
+      // corner case: the innermost task (if any) has no frame info.
+      return 0;
+    }
+  }
+
+  if (fp_exit(frame0) &&
+      (((uint64_t) fp_exit(frame0)) <
+       ((uint64_t) (*bt_inner)->cursor.sp))) {
+    // corner case: the top frame has been set up, exit frame has been filled in;
+    // however, exit_frame.ptr points beyond the top of stack. the final call
+    // to user code hasn't been made yet. ignore this frame.
+    frame0 = hpcrun_ompt_get_task_frame(++i);
+  }
+
+  if (!frame0) {
+    // corner case: the innermost task (if any) has no frame info.
+    return 0;
+  }
+
+  if (fp_enter(frame0)) {
+    // the sample was received inside the runtime;
+    // elide frames from top of stack down to runtime entry
+    int found = 0;
+    for (it = *bt_inner; it <= *bt_outer; it++) {
+      if ((uint64_t)(it->cursor.sp) >= (uint64_t)fp_enter(frame0)) {
+        if (isSync) {
+          // for synchronous samples, elide runtime frames at top of stack
+          //*bt_inner = it;
+        } else if (on_explicit_barrier) {
+          // bt_inner points to __kmp_api_GOMP_barrier_10_alias
+          //*bt_inner = it - 1;
+          // replace the last frame with explicit barrier placeholder
+          //set_frame(*bt_inner, &ompt_placeholders.ompt_barrier_wait_state);
+        }
+        found = 1;
+        break;
+      }
+    }
+
+    if (found == 0) {
+      // enter_frame not found on stack. all frames are runtime frames
+      return 0;
+      //goto clip_base_frames;
+    }
+    // frames at top of stack elided. continue with the rest
+  }
+
+  // general case: elide frames between frame1->enter and frame0->exit
+  while (true) {
+    frame_t *exit0 = NULL, *reenter1 = NULL;
+    ompt_frame_t *frame1;
+
+    int flags0;
+    ompt_data_t *task_data = NULL;
+    ompt_data_t *parallel_data = NULL;
+    int thread_num = 0;
+    hpcrun_ompt_get_task_info(i, &flags0, &task_data, &frame0,
+                              &parallel_data, &thread_num);
+
+    if (!frame0) break;
+#if 0
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
+    // If hpcrun is using ompt_callback_implicit_task, then check
+    // only if task_data of explicit task is uninitialized.
+    if (flags0 & ompt_task_explicit) {
+#endif
+    // check if task_data is not initialized
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+    if (task_data && task_data->ptr == NULL
+          && parallel_data && parallel_data->ptr) {
+#else
+    if (task_data && task_data->ptr == NULL
+        && parallel_data && ATOMIC_LOAD_RD(parallel_data)) {
+#endif
+      // try to initialize task_data if can
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+      typed_stack_elem(region) *region_data = parallel_data->ptr;
+#else
+      typed_stack_elem(region) *region_data = ATOMIC_LOAD_RD(parallel_data);
+#endif
+      if (ompt_eager_context_p()) {
+        task_data_set_cct(task_data, region_data->call_path);
+      } else {
+        task_data_set_depth(task_data, region_data->depth);
+      }
+    }
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
+    }
+#endif
+#endif
+    cct_node_t *omp_task_context = NULL;
+    if (task_data)
+      omp_task_context = task_data->ptr;
+
+    void *low_sp = (*bt_inner)->cursor.sp;
+    void *high_sp = (*bt_outer)->cursor.sp;
+
+    // if a frame marker is inside the call stack, set its flag to true
+    bool exit0_flag =
+        interval_contains(low_sp, high_sp, fp_exit(frame0));
+
+    /* start from the top of the stack (innermost frame).
+       find the matching frame in the callstack for each of the markers in the
+       stack. look for them in the order in which they should occur.
+
+       optimization note: this always starts at the top of the stack. this can
+       lead to quadratic cost. could pick up below where you left off cutting in
+       previous iterations.
+    */
+    if (exit0_flag) return 1;
+
+    it = *bt_inner;
+#if 0
+    if (exit0_flag) {
+      for (; it <= *bt_outer; it++) {
+        if ((uint64_t)(it->cursor.sp) >= (uint64_t)(fp_exit(frame0))) {
+          int offset = ff_is_appl(FF(frame0, exit)) ? 0 : 1;
+          //exit0 = it - offset;
+          break;
+        }
+      }
+    }
+
+    if (exit0_flag && omp_task_context) {
+      TD_GET(omp_task_context) = omp_task_context;
+      *bt_outer = exit0 - 1;
+      break;
+    }
+#endif
+    frame1 = hpcrun_ompt_get_task_frame(++i);
+    if (!frame1) break;
+
+    //-------------------------------------------------------------------------
+    //  frame1 points into the stack above the task frame (in the
+    //  runtime from the outer task's perspective). frame0 points into
+    //  the the stack inside the first application frame (in the
+    //  application from the inner task's perspective) the two points
+    //  are equal. there is nothing to elide at this step.
+    //-------------------------------------------------------------------------
+    if ((fp_enter(frame1) == fp_exit(frame0)) &&
+        (ff_is_appl(FF(frame0, exit)) &&
+         ff_is_rt(FF(frame1, enter))))
+      continue;
+
+
+    bool reenter1_flag =
+        interval_contains(low_sp, high_sp, fp_enter(frame1));
+
+#if 0
+    ompt_frame_t *help_frame = region_stack[top_index-i+1].parent_frame;
+    if (!ompt_eager_context && !reenter1_flag && help_frame) {
+      frame1 = help_frame;
+      reenter1_flag = interval_contains(low_sp, high_sp, fp_enter(frame1));
+      // printf("THIS ONLY HAPPENS IN MASTER: %d\n", TD_GET(master));
+    }
+#endif
+
+    if (reenter1_flag) {
+      for (; it <= *bt_outer; it++) {
+        if ((uint64_t)(it->cursor.sp) >= (uint64_t)(fp_enter(frame1))) {
+          reenter1 = it - 1;
+          break;
+        }
+      }
+    }
+
+
+
+    if (exit0 && reenter1) {
+
+
+
+      // FIXME: IBM and INTEL need to agree
+      // laksono 2014.07.08: hack removing one more frame to avoid redundancy with the parent
+      // It seems the last frame of the master is the same as the first frame of the workers thread
+      // By eliminating the topmost frame we should avoid the appearance of the same frame twice
+      //  in the callpath
+
+
+      //------------------------------------
+      // The prefvous version DON'T DELETE
+      memmove(*bt_inner+(reenter1-exit0+1), *bt_inner,
+              (exit0 - *bt_inner)*sizeof(frame_t));
+
+      *bt_inner = *bt_inner + (reenter1 - exit0 + 1);
+
+      exit0 = reenter1 = NULL;
+      // --------------------------------
+    } else if (exit0 && !reenter1) {
+      // corner case: reenter1 is in the team master's stack, not mine. eliminate all
+      // frames below the exit frame.
+      *bt_outer = exit0 - 1;
+      break;
+    }
+  }
+
+  if (*bt_outer != bt_outer_at_entry) {
+    //bt->bottom_frame_elided = true;
+    //bt->partial_unwind = false;
+    if (*bt_outer < *bt_inner) {
+      //------------------------------------------------------------------------
+      // corner case:
+      //   the thread state is not ompt_state_idle, but we are eliding the
+      //   whole call stack anyway.
+      // how this arises:
+      //   when a sample is delivered between when a worker thread's task state
+      //   is set to ompt_state_work_parallel but the user outlined function
+      //   has not yet been invoked.
+      // considerations:
+      //   bt_outer may be out of bounds
+      // handling:
+      //   (1) reset both cursors to something acceptable
+      //   (2) collapse context to an <openmp idle>
+      //------------------------------------------------------------------------
+      //*bt_outer = *bt_inner;
+      // It is possible that we are inside explicit task
+      // and delete its context here.
+      // Because of that we are going to unnecessarily go into provider.
+      TD_GET(omp_task_context) = 0;
+      // collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
+      return 0;
+    }
+  }
+
+  elide_debug_dump("ELIDED", *bt_inner, *bt_outer, region_id);
+  goto return_label;
+
+  clip_base_frames:
+  {
+    return 0;
+    int master = TD_GET(master);
+    if (!master) {
+      set_frame(*bt_outer, &ompt_placeholders.ompt_idle_state);
+      *bt_inner = *bt_outer;
+      bt->bottom_frame_elided = false;
+      bt->partial_unwind = false;
+      goto return_label;
+    }
+
+#if 0
+    /* runtime frames with nothing else; it is harmless to reveal them all */
+    uint64_t idle_frame = (uint64_t) hpcrun_ompt_get_idle_frame();
+
+    if (idle_frame) {
+      /* clip below the idle frame */
+      for (it = *bt_inner; it <= *bt_outer; it++) {
+        if ((uint64_t)(it->cursor.sp) >= idle_frame) {
+          *bt_outer = it - 2;
+              bt->bottom_frame_elided = true;
+              bt->partial_unwind = true;
+          break;
+        }
+      }
+    } else {
+      /* no idle frame. show the whole stack. */
+    }
+
+    elide_debug_dump("ELIDED INNERMOST FRAMES", *bt_inner, *bt_outer, region_id);
+    goto return_label;
+#endif
+  }
+
+
+  return_label:
+  return 0;
+}
+
+
 cct_node_t *
 ompt_region_root
 (
@@ -931,7 +1321,11 @@ ompt_backtrace_finalize
     // initialize region_data if needed
     // (only when region creation context is provided lazily)
     // FIXME vi3: should this execute when synchronous sample is delivered
-    initialize_regions_if_needed();
+    if (hack_ompt_elide_runtime_frame(bt, region_id, isSync)) {
+      initialize_regions_if_needed();
+    } else {
+      //printf("Is this possible\n");
+    }
   }
   ompt_elide_runtime_frame(bt, region_id, isSync);
 #if 0
@@ -1709,7 +2103,15 @@ ompt_cct_cursor_finalize
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  if (current_state == ompt_state_overhead) {
+    //printf("info: %d\n", info_type);
+  } else if (current_state == ompt_state_work_parallel) {
+    if (region_depth >= 0) {
 
+    } else {
+      return cct->partial_unw_root;
+    }
+  }
 #if 0
   if (task_ancestor_level == -3) {
     if (info_type == 2) {

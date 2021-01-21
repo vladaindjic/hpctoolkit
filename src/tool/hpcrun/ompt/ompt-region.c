@@ -120,6 +120,9 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
+  // debug
+  ompt_region_debug_region_create(e);
+
 #if DEBUG_BARRIER_CNT
   // FIXME vi3 >>> Check if this is right.
   atomic_exchange(&e->barrier_cnt, 0);
@@ -520,25 +523,25 @@ ompt_implicit_task
   }
 
   ompt_state_t thread_state = check_state();
-
+  int thread_num = hpcrun_ompt_get_thread_num(0);
   hpcrun_safe_enter();
 
   if (endpoint == ompt_scope_begin) {
     //ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
     if (thread_state != ompt_state_work_parallel) {
       // Initial master will end up here
-      printf("Unexpected state: %x\n", thread_state);
+      // printf("Unexpected state: %x\n", thread_state);
+    } else {
+      if (thread_num != 0) {
+        //printf("What is this: %x\n", ompt_state_work_parallel);
+      }
     }
   } else if (endpoint == ompt_scope_end) {
     int tnum;
     //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
     switch (thread_state) {
       case ompt_state_overhead:
-//        tnum = hpcrun_ompt_get_thread_num(0);
-//        if (tnum != 0) {
-//          printf("possible\n");
-//        }
-        //assert(hpcrun_ompt_get_thread_num(0) == 0);
+        assert(thread_num == 0);
         break;
       case ompt_state_wait_barrier_implicit_parallel:
         break;
@@ -613,7 +616,7 @@ ompt_region_acquire
   typed_stack_elem_ptr(region) r = ompt_region_freelist_get();
   if (r == 0) {
     r = ompt_region_alloc();
-    ompt_region_debug_region_create(r);
+    //ompt_region_debug_region_create(r);
   }
 #if FREELISTS_DEBUG
   r->owner_free_region_channel = &region_freelist_channel;

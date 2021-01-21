@@ -79,6 +79,7 @@
 #include "ompt-task.h"
 #include "ompt-thread.h"
 #include "ompt-device.h"
+#include "ompt-region-debug.h"
 
 
 
@@ -1118,6 +1119,8 @@ hpcrun_ompt_region_free
   typed_stack_elem_ptr(region) region_data
 )
 {
+  // mark that region is resolved
+  ompt_region_debug_region_freed(region_data);
 #if FREELISTS_ENABLED
 #if FREELISTS_DEBUG
 #if DEBUG_BARRIER_CNT
@@ -1318,9 +1321,9 @@ try_to_detect_the_case
   } else if (current_state == ompt_state_idle) {
     return -4;
   } else if (current_state == ompt_state_overhead) {
-
+    return -1;
   } else if (current_state == ompt_state_work_parallel) {
-
+    //printf("How frequent is this\n");
   } else if (current_state == ompt_state_work_serial) {
     return -5;
   } else {
