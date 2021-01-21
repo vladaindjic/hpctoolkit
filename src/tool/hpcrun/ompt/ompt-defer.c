@@ -562,6 +562,9 @@ register_to_region
   cct_node_t *unresolved_cct
 )
 {
+  if (region_data->call_path) {
+    assert(0);
+  }
   // get new notification
   typed_stack_elem_ptr(notification) notification =
       help_notification_alloc(region_data, unresolved_cct);

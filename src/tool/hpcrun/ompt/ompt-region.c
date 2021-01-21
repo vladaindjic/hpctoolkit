@@ -764,6 +764,7 @@ initialize_region
   typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
   if (old_reg) {
     //printf("initialize_one_region >>> region_data initialized\n");
+    assert(old_reg->parallel_data == parallel_data);
     return old_reg->depth;
   }
 
@@ -775,15 +776,17 @@ initialize_region
   typed_stack_elem(region) *new_reg =
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
+  new_reg->parallel_data = parallel_data;
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
-    ompt_region_release(new_reg);
+    //ompt_region_release(new_reg);
+    hpcrun_ompt_region_free(new_reg);
   } else {
     old_reg = new_reg;
   }
-
+  assert(old_reg->parallel_data == parallel_data);
   return old_reg->depth;
 }
 

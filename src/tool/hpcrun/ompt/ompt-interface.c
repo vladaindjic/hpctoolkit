@@ -846,7 +846,11 @@ hpcrun_ompt_get_task_frame
     ompt_frame_t *task_frame = NULL;
     int thread_num = 0;
 
-    ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    int ret = ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    if (ret != 2) {
+      return NULL;
+    }
+    assert_parallel_data(parallel_data);
     //printf("Task frame pointer = %p\n", task_frame);
     return task_frame;
   }
@@ -867,7 +871,13 @@ hpcrun_ompt_get_task_data
     ompt_frame_t *task_frame = NULL;
     int thread_num = 0;
 
-    ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    int ret = ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    if (ret != 2) {
+      return NULL;
+    }
+
+    assert_parallel_data(parallel_data);
+
     return task_data;
   }
   return (ompt_data_t*) ompt_data_none;
@@ -907,7 +917,10 @@ hpcrun_ompt_get_task_info
     *task_frame = NULL;
     *parallel_data = NULL;
     *thread_num = -1;  // invalid thread num
+  } else {
+    assert_parallel_data(*parallel_data);
   }
+
 
   return ret;
 }
@@ -931,6 +944,8 @@ hpcrun_ompt_get_region_data_from_task_info
     if (retVal != 2) {
       return NULL;
     }
+
+    assert_parallel_data(parallel_data);
 
     if (task_type_flags & ompt_task_initial) {
       // TODO: think about this
@@ -1160,6 +1175,7 @@ hpcrun_ompt_get_region_data
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   return parallel_data ? (typed_stack_elem_ptr(region))parallel_data->ptr : NULL;
 #else
+  assert_parallel_data(parallel_data);
   return parallel_data ? ATOMIC_LOAD_RD(parallel_data) : NULL;
 #endif
 }
@@ -1248,7 +1264,11 @@ hpcrun_ompt_get_thread_num(int level)
     ompt_frame_t *task_frame = NULL;
     int thread_num = 0;
 
-    ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    int ret = ompt_get_task_info_fn(level, &task_type_flags, &task_data, &task_frame, &parallel_data, &thread_num);
+    if (ret != 2) {
+      return -1;
+    }
+    assert_parallel_data(parallel_data);
     //printf("Task frame pointer = %p\n", task_frame);
     return thread_num;
   }
@@ -1350,6 +1370,20 @@ try_to_detect_the_case
 
   return ancestor_level;
 
+}
+
+
+void
+assert_parallel_data
+(
+  ompt_data_t *parallel_data
+)
+{
+  assert(parallel_data);
+  typed_stack_elem(region) *reg = ATOMIC_LOAD_RD(parallel_data);
+  if (reg) {
+    assert(reg->parallel_data == parallel_data);
+  }
 }
 
 

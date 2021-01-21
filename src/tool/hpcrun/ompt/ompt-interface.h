@@ -326,4 +326,10 @@ ompt_idle_end
  void
 );
 
+void
+assert_parallel_data
+(
+  ompt_data_t *parallel_data
+);
+
 #endif // _OMPT_INTERFACE_H_

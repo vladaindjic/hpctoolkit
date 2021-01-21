@@ -274,7 +274,7 @@ r_get()
   typed_stack_elem(r) *r =
       (typed_stack_elem_ptr_get(r, sstack)(&r_freelist) ?
        typed_stack_pop(r, sstack)(&r_freelist) : r_alloc());
-
+  memset(r, 0, sizeof(typed_stack_elem(r)));
   return r;
 }
 
@@ -299,6 +299,11 @@ r_matches
 {
   // it is possible that one thread send the region to another
   // thread's region free list
+  if (r->region == region) {
+    if (r->region->region_id != r->region_id) {
+      printf("Wrong\n");
+    }
+  }
   return r->region == region;
 }
 
@@ -320,7 +325,7 @@ r_print
 }
 
 
-static void
+static typed_stack_elem(r) *
 r_queue_drop
 (
   typed_stack_elem(region) *region,
@@ -338,12 +343,13 @@ r_queue_drop
   for (; (next = typed_stack_elem_ptr_get(r, sstack)(cur));) {
     // if a match is found, remove and retur it
     if (r_matches(next, region, thread_id)) {
+      assert(next->region->notification_stack == NULL);
+      assert(next->region_id == region->region_id);
       typed_stack_elem(r) *r = typed_stack_pop(r, sstack)(cur);
-      assert(r->region->notification_stack == NULL);
-      r_print("(region freed)", r);
-      r_free(r);
+      //r_print("(region freed)", r);
+      // r_free(r);
 
-      return;
+      return r;
     }
 
     // preserve invariant that cur is pointer to container for next element
@@ -352,8 +358,9 @@ r_queue_drop
             &typed_stack_elem_ptr_get(r, sstack)(cur)->next);
   }
 
-  printf("r_queue_drop failed: (region %p, id 0x%lx, thread %3d)\n",
-         region, region->region_id, thread_id);
+  //printf("r_queue_drop failed: (region %p, id 0x%lx, thread %3d)\n",
+  //       region, region->region_id, thread_id);
+  return NULL;
 }
 
 
@@ -422,6 +429,16 @@ ompt_region_debug_region_create
   int tid = monitor_get_thread_num();
 
   spinlock_lock(&debuginfo_lock);
+  assert(region->notification_stack == NULL);
+  assert(region->call_path == NULL);
+
+  typed_stack_elem(r) *e = typed_stack_elem_ptr_get(r, cstack)(&r_list);
+  while (e) {
+    if (r_matches(e, region, tid)) {
+      assert(0);
+    }
+    e = typed_stack_elem_ptr_get(r,sstack)(&e->next);
+  }
 
   typed_stack_elem(r) *r = r_get();
 
@@ -431,7 +448,7 @@ ompt_region_debug_region_create
   r->curr_thr_state = check_state();
   typed_stack_push(r, cstack)(&r_list, r);
 
-  r_print("(region recycled)", r);
+  //r_print("(region recycled)", r);
 
   spinlock_unlock(&debuginfo_lock);
 }
@@ -444,10 +461,24 @@ ompt_region_debug_region_freed
 )
 {
   int thread_id = monitor_get_thread_num();
-
   spinlock_lock(&debuginfo_lock);
 
-  r_queue_drop(region, thread_id);
+  assert(region->notification_stack == NULL);
+  //assert(region->call_path != NULL);
+
+  int succ = 0;
+  typed_stack_elem(r) *first = r_queue_drop(region, thread_id);
+  typed_stack_elem(r) *second = r_queue_drop(region, thread_id);
+  assert(first && !second);
+
+  if (first) {
+    r_free(first);
+  }
+
+  if (second) {
+    r_free(second);
+  }
+
 
   spinlock_unlock(&debuginfo_lock);
 }
@@ -459,18 +490,25 @@ hpcrun_ompt_region_check
   void
 )
 {
+  spinlock_lock(&debuginfo_lock);
+
+  int thread_id = monitor_get_thread_num();
    typed_stack_elem(r) *e = typed_stack_elem_ptr_get(r, cstack)(&r_list);
    while (e) {
-     printf("region %p region id 0x%lx call_path = %p queue head = %p\n", 
-	    e->region, e->region_id, e->region->call_path,
-	    typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack));
+     if (e->thread_id == thread_id) {
+       assert(e->region->call_path != NULL);
+       assert(e->region_id == e->region->region_id);
+       printf("region %p region id 0x%lx region->region_id 0x%lx call_path = %p queue head = %p\n",
+        e->region, e->region_id, e->region->region_id, e->region->call_path,
+        typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack));
 
-     typed_stack_elem(notification) *n = typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack);
-     while(n) {
-       printf("   notification %p region %p region_id 0x%lx threads_queue %p unresolved_cct %p next %p\n",
-	      n, n->region_data, n->region_id, n->notification_channel, n->unresolved_cct,
-	      typed_stack_elem_ptr_get(notification, sstack)(&n->next));
-       n = (typed_stack_elem(notification) *) typed_stack_elem_ptr_get(notification, cstack)(&n->next);
+       typed_stack_elem(notification) *n = typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack);
+       while(n) {
+         printf("   notification %p region %p region_id 0x%lx threads_queue %p unresolved_cct %p next %p\n",
+          n, n->region_data, n->region_id, n->notification_channel, n->unresolved_cct,
+          typed_stack_elem_ptr_get(notification, sstack)(&n->next));
+         n = (typed_stack_elem(notification) *) typed_stack_elem_ptr_get(notification, cstack)(&n->next);
+       }
      }
      e = typed_stack_elem_ptr_get(r,sstack)(&e->next);
    } 
@@ -479,13 +517,14 @@ hpcrun_ompt_region_check
      typed_stack_elem_ptr_get(rn, sstack)(&rn_list);
 
    int result = rn != 0;
-   int thread_id = monitor_get_thread_num();
    while (rn) {
      if (rn->thread_id == thread_id) {
-       rn_print("(notification pending)", rn);
+       rn_print(">>>(notification pending)", rn);
      }
      rn = typed_stack_elem_ptr_get(rn,sstack)(&rn->next);
    }
+
+  spinlock_unlock(&debuginfo_lock);
 
    return result;
 }
