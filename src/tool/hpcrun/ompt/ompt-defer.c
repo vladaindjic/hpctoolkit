@@ -898,6 +898,7 @@ lca_el_fn
   // check if thread is the master (owner) of the reg
   el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
   //check_thread_num(el, level);
+  assert(hpcrun_ompt_is_thread_region_owner(reg) == is_thread_owner_of_the_region(el, level));
 #else
   el->team_master = is_thread_owner_of_the_region(el, level);
 #endif

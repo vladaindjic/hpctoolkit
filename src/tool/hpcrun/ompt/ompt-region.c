@@ -492,6 +492,17 @@ ompt_implicit_task_internal_end
 }
 
 
+static ompt_state_t
+check_state
+    (
+        void
+    )
+{
+  uint64_t wait_id;
+  return hpcrun_ompt_get_state(&wait_id);
+}
+
+
 void
 ompt_implicit_task
 (
@@ -508,12 +519,32 @@ ompt_implicit_task
     return;
   }
 
+  ompt_state_t thread_state = check_state();
+
   hpcrun_safe_enter();
 
   if (endpoint == ompt_scope_begin) {
-    ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
+    //ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
+    if (thread_state != ompt_state_work_parallel) {
+      // Initial master will end up here
+      printf("Unexpected state: %x\n", thread_state);
+    }
   } else if (endpoint == ompt_scope_end) {
-    ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
+    int tnum;
+    //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
+    switch (thread_state) {
+      case ompt_state_overhead:
+//        tnum = hpcrun_ompt_get_thread_num(0);
+//        if (tnum != 0) {
+//          printf("possible\n");
+//        }
+        //assert(hpcrun_ompt_get_thread_num(0) == 0);
+        break;
+      case ompt_state_wait_barrier_implicit_parallel:
+        break;
+      default:
+        printf("Something else: %x\n", thread_state);
+    }
   } else {
     // should never occur. should we add a message to the log?
   }
@@ -685,7 +716,7 @@ ompt_parallel_region_register_callbacks
     assert(ompt_event_may_occur(retval));
   }
 
-#if USE_IMPLICIT_TASK_CALLBACKS == 1
+#if USE_IMPLICIT_TASK_CALLBACKS == 0
   printf("Using implicit task callbacks\n");
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);

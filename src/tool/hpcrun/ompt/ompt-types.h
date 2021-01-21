@@ -78,7 +78,7 @@
 //******************************************************************************
 
 // freelists of region_data and notification structures
-#define FREELISTS_ENABLED 1
+#define FREELISTS_ENABLED 0
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
 #define FREELISTS_DEBUG FREELISTS_ENABLED && 1

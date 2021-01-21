@@ -173,10 +173,10 @@ rn_print
 )
 {
   printf("region %p id 0x%lx notification %p notification->next %14p thread %3d "
-	 "region->region_id 0x%lx      %s\n", rn->region, 
+	 "region->region_id 0x%lx  region_prefix: %p    %s, \n", rn->region,
 	 rn->region_id, rn->notification,
 	 typed_stack_elem_ptr_get(notification, cstack)(&rn->notification->next),
-	 rn->thread_id, rn->region->region_id,
+	 rn->thread_id, rn->region->region_id, rn->notification->region_prefix,
 	 what);
 }
  
@@ -317,9 +317,11 @@ hpcrun_ompt_region_check
      typed_stack_elem_ptr_get(rn, sstack)(&rn_list);
 
    int result = rn != 0;
-
+   int thread_id = monitor_get_thread_num();
    while (rn) {
-     rn_print("(notification pending)", rn);
+     if (rn->thread_id == thread_id) {
+       rn_print("(notification pending)", rn);
+     }
      rn = typed_stack_elem_ptr_get(rn,sstack)(&rn->next);
    }
 
