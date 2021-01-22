@@ -120,6 +120,10 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
+  atomic_store(&e->process, 0);
+  atomic_store(&e->registered, 0);
+  atomic_store(&e->resolved, 0);
+  e->master_channel = NULL;
   // debug
   ompt_region_debug_region_create(e);
 
@@ -225,6 +229,8 @@ ompt_parallel_end_internal
 #else
   // if (!ompt_eager_context_p() && region_data){
   if (region_data){
+    region_data->master_channel = &region_freelist_channel;
+    atomic_fetch_add(&region_data->process, 1);
     // It is possible that region_data is not initialized, if none thread took
     // sample while region was active.
 #endif
@@ -782,6 +788,7 @@ initialize_region
     // region_data has been initialized by other thread
     // free new_reg
     //ompt_region_release(new_reg);
+    atomic_fetch_add(&new_reg->process, 1);
     hpcrun_ompt_region_free(new_reg);
   } else {
     old_reg = new_reg;

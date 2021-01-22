@@ -131,6 +131,10 @@ typedef struct ompt_region_data_s {
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
   ompt_data_t *parallel_data;
+  _Atomic(int) process;
+  _Atomic(int) registered;
+  _Atomic(int) resolved;
+  struct mpsc_channel_region_s *master_channel;
 #endif
 #if DEBUG_BARRIER_CNT
   // barrier counter which indicates if region is active

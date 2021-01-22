@@ -565,6 +565,8 @@ register_to_region
   if (region_data->call_path) {
     assert(0);
   }
+  assert(atomic_load(&region_data->process) == 0);
+  assert(atomic_load(&region_data->resolved) == 0);
   // get new notification
   typed_stack_elem_ptr(notification) notification =
       help_notification_alloc(region_data, unresolved_cct);
@@ -603,7 +605,7 @@ register_to_region
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
 #endif
-
+  atomic_fetch_add(&region_data->registered, 1);
   // increment the number of unresolved regions
   unresolved_cnt++;
 }
@@ -2035,7 +2037,11 @@ try_resolve_one_region_context
 #endif
   unresolved_cnt--;
   ompt_region_debug_notify_received(old_head);
-
+  atomic_fetch_add(&old_head->region_data->resolved, 1);
+  if (old_head->region_data->master_channel == &region_freelist_channel) {
+    printf("Master should not finish here\n");
+  }
+  assert(old_head->region_data->master_channel != &region_freelist_channel);
   // check if the notification needs to be forwarded
   typed_stack_elem_ptr(notification) next =
     typed_stack_pop(notification, cstack)(&old_head->region_data->notification_stack);
@@ -2305,6 +2311,7 @@ ompt_resolve_region_contexts
     // hang to let debugger attach
     volatile int x;
     for(;;) {
+      try_resolve_one_region_context();
       x++;
     };
   }

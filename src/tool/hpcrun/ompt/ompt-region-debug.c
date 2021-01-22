@@ -431,6 +431,7 @@ ompt_region_debug_region_create
   spinlock_lock(&debuginfo_lock);
   assert(region->notification_stack == NULL);
   assert(region->call_path == NULL);
+  assert(atomic_load(&region->process) == 0);
 
   typed_stack_elem(r) *e = typed_stack_elem_ptr_get(r, cstack)(&r_list);
   while (e) {
@@ -464,6 +465,7 @@ ompt_region_debug_region_freed
   spinlock_lock(&debuginfo_lock);
 
   assert(region->notification_stack == NULL);
+  assert(atomic_load(&region->process) == 1);
   //assert(region->call_path != NULL);
 
   int succ = 0;
@@ -498,17 +500,38 @@ hpcrun_ompt_region_check
      if (e->thread_id == thread_id) {
        assert(e->region->call_path != NULL);
        assert(e->region_id == e->region->region_id);
-       printf("region %p region id 0x%lx region->region_id 0x%lx call_path = %p queue head = %p\n",
+       assert(atomic_load(&e->region->process) == 1);
+       printf("region %p region id 0x%lx region->region_id 0x%lx call_path = %p queue head = %p, depth = %d, ended: %d, registered: %d, resolved: %d\n",
         e->region, e->region_id, e->region->region_id, e->region->call_path,
-        typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack));
+        typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack),
+        e->region->depth, atomic_load(&e->region->process),
+        atomic_load(&e->region->registered), atomic_load(&e->region->resolved));
 
+       int remain_num = 0;
        typed_stack_elem(notification) *n = typed_stack_elem_ptr_get(notification, cstack)(&e->region->notification_stack);
        while(n) {
+
+
+         typed_stack_elem(rn) *rn_cur = typed_stack_elem_ptr_get(rn, cstack)(&rn_list);
+         bool found = false;
+         while(rn_cur) {
+           if (rn_cur->notification == n) {
+             //printf("??????? match\n");
+             found = true;
+           }
+           rn_cur = typed_stack_elem_ptr_get(rn,sstack)(&rn_cur->next);
+         }
+         if (!found) {
+           printf("************************************* This one is missing in the gloabal list: %p\n", n);
+         }
+
+         remain_num++;
          printf("   notification %p region %p region_id 0x%lx threads_queue %p unresolved_cct %p next %p\n",
           n, n->region_data, n->region_id, n->notification_channel, n->unresolved_cct,
           typed_stack_elem_ptr_get(notification, sstack)(&n->next));
          n = (typed_stack_elem(notification) *) typed_stack_elem_ptr_get(notification, cstack)(&n->next);
        }
+       printf(">>>>>>>>>>>>>>>>>>>>>> Remained: %d\n", remain_num);
      }
      e = typed_stack_elem_ptr_get(r,sstack)(&e->next);
    } 
