@@ -143,7 +143,6 @@ ompt_parallel_begin_internal
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   parallel_data->ptr = region_data;
-
 #else
   ATOMIC_STORE_RD(parallel_data, region_data);
 #endif
@@ -217,14 +216,10 @@ ompt_parallel_end_internal
     region_data = runtime_master_region;
   }
 #endif
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  if (!ompt_eager_context_p()){
-#else
-  // if (!ompt_eager_context_p() && region_data){
+
   if (region_data){
     // It is possible that region_data is not initialized, if none thread took
     // sample while region was active.
-#endif
 #if DEBUG_BARRIER_CNT
     // Debug only
     // Mark that this region is finished
@@ -385,7 +380,7 @@ ompt_parallel_end
   hpcrun_safe_exit();
 }
 
-
+#if 0
 static void
 ompt_implicit_task_internal_begin
 (
@@ -520,7 +515,7 @@ ompt_implicit_task
 
   hpcrun_safe_exit();
 }
-
+#endif
 
 static typed_stack_elem_ptr(region)
 ompt_region_alloc
