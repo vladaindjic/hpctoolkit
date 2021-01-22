@@ -547,7 +547,7 @@ ompt_implicit_task
     //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
     switch (thread_state) {
       case ompt_state_overhead:
-        assert(thread_num == 0);
+        //assert(thread_num == 0);
         break;
       case ompt_state_wait_barrier_implicit_parallel:
         break;
