@@ -1344,7 +1344,7 @@ try_to_detect_the_case
   } else if (current_state == ompt_state_idle) {
     return -4;
   } else if (current_state == ompt_state_overhead) {
-    return -1;
+    //return -1;
   } else if (current_state == ompt_state_work_parallel) {
     //printf("How frequent is this\n");
   } else if (current_state == ompt_state_work_serial) {

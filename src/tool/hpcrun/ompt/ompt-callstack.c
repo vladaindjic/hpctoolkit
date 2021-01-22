@@ -319,8 +319,6 @@ ompt_elide_runtime_frame(
     case ompt_state_wait_barrier_implicit: // mark it idle
       // previous two states should be deprecated
     case ompt_state_wait_barrier_implicit_parallel:
-    case ompt_state_overhead:
-      if (ending_region) break;
     case ompt_state_idle:
       // collapse idle state
       TD_GET(omp_task_context) = 0;
@@ -702,9 +700,6 @@ hack_ompt_elide_runtime_frame(
     case ompt_state_wait_barrier_implicit: // mark it idle
       // previous two states should be deprecated
     case ompt_state_wait_barrier_implicit_parallel:
-    case ompt_state_overhead:
-      if (ending_region) break;
-      else return 0;
     case ompt_state_idle:
       return 0;
 #if 0
@@ -2103,15 +2098,7 @@ ompt_cct_cursor_finalize
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
   int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
-  if (current_state == ompt_state_overhead) {
-    //printf("info: %d\n", info_type);
-  } else if (current_state == ompt_state_work_parallel) {
-    if (region_depth >= 0) {
 
-    } else {
-      return cct->partial_unw_root;
-    }
-  }
 #if 0
   if (task_ancestor_level == -3) {
     if (info_type == 2) {
