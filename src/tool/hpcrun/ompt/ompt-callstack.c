@@ -447,6 +447,10 @@ ompt_elide_runtime_frame(
     // frames at top of stack elided. continue with the rest
   }
 
+  // FIXME vi3: find a better solution
+  ompt_data_t tmp_task_data;
+
+
   // general case: elide frames between frame1->enter and frame0->exit
   while (true) {
     frame_t *exit0 = NULL, *reenter1 = NULL;
@@ -456,10 +460,11 @@ ompt_elide_runtime_frame(
     ompt_data_t *task_data = NULL;
     ompt_data_t *parallel_data = NULL;
     int thread_num = 0;
-    hpcrun_ompt_get_task_info(i, &flags0, &task_data, &frame0,
+    int ret = hpcrun_ompt_get_task_info(i, &flags0, &task_data, &frame0,
         &parallel_data, &thread_num);
 
     if (!frame0) break;
+#if 0
 #if USE_IMPLICIT_TASK_CALLBACKS == 1
     // If hpcrun is using ompt_callback_implicit_task, then check
     // only if task_data of explicit task is uninitialized.
@@ -489,10 +494,31 @@ ompt_elide_runtime_frame(
     }
 #endif
 
+
     cct_node_t *omp_task_context = NULL;
     if (task_data)
       omp_task_context = task_data->ptr;
-    
+#endif
+
+    // the old code (above) has been writing to task_data
+    // I don't think that is safe in all circumstances.
+    typed_stack_elem(region) *region_data =
+        (ret == 2 && parallel_data) ?
+        (typed_stack_elem(region) *)parallel_data->ptr : NULL;
+
+    cct_node_t *omp_task_context = NULL;
+    if (region_data) {
+      // I would use tmp_task_data as a quick workaround, since I've
+      // made an assumption of how the task_data context looks like.
+      if (ompt_eager_context_p()) {
+        task_data_set_cct(&tmp_task_data, region_data->call_path);
+      } else {
+        task_data_set_depth(&tmp_task_data, region_data->depth);
+      }
+      // store task context
+      omp_task_context = tmp_task_data.ptr;
+    }
+
     void *low_sp = (*bt_inner)->cursor.sp;
     void *high_sp = (*bt_outer)->cursor.sp;
 
@@ -927,13 +953,17 @@ ompt_backtrace_finalize
   find_current_thread_state();
 
   uint64_t region_id = TD_GET(region_id);
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   if (!ompt_eager_context_p()) {
     // initialize region_data if needed
     // (only when region creation context is provided lazily)
     // FIXME vi3: should this execute when synchronous sample is delivered
     initialize_regions_if_needed();
   }
+#endif
+
   ompt_elide_runtime_frame(bt, region_id, isSync);
+
 #if 0
   // Old code
   // If backtrace is collapsed and if worker thread in team is waiting
@@ -950,7 +980,7 @@ ompt_backtrace_finalize
   //  for regions' call paths.
   //  Note: see  register_to_all_regions and ompt_cct_cursor_finalize functions
   //    for more information.
-  // FIXME vi3: check synchronous samples
+  // FIXME vi3 (urgent): check synchronous samples
   if(!isSync && !ompt_eager_context_p()) {
     register_to_all_regions();
   }
@@ -1708,7 +1738,9 @@ ompt_cct_cursor_finalize
 
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
-  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context), &omp_task_context, &region_depth);
+  char info_type =
+      task_data_value_get_info((void*)TD_GET(omp_task_context),
+                               &omp_task_context, &region_depth);
 
 #if 0
   if (task_ancestor_level == -3) {

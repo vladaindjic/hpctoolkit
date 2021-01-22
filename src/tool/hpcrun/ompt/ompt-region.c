@@ -653,9 +653,7 @@ ompt_regions_init
   ompt_region_debug_init();
 }
 
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
 #include <tool/hpcrun/trace.h>
-#endif
 
 void 
 ompt_parallel_region_register_callbacks
@@ -664,7 +662,7 @@ ompt_parallel_region_register_callbacks
 )
 {
   int retval;
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   // FIXME ompt_eager_context is initialized inside ompt_callstack_init_deferred
   //   which is called after this function.
   //if (ompt_eager_context_p()) {
@@ -674,7 +672,7 @@ ompt_parallel_region_register_callbacks
     retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
                                   (ompt_callback_t) ompt_parallel_begin);
     assert(ompt_event_may_occur(retval));
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
 #endif
 

@@ -81,7 +81,7 @@
 #define FREELISTS_ENABLED 1
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
-#define FREELISTS_DEBUG FREELISTS_ENABLED && 1
+#define FREELISTS_DEBUG FREELISTS_ENABLED && 0
 // when finalizing thread, wait for all regions to be resolved
 // and then check if all region_data are freed
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1
@@ -276,7 +276,7 @@ typedef struct ompt_atomic_data_s {
   atomic_compare_exchange_strong(&((ompt_atomic_data_t *)parallel_data)->ptr, \
     &old_reg, new_reg)
 
-#define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
+#define USE_OMPT_CALLBACK_PARALLEL_BEGIN 1
 
 #endif
 

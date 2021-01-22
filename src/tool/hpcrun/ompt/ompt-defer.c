@@ -910,6 +910,7 @@ lca_el_fn
   args->region_data = typed_stack_next_get(region, sstack)(reg);
 #else
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
+  args->level++;
   args->region_data = hpcrun_ompt_get_region_data(args->level);
 #else
 
@@ -1188,10 +1189,12 @@ register_to_all_regions
   void
 )
 {
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   if (task_ancestor_level < 0) {
     // Skip registration process.
     return;
   }
+#endif
 
 #if 0
   // If there is no regions on the stack, just return.
@@ -1904,14 +1907,7 @@ register_to_all_regions
 #else
   // FIXME vi3: Any information get from runtime that may help?
   if (info_type == 2) {
-    // FIXME vi3: debug this case
-    // printf("Debug this case\n");
-    // If elider cannot find task data, I guess it is safe to skip registering,
-    // unless we get some secure information from runtime
-    if (task_ancestor_level == -3) {
-      // FIXME vi3: debug this case
-      //printf("Pay attention to this\n");
-    }
+    // FIXME vi3: try to examine this a bit more details
     return;
   }
 #endif
@@ -1925,16 +1921,15 @@ register_to_all_regions
   if (!least_common_ancestor(&lca, region_depth)) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
-    if (task_ancestor_level == -3) {
-      printf("How to provide idle_placeholder: %p?\n", idle_placeholder);
-    }
     return;
   }
 
   // It is not safe to register to regions in the following cases:
   // - There's no information about the innermost task/region.
   // - Worker is waiting on the last implicit barrier of the innermost region.
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   if (task_ancestor_level >= 0) {
+#endif
     int start_from = 0;
     cct_node_t *parent_cct = NULL;
 
@@ -1964,7 +1959,9 @@ register_to_all_regions
                                                            region_stack,
                                                            thread_take_sample,
                                                            &parent_cct);
+#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
+#endif
   // process idleness if needed
   // wait_on_the_last_implicit_barrier();
 
