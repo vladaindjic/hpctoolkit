@@ -668,7 +668,6 @@ ompt_parallel_region_register_callbacks
   //if (ompt_eager_context_p()) {
   if (hpcrun_trace_isactive()) {
 #endif
-    printf("Using parallel begin callback\n");
     retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
                                   (ompt_callback_t) ompt_parallel_begin);
     assert(ompt_event_may_occur(retval));
