@@ -1248,7 +1248,10 @@ get_corresponding_stack_element_if_any
   // in el. Otherwise, return NULL as indication that thread didn't take sample
   // in region_data, so there's no stack element which corresponds to
   // region_data.
-  return el->region_data == region_data ? el : NULL;
+  // This bug made a 7-days headache.
+  // Always use ids and other unique values if checking whether data mataches,
+  // especially when you're using recycled memory.
+  return el->region_id == region_data->region_id ? el : NULL;
 }
 
 

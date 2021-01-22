@@ -725,7 +725,7 @@ ompt_parallel_region_register_callbacks
     assert(ompt_event_may_occur(retval));
   }
 
-#if USE_IMPLICIT_TASK_CALLBACKS == 0
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
   printf("Using implicit task callbacks\n");
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);
