@@ -303,13 +303,11 @@ ompt_parallel_end_internal
     } else {
       // No one registered, so free region_data by returning it to
       // the originator freelist.
-      // FIXME vi3(urgent-semi): Why this fails?
       // Since none thread registered for the region, the master is the one
       // who created the region_data when had been processing the sample.
       // It should be safe to push region_data to the private stack of
       // region free channel.
-      // ompt_region_release(region_data);
-      hpcrun_ompt_region_free(region_data);
+      ompt_region_release(region_data);
     }
 
     // If master took a sample in this region, it needs to resolve its call path.

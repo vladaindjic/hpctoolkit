@@ -983,8 +983,7 @@ lca_el_fn
 bool
 least_common_ancestor
 (
-  typed_random_access_stack_elem(region) **lca,
-  int td_region_depth
+  typed_random_access_stack_elem(region) **lca
 )
 {
   int ancestor_level = task_ancestor_level;
@@ -1000,6 +999,7 @@ least_common_ancestor
     return false;
   }
 
+#if 0
   if (td_region_depth >= 0) {
     // skip regions deeper than td_region_depth
     while(innermost_reg->depth > td_region_depth) {
@@ -1021,6 +1021,7 @@ least_common_ancestor
       printf("Some invalid value: %d.\n", td_region_depth);
     }
   }
+#endif
 
 
   // update top of the stack
@@ -1897,6 +1898,7 @@ register_to_all_regions
   }
 #endif
 
+#if 0
   // invalidate value
   vi3_last_to_register = -1;
 
@@ -1904,7 +1906,7 @@ register_to_all_regions
   int region_depth = -1;
   char info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
                                            &omp_task_context, &region_depth);
-
+#endif
 #if DETECT_IDLENESS_LAST_BARRIER
   if (waiting_on_last_implicit_barrier) {
     // check if thread_data is available and contains any useful information
@@ -1918,6 +1920,7 @@ register_to_all_regions
     }
   }
 #else
+#if 0
   // FIXME vi3: Any information get from runtime that may help?
   if (info_type == 2) {
     // FIXME vi3: debug this case
@@ -1931,6 +1934,7 @@ register_to_all_regions
     return;
   }
 #endif
+#endif
 
   // FIXME vi3: check whether region at ancestor_level
   //   really has region_depth.
@@ -1938,7 +1942,7 @@ register_to_all_regions
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
-  if (!least_common_ancestor(&lca, region_depth)) {
+  if (!least_common_ancestor(&lca)) {
     // There is no active regions, so there is no regions to register for.
     // Just return, since thread should be executing sequential code.
     if (task_ancestor_level == -3) {
@@ -2434,6 +2438,19 @@ initialize_regions_if_needed
     printf("Impossible too\n");
   }
 #endif
+}
+
+
+void
+lazy_active_region_processing
+(
+  void
+)
+{
+  // initialize region_data if needed
+  initialize_regions_if_needed();
+  // register to active regions if needed
+  register_to_all_regions();
 }
 
 #if DEFER_DEBUGGING

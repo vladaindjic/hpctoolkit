@@ -209,6 +209,12 @@ initialize_regions_if_needed
 );
 
 
+void
+lazy_active_region_processing
+(
+  void
+);
+
 #if DETECT_IDLENESS_LAST_BARRIER
 void
 attr_idleness2outermost_ctx
