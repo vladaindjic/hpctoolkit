@@ -2444,6 +2444,26 @@ initialize_regions_if_needed
 #if INTEGRATE_REG_INIT_AND_REGISTER == 1
 
 
+static inline bool
+region_init_in_outer_task
+(
+  typed_stack_elem(region) *region_data
+)
+{
+  typed_random_access_stack_elem(region) *top = NULL;
+  top = typed_random_access_stack_top(region)(region_stack);
+  if (top && top->region_id == region_data->region_id) {
+    // Consider the following case:
+    // region 0      (ancestor_level = 2)
+    //   task 0      (ancestor_level = 1)
+    //     region 1  (ancestor_level = 0)
+    // old_reg will be the same for levels 0 and 1, so return.
+    return true;
+  }
+  return false;
+}
+
+
 void
 add_new_region_on_stack
 (
@@ -2462,14 +2482,6 @@ add_new_region_on_stack
     // region's unresolved_cct
     curr_top = typed_random_access_stack_top(region)(region_stack);
     assert(curr_top);
-    if (curr_top->region_id == new_region->region_id) {
-      // Consider the following case:
-      // region 0      (ancestor_level = 2)
-      //   task 0      (ancestor_level = 1)
-      //     region 1  (ancestor_level = 0)
-      // old_reg will be the same for levels 0 and 1, so return.
-      return;
-    }
     assert(curr_top->region_data->depth + 1 == depth);
     parent_cct = curr_top->unresolved_cct;
     assert(parent_cct);
@@ -2547,10 +2559,13 @@ lazy_region_process
     old_reg = new_reg;
   }
 
-  // update top of the region active stack
-  add_new_region_on_stack(old_reg, thread_num == 0);
-  assert(typed_random_access_stack_top_index_get(region)(region_stack)
-         == old_reg->depth);
+  if (!region_init_in_outer_task(old_reg)) {
+    // update top of the region active stack by adding old_reg
+    add_new_region_on_stack(old_reg, thread_num == 0);
+    assert(typed_random_access_stack_top_index_get(region)(region_stack)
+           == old_reg->depth);
+  }
+
   return old_reg->depth;
 }
 #endif
