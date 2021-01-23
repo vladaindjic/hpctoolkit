@@ -80,6 +80,19 @@ initialize_region
   int level
 );
 
+typed_stack_elem_ptr(region)
+ompt_region_data_new
+(
+  uint64_t region_id,
+  cct_node_t *call_path
+);
+
+
+void
+ompt_region_release
+(
+  typed_stack_elem_ptr(region) r
+);
 
 
 #endif

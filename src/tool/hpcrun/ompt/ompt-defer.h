@@ -142,7 +142,7 @@ register_thread_to_all_regions
 void 
 register_to_all_regions
 (
- void
+ int ancestor_level
 );
 
 

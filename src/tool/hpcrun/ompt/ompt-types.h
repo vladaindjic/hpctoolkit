@@ -230,7 +230,9 @@ typedef struct region_stack_el_s {
   bool took_sample;
   // should be safe to remove this
   bool team_master;
+#if 0
   old_region_t *old_region_list;
+#endif
 } typed_random_access_stack_elem(region);
 // declare pointer to previous struct
 typed_random_access_stack_declare_type(region);
@@ -285,6 +287,7 @@ typedef struct ompt_atomic_data_s {
     &old_reg, new_reg)
 
 #define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
+#define INTEGRATE_REG_INIT_AND_REGISTER 1
 
 #endif
 

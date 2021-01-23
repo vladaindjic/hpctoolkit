@@ -90,11 +90,6 @@ ompt_region_acquire
 );
 
 
-static void
-ompt_region_release
-(
- typed_stack_elem_ptr(region) r
-);
 
 
 //*****************************************************************************
@@ -105,7 +100,7 @@ ompt_region_release
 #define MAX_THREAD_IN_TEAM -101
 #endif
 
-static typed_stack_elem_ptr(region)
+typed_stack_elem_ptr(region)
 ompt_region_data_new
 (
  uint64_t region_id, 
@@ -617,7 +612,7 @@ ompt_region_acquire
 }
 
 
-static void
+void
 ompt_region_release
 (
  typed_stack_elem_ptr(region) r

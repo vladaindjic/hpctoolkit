@@ -619,6 +619,31 @@ register_to_region
   unresolved_cnt++;
 }
 
+inline static void
+worker_register_for_region_context
+(
+  typed_stack_elem(region) *region_data,
+  cct_node_t *unresolved_cct,
+  bool team_master
+)
+{
+  if (!team_master) {
+    // Worker thread should register for the region's call path
+    register_to_region(region_data, unresolved_cct);
+  } else {
+    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
+    unresolved_cnt++;
+    // If the initial master register for the call path, then it is responsible
+    // to process notification and notify other worker about the resolving
+    // process. Since ompt_state_idle is not handle properly, the resolving
+    // will happen at the time thread is going to be shut down. At that point,'
+    // all other worker threads will be destroyed and they cannot be notified
+    // about unresolved regions.
+    // If ompt_state_idle were handled properly, it's not guaranteed that
+    // master will notify other worker threads (registered before master)
+    // about unresolved regions.
+  }
+}
 
 bool
 thread_take_sample
@@ -657,22 +682,8 @@ thread_take_sample
   // insert cct node with region_addr in the parent_cct's subtree
   el->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
 
-  if (!el->team_master) {
-    // Worker thread should register for the region's call path
-    register_to_region(el->region_data, el->unresolved_cct);
-  } else {
-    // Master thread also needs to resolve this region at the very end (ompt_parallel_end)
-    unresolved_cnt++;
-    // If the initial master register for the call path, then it is responsible
-    // to process notification and notify other worker about the resolving
-    // process. Since ompt_state_idle is not handle properly, the resolving
-    // will happen at the time thread is going to be shut down. At that point,'
-    // all other worker threads will be destroyed and they cannot be notified
-    // about unresolved regions.
-    // If ompt_state_idle were handled properly, it's not guaranteed that
-    // master will notify other worker threads (registered before master)
-    // about unresolved regions.
-  }
+  worker_register_for_region_context(el->region_data,
+                                     el->unresolved_cct, el->team_master);
 
   return_label: {
     // If region is marked as the last to register (see function register_to_all_regions),
@@ -983,15 +994,19 @@ lca_el_fn
 bool
 least_common_ancestor
 (
-  typed_random_access_stack_elem(region) **lca
+  typed_random_access_stack_elem(region) **lca,
+  int ancestor_level
 )
 {
-  int ancestor_level = task_ancestor_level;
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
 #else
-  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
+  typed_stack_elem(region) *innermost_reg =
+      hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
 #endif
+  assert(innermost_reg);
+
+#if 0
   if (!innermost_reg) {
     // There is no parallel region active.
     // Thread should be executing sequential code.
@@ -999,7 +1014,7 @@ least_common_ancestor
     return false;
   }
 
-#if 0
+
   if (td_region_depth >= 0) {
     // skip regions deeper than td_region_depth
     while(innermost_reg->depth > td_region_depth) {
@@ -1202,10 +1217,10 @@ wait_on_the_last_implicit_barrier
 void
 register_to_all_regions
 (
-  void
+  int ancestor_level
 )
 {
-  if (task_ancestor_level < 0) {
+  if (ancestor_level < 0) {
     // Skip registration process.
     return;
   }
@@ -1942,51 +1957,37 @@ register_to_all_regions
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
-  if (!least_common_ancestor(&lca)) {
-    // There is no active regions, so there is no regions to register for.
-    // Just return, since thread should be executing sequential code.
-    if (task_ancestor_level == -3) {
-      printf("How to provide idle_placeholder: %p?\n", idle_placeholder);
-    }
-    return;
+  assert(least_common_ancestor(&lca, ancestor_level));
+
+  int start_from = 0;
+  cct_node_t *parent_cct = NULL;
+
+  if (lca) {
+    // Optimization: Thread will register for regions nested
+    // inside lca->region_data
+    start_from = lca->region_data->depth;
+    parent_cct = lca->unresolved_cct;
+  } else {
+    // Thread must register for all active region,
+    // starting from the outermost one.
+    start_from = 0;
+    parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
   }
 
-  // It is not safe to register to regions in the following cases:
-  // - There's no information about the innermost task/region.
-  // - Worker is waiting on the last implicit barrier of the innermost region.
-  if (task_ancestor_level >= 0) {
-    int start_from = 0;
-    cct_node_t *parent_cct = NULL;
+  if (!parent_cct) {
+    printf("least_common_ancestor - parent_cct missing: %d (%lx, %p)\n",
+        start_from, lca->region_data->region_id, lca->unresolved_cct);
+  }
 
-    if (lca) {
-      // Optimization: Thread will register for regions nested
-      // inside lca->region_data
-      start_from = lca->region_data->depth;
-      parent_cct = lca->unresolved_cct;
-    } else {
-      // Thread must register for all active region,
-      // starting from the outermost one.
-      start_from = 0;
-      parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
-    }
-
-    if (!parent_cct) {
-      printf("least_common_ancestor - parent_cct missing: %d (%lx, %p)\n",
-          start_from, lca->region_data->region_id, lca->unresolved_cct);
-    }
-
-    // registration process
-    // start_from: thread will register for regions which
-    //   depths are >= "start_from"
-    // parent_cct: the parent cct_node of the unresolved_cct
-    //   which corresponds to the region at depth "start_from".
-    typed_random_access_stack_reverse_iterate_from(region)(start_from,
+  // registration process
+  // start_from: thread will register for regions which
+  //   depths are >= "start_from"
+  // parent_cct: the parent cct_node of the unresolved_cct
+  //   which corresponds to the region at depth "start_from".
+  typed_random_access_stack_reverse_iterate_from(region)(start_from,
                                                            region_stack,
                                                            thread_take_sample,
                                                            &parent_cct);
-  }
-  // process idleness if needed
-  // wait_on_the_last_implicit_barrier();
 
 }
 
@@ -2440,6 +2441,119 @@ initialize_regions_if_needed
 #endif
 }
 
+#if INTEGRATE_REG_INIT_AND_REGISTER == 1
+
+
+void
+add_new_region_on_stack
+(
+  typed_stack_elem(region) *new_region,
+  bool team_master
+)
+{
+  cct_node_t *parent_cct = NULL;
+  typed_random_access_stack_elem(region) *curr_top = NULL;
+  int depth = new_region->depth;
+  if (depth == 0) {
+    // insert region unresolved_cct underneath thread root
+    parent_cct = hpcrun_get_thread_epoch()->csdata.thread_root;
+  } else {
+    // insert new_reg unresolved_cct underneath current top
+    // region's unresolved_cct
+    curr_top = typed_random_access_stack_top(region)(region_stack);
+    assert(curr_top);
+    if (curr_top->region_id == new_region->region_id) {
+      // Consider the following case:
+      // region 0      (ancestor_level = 2)
+      //   task 0      (ancestor_level = 1)
+      //     region 1  (ancestor_level = 0)
+      // old_reg will be the same for levels 0 and 1, so return.
+      return;
+    }
+    assert(curr_top->region_data->depth + 1 == depth);
+    parent_cct = curr_top->unresolved_cct;
+    assert(parent_cct);
+  }
+
+  // new_reg is the new top, so set it properly
+  typed_random_access_stack_top_index_set(region)(depth, region_stack);
+  curr_top = typed_random_access_stack_top(region)(region_stack);
+  curr_top->region_data = new_region;
+  curr_top->region_id = new_region->region_id;
+  curr_top->team_master = team_master;
+  curr_top->took_sample = true;
+
+
+  // need to insert new_reg->unresolved_cct
+  cct_addr_t *region_addr = &ADDR2(UNRESOLVED, new_region->region_id);
+  // unresolved_cct that corresponds to th region_id mustn't exists
+  // inside thread's CCT
+  assert(hpcrun_cct_find_addr(parent_cct, region_addr) == NULL);
+  curr_top->unresolved_cct = hpcrun_cct_insert_addr(parent_cct, region_addr);
+  // register for region creation context if needed
+  worker_register_for_region_context(new_region,
+                                     curr_top->unresolved_cct, team_master);
+
+}
+
+
+int
+lazy_region_process
+(
+  int ancestor_level
+)
+{
+  int flags;
+  ompt_frame_t *frame;
+  ompt_data_t *task_data = NULL;
+  ompt_data_t *parallel_data = NULL;
+  int thread_num = -1;
+  int ret_val = hpcrun_ompt_get_task_info(ancestor_level, &flags, &task_data, &frame,
+                                          &parallel_data, &thread_num);
+  assert(ret_val == 2);
+  assert(parallel_data != NULL);
+
+  if (flags & ompt_task_initial) {
+    // ignore initial tasks
+    return -1;
+  }
+
+  typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
+  if (old_reg) {
+    // Update stack of active regions for regions that are below the old_reg,
+    // including the old_reg too.
+    register_to_all_regions(ancestor_level);
+    assert(typed_random_access_stack_top_index_get(region)(region_stack)
+        == old_reg->depth);
+    return old_reg->depth;
+  }
+
+  // initialize parent region if needed
+  int parent_depth = lazy_region_process(ancestor_level + 1);
+  // If there's no parent region, parent_depth will be -1.
+
+  // try to initilize region_data
+  typed_stack_elem(region) *new_reg =
+      ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
+  new_reg->depth = parent_depth + 1;
+
+
+  if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
+    // region_data has been initialized by other thread
+    // free new_reg
+    // It is safe to push to private stack of the region free channel.
+    ompt_region_release(new_reg);
+  } else {
+    old_reg = new_reg;
+  }
+
+  // update top of the region active stack
+  add_new_region_on_stack(old_reg, thread_num == 0);
+  assert(typed_random_access_stack_top_index_get(region)(region_stack)
+         == old_reg->depth);
+  return old_reg->depth;
+}
+#endif
 
 void
 lazy_active_region_processing
@@ -2447,11 +2561,18 @@ lazy_active_region_processing
   void
 )
 {
+#if INTEGRATE_REG_INIT_AND_REGISTER == 0
   // initialize region_data if needed
   initialize_regions_if_needed();
   // register to active regions if needed
-  register_to_all_regions();
+  register_to_all_regions(task_ancestor_level);
+#else
+  lazy_region_process(task_ancestor_level);
+#endif
 }
+
+
+
 
 #if DEFER_DEBUGGING
 
