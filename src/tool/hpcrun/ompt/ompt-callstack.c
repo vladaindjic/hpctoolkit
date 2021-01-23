@@ -701,7 +701,7 @@ hack_ompt_elide_runtime_frame(
       // previous two states should be deprecated
     case ompt_state_wait_barrier_implicit_parallel:
     case ompt_state_idle:
-      return 0;
+      return -1;
 #if 0
       TD_GET(omp_task_context) = 0;
       if (hpcrun_ompt_get_thread_num(0) != 0) {
@@ -767,7 +767,7 @@ hack_ompt_elide_runtime_frame(
   if (!frame0) {
     // corner case: the innermost task (if any) has no frame info.
     // no action necessary. just return.
-    return 0;
+    return -1;
   }
 
   while ((fp_enter(frame0) == 0) &&
@@ -777,10 +777,10 @@ hack_ompt_elide_runtime_frame(
     frame0 = hpcrun_ompt_get_task_frame(++i);
 
     if (!frame0) {
-      if (thread_type == ompt_thread_initial) return 0;
+      if (thread_type == ompt_thread_initial) return -1;
 
       // corner case: the innermost task (if any) has no frame info.
-      return 0;
+      return -1;
     }
   }
 
@@ -795,7 +795,7 @@ hack_ompt_elide_runtime_frame(
 
   if (!frame0) {
     // corner case: the innermost task (if any) has no frame info.
-    return 0;
+    return -1;
   }
 
   if (fp_enter(frame0)) {
@@ -820,7 +820,7 @@ hack_ompt_elide_runtime_frame(
 
     if (found == 0) {
       // enter_frame not found on stack. all frames are runtime frames
-      return 0;
+      return -1;
       //goto clip_base_frames;
     }
     // frames at top of stack elided. continue with the rest
@@ -888,7 +888,7 @@ hack_ompt_elide_runtime_frame(
        lead to quadratic cost. could pick up below where you left off cutting in
        previous iterations.
     */
-    if (exit0_flag) return 1;
+    if (exit0_flag) return i;
 
     it = *bt_inner;
 #if 0
@@ -999,7 +999,7 @@ hack_ompt_elide_runtime_frame(
       // Because of that we are going to unnecessarily go into provider.
       TD_GET(omp_task_context) = 0;
       // collapse_callstack(bt, &ompt_placeholders.ompt_idle_state);
-      return 0;
+      return -1;
     }
   }
 
@@ -1008,7 +1008,7 @@ hack_ompt_elide_runtime_frame(
 
   clip_base_frames:
   {
-    return 0;
+    return -1;
     int master = TD_GET(master);
     if (!master) {
       set_frame(*bt_outer, &ompt_placeholders.ompt_idle_state);
@@ -1043,7 +1043,7 @@ hack_ompt_elide_runtime_frame(
 
 
   return_label:
-  return 0;
+  return -1;
 }
 
 
@@ -1316,10 +1316,9 @@ ompt_backtrace_finalize
     // initialize region_data if needed
     // (only when region creation context is provided lazily)
     // FIXME vi3: should this execute when synchronous sample is delivered
-    if (hack_ompt_elide_runtime_frame(bt, region_id, isSync)) {
+    task_ancestor_level = hack_ompt_elide_runtime_frame(bt, region_id, isSync);
+    if (task_ancestor_level >= 0) {
       initialize_regions_if_needed();
-    } else {
-      //printf("Is this possible\n");
     }
   }
   ompt_elide_runtime_frame(bt, region_id, isSync);
@@ -1341,7 +1340,9 @@ ompt_backtrace_finalize
   //    for more information.
   // FIXME vi3: check synchronous samples
   if(!isSync && !ompt_eager_context_p()) {
-    register_to_all_regions();
+    if (task_ancestor_level >= 0) {
+      register_to_all_regions();
+    }
   }
 
   if (ompt_idle_blame_shift_enabled()) {

@@ -152,6 +152,7 @@ ompt_parallel_begin_internal
   parallel_data->ptr = region_data;
 
 #else
+  region_data->parallel_data = parallel_data;
   ATOMIC_STORE_RD(parallel_data, region_data);
 #endif
   uint64_t region_id = region_data->region_id;

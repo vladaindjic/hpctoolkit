@@ -978,7 +978,7 @@ least_common_ancestor
   int td_region_depth
 )
 {
-  int ancestor_level = 0;
+  int ancestor_level = task_ancestor_level;
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
   typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
 #else
@@ -2377,12 +2377,12 @@ initialize_regions_if_needed
   void
 )
 {
-  task_ancestor_level = try_to_detect_the_case();
+  //task_ancestor_level = try_to_detect_the_case();
   if (task_ancestor_level < 0) {
     // Cannot initialize anything
     return;
   }
-  assert(task_ancestor_level == 0);
+  //assert(task_ancestor_level == 0);
   initialize_region(task_ancestor_level);
 #if 0
   int flags0;
