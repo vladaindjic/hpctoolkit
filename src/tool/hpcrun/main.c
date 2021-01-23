@@ -711,9 +711,9 @@ hpcrun_fini_internal()
   // vi3: Finishing with measuring execution time.
   double vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-  AMSG("eager-no-task-schedule <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+  AMSG("lazy-region-data-init <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-  printf("eager-no-task-schedule <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+  printf("lazy-region-data-init <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
 
   hpcrun_disable_sampling();
@@ -753,9 +753,9 @@ hpcrun_fini_internal()
 
     vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("eager-no-task-schedule (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+    AMSG("lazy-region-data-init (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-     printf("eager-no-task-schedule (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+     printf("lazy-region-data-init (after thread_finalize) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
 // FIXME: this isn't in master-gpu-trace. how is it managed?
     // stream_tracing_fini();
@@ -767,16 +767,16 @@ hpcrun_fini_internal()
 
     vi3_execution_time = timer_elapsed(&vi3_start_time);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("eager-no-task-schedule (very end) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
+    AMSG("lazy-region-data-init (very end) <<< vi3 >>> Time elapsed: %f s.", vi3_execution_time);
 #else
-     printf("eager-no-task-schedule (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
+     printf("lazy-region-data-init (very end) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time);
 #endif
     // printf("hpcrun_fini_internal - end\n");
     double vi3_execution_time_full_cope = timer_elapsed(&vi3_start_time_full_scope);
 #if VI3_USE_LOGGER_INSTEAD_OF_PRINT
-    AMSG("eager-no-task-schedule (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+    AMSG("lazy-region-data-init (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 #else
-     printf("eager-no-task-schedule (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
+     printf("lazy-region-data-init (full scope) <<< vi3 >>> Time elapsed: %f s.\n", vi3_execution_time_full_cope);
 #endif
 
     hpcrun_stats_print_summary();
