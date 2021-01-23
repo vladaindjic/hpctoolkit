@@ -1375,7 +1375,7 @@ try_to_detect_the_case
 
 }
 
-
+#if VI3_PARALLEL_DATA_DEBUG == 1
 void
 assert_parallel_data
 (
@@ -1388,7 +1388,7 @@ assert_parallel_data
     assert(reg->parallel_data == parallel_data);
   }
 }
-
+#endif
 
 // implement sequential stack of regions
 typed_stack_impl(region, sstack);

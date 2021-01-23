@@ -81,7 +81,7 @@
 #define FREELISTS_ENABLED 1
 // counters of not-freed notification/region_data structures
 // used to indicate that there are some mem leaks.
-#define FREELISTS_DEBUG FREELISTS_ENABLED && 1
+#define FREELISTS_DEBUG FREELISTS_ENABLED && 0
 // when finalizing thread, wait for all regions to be resolved
 // and then check if all region_data are freed
 #define FREELISTS_DEBUG_WAIT_FOR_REGIONS FREELISTS_DEBUG && 1
@@ -126,7 +126,7 @@ typedef struct ompt_region_data_s {
   cct_node_t *call_path;
   // depth of the region, starts from zero
   int depth;
-#if 1
+#if 0
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
@@ -158,7 +158,9 @@ typedef struct ompt_notification_s {
   // that region_data may be recycled when thead tries to resolve region.
   cct_node_t *region_prefix;
   struct mpsc_channel_notification_s *notification_channel;
+#if 0
   uint64_t region_id;
+#endif
 } typed_stack_elem(notification);
 
 // declare pointer to previous struct

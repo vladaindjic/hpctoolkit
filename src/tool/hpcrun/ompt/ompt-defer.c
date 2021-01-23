@@ -444,7 +444,9 @@ help_notification_alloc
   notification->unresolved_cct = unresolved_cct;
   notification->region_prefix = NULL;
   notification->notification_channel = &thread_notification_channel;
+#if VI3_LAST_PROBLEMS == 1
   notification->region_id = region_data->region_id;
+#endif
   return notification;
 }
 
@@ -562,11 +564,13 @@ register_to_region
   cct_node_t *unresolved_cct
 )
 {
+#if VI3_LAST_PROBLEMS == 1
   if (region_data->call_path) {
     assert(0);
   }
   assert(atomic_load(&region_data->process) == 0);
   assert(atomic_load(&region_data->resolved) == 0);
+#endif
   // get new notification
   typed_stack_elem_ptr(notification) notification =
       help_notification_alloc(region_data, unresolved_cct);
@@ -605,7 +609,9 @@ register_to_region
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
 #endif
+#if VI3_LAST_PROBLEMS == 1
   atomic_fetch_add(&region_data->registered, 1);
+#endif
   // increment the number of unresolved regions
   unresolved_cnt++;
 }
@@ -1893,7 +1899,7 @@ register_to_all_regions
 
   cct_node_t *omp_task_context = NULL;
   int region_depth = -1;
-  int info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
+  char info_type = task_data_value_get_info((void*)TD_GET(omp_task_context),
                                            &omp_task_context, &region_depth);
 
 #if DETECT_IDLENESS_LAST_BARRIER
@@ -2036,6 +2042,7 @@ try_resolve_one_region_context
          &thread_notification_channel, old_head->region_data, old_head->region_data->region_id);
 #endif
   unresolved_cnt--;
+#if VI3_LAST_PROBLEMS == 1
   ompt_region_debug_notify_received(old_head);
   atomic_fetch_add(&old_head->region_data->resolved, 1);
   if (old_head->region_data->master_channel == &region_freelist_channel) {
@@ -2043,6 +2050,7 @@ try_resolve_one_region_context
   }
   assert(old_head->region_data->master_channel != &region_freelist_channel);
   // check if the notification needs to be forwarded
+#endif
   typed_stack_elem_ptr(notification) next =
     typed_stack_pop(notification, cstack)(&old_head->region_data->notification_stack);
   if (next) {

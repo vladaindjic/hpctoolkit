@@ -120,10 +120,12 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
+#if VI3_PARALLEL_DATA_DEBUG == 1
   atomic_store(&e->process, 0);
   atomic_store(&e->registered, 0);
   atomic_store(&e->resolved, 0);
   e->master_channel = NULL;
+#endif
   // debug
   ompt_region_debug_region_create(e);
 
@@ -152,7 +154,9 @@ ompt_parallel_begin_internal
   parallel_data->ptr = region_data;
 
 #else
+#if VI3_PARALLEL_DATA_DEBUG == 1
   region_data->parallel_data = parallel_data;
+#endif
   ATOMIC_STORE_RD(parallel_data, region_data);
 #endif
   uint64_t region_id = region_data->region_id;
@@ -230,8 +234,10 @@ ompt_parallel_end_internal
 #else
   // if (!ompt_eager_context_p() && region_data){
   if (region_data){
+#if VI3_PARALLEL_DATA_DEBUG == 1
     region_data->master_channel = &region_freelist_channel;
     atomic_fetch_add(&region_data->process, 1);
+#endif
     // It is possible that region_data is not initialized, if none thread took
     // sample while region was active.
 #endif
@@ -502,17 +508,6 @@ ompt_implicit_task_internal_end
 }
 
 
-static ompt_state_t
-check_state
-    (
-        void
-    )
-{
-  uint64_t wait_id;
-  return hpcrun_ompt_get_state(&wait_id);
-}
-
-
 void
 ompt_implicit_task
 (
@@ -529,32 +524,12 @@ ompt_implicit_task
     return;
   }
 
-  ompt_state_t thread_state = check_state();
-  int thread_num = hpcrun_ompt_get_thread_num(0);
   hpcrun_safe_enter();
 
   if (endpoint == ompt_scope_begin) {
-    //ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
-    if (thread_state != ompt_state_work_parallel) {
-      // Initial master will end up here
-      // printf("Unexpected state: %x\n", thread_state);
-    } else {
-      if (thread_num != 0) {
-        //printf("What is this: %x\n", ompt_state_work_parallel);
-      }
-    }
+    ompt_implicit_task_internal_begin(parallel_data, task_data, team_size, index);
   } else if (endpoint == ompt_scope_end) {
-    int tnum;
-    //ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
-    switch (thread_state) {
-      case ompt_state_overhead:
-        //assert(thread_num == 0);
-        break;
-      case ompt_state_wait_barrier_implicit_parallel:
-        break;
-      default:
-        printf("Something else: %x\n", thread_state);
-    }
+    ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
   } else {
     // should never occur. should we add a message to the log?
   }
@@ -771,7 +746,9 @@ initialize_region
   typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
   if (old_reg) {
     //printf("initialize_one_region >>> region_data initialized\n");
+#if VI3_PARALLEL_DATA_DEBUG == 1
     assert(old_reg->parallel_data == parallel_data);
+#endif
     return old_reg->depth;
   }
 
@@ -783,18 +760,25 @@ initialize_region
   typed_stack_elem(region) *new_reg =
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
+
+  #if VI3_PARALLEL_DATA_DEBUG == 1
   new_reg->parallel_data = parallel_data;
+#endif
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
     //ompt_region_release(new_reg);
+#if VI3_PARALLEL_DATA_DEBUG == 1
     atomic_fetch_add(&new_reg->process, 1);
+#endif
     hpcrun_ompt_region_free(new_reg);
   } else {
     old_reg = new_reg;
   }
+#if VI3_PARALLEL_DATA_DEBUG == 1
   assert(old_reg->parallel_data == parallel_data);
+#endif
   return old_reg->depth;
 }
 
