@@ -545,6 +545,10 @@ add_region_and_ancestors_to_stack
 #endif
 
 
+
+#define VI3_LAST_PROBLEMS 0
+
+#if VI3_PARALLEL_DATA_DEBUG
 static ompt_state_t
 check_state
     (
@@ -554,8 +558,7 @@ check_state
   uint64_t wait_id;
   return hpcrun_ompt_get_state(&wait_id);
 }
-
-#define VI3_LAST_PROBLEMS 0
+#endif
 
 void
 register_to_region

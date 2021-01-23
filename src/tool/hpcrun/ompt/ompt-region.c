@@ -303,6 +303,12 @@ ompt_parallel_end_internal
     } else {
       // No one registered, so free region_data by returning it to
       // the originator freelist.
+      // FIXME vi3(urgent-semi): Why this fails?
+      // Since none thread registered for the region, the master is the one
+      // who created the region_data when had been processing the sample.
+      // It should be safe to push region_data to the private stack of
+      // region free channel.
+      // ompt_region_release(region_data);
       hpcrun_ompt_region_free(region_data);
     }
 
@@ -619,6 +625,7 @@ ompt_region_release
  typed_stack_elem_ptr(region) r
 )
 {
+  assert(r->owner_free_region_channel == &region_freelist_channel);
   ompt_region_freelist_put(r);
 }
 
@@ -768,11 +775,11 @@ initialize_region
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
     // region_data has been initialized by other thread
     // free new_reg
-    //ompt_region_release(new_reg);
+    // It is safe to push to private stack of the region free channel.
+    ompt_region_release(new_reg);
 #if VI3_PARALLEL_DATA_DEBUG == 1
     atomic_fetch_add(&new_reg->process, 1);
 #endif
-    hpcrun_ompt_region_free(new_reg);
   } else {
     old_reg = new_reg;
   }
