@@ -17,7 +17,7 @@
 #    https://spack.readthedocs.io/en/latest/basic_usage.html#specs-dependencies
 #    https://spack.readthedocs.io/en/latest/build_settings.html
 #
-#  Last revised: August 17, 2020.
+#  Last revised: October 26, 2020.
 #
 packages:
 
@@ -43,18 +43,16 @@ packages:
   # Note: the following packages have variants that may need changing
   # for your local system.
   #
-  #   1. boost -- avoid 1.68.0, it breaks the build in hpctoolkit.
-  #   1.66.0 is good for all dyninst revs.
+  #   1. binutils -- avoid 2.35, it has a bug that spews errors from
+  #   hpcprof.
   #
-  #   2. dyninst -- use version 9.3.2 for Blue Gene with the default
-  #   gcc 4.4 compilers.  (not recommended)
+  #   2. boost -- avoid 1.68.0, it breaks the build in hpctoolkit.
+  #   1.66.0 is good for all dyninst revs, or 1.72.0 for recent dyninst.
   #
-  #   3. elfutils -- 0.176 doesn't build on Blue Gene, use 0.175.
-  #
-  #   4. intel-tbb -- add '~tm' for AMD, Xeon Phi (KNL, etc), and very
+  #   3. intel-tbb -- add '~tm' for AMD, Xeon Phi (KNL, etc), and very
   #   old Intel systems that don't support transactional memory.
   #
-  #   5. libmonitor -- add '+bgq' on Blue Gene/Q.
+  # Blue Gene is no longer supported.
   #
   #------------------------------------------------------------
 
@@ -67,17 +65,18 @@ packages:
   # 2019.12.28 is the last version that runs on Blue Gene.
   #
   # +mpi builds hpcprof-mpi (requires mpi).
-  # +papi uses papi instead of perfmon.
+  # +papi uses papi instead of perfmon (now default).
   #
   # hpctoolkit:
   #   version:  [2020.08.03, master]
-  #   variants: +mpi
+  #   variants: +mpi +papi
 
 
   # binutils -- used by hpcprof and struct simple (for functions and
   # line map info) and for VMA types in various places.
   #
   # Need >= 2.32 for important bug fixes.
+  # Avoid 2.35, it contains a bug that spews errors from hpcprof.
   # Hpctoolkit <= 2020.03.01 requires binutils <= 2.33.1.
   #
   # +libiberty is needed for xmalloc functions in libbfd.
@@ -92,6 +91,7 @@ packages:
   #
   # Dyninst requires >= 1.61.
   #   1.66.0 is good, works with all dyninst revs.
+  #   1.72.0 is good for recent dyninst.
   #   1.70.0 requires dyninst >= 10.1.0 (breaks earlier revs).
   #   1.69.0 requires dyninst >= 10.0.0 (breaks earlier revs).
   #   1.68.0 breaks the build for hpctoolkit.
@@ -145,7 +145,7 @@ packages:
   # +openmp is to support openmp threads in parseapi.
   #
   dyninst:
-    version:  [10.2.0, master]
+    version:  [10.2.1, master]
     variants: +openmp build_type=RelWithDebInfo
 
 
@@ -253,13 +253,14 @@ packages:
   # else develop.  Use >= 1.4 (1.4-rc1 replaces 2018.10.12.)
   #
   # +xz is for reading compressed symbol tables.
+  # +pic is required for linking with hpcrun.
   #
   libunwind:
     version:  [1.4.0, 1.5-rc1]
-    variants: +xz
+    variants: +xz +pic
 
 
-  # mbedtls -- now used in master.
+  # mbedtls -- used in hpcrun for hash functions.
   #
   # Use a recent version >= 2.16.1.
   #
@@ -302,8 +303,11 @@ packages:
   #
   # Any recent version is good.
   #
+  # +pic is required for linking with hpcrun.
+  #
   xz:
     version:  [5.2.5]
+    variants: +pic
 
 
   # zlib -- used by binutils, elfutils and libdwarf to read compressed

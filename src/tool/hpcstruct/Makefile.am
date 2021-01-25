@@ -77,6 +77,10 @@ TBB_IFLAGS    = @TBB_IFLAGS@
 TBB_LFLAGS    = @TBB_LFLAGS@
 TBB_PROXY_LIB = @TBB_PROXY_LIB@
 
+if OPT_ENABLE_IGC
+IGC_LDFLGS = @OPT_IGC_LDFLAGS@
+endif
+
 MYSOURCES = main.cpp Args.cpp
 
 MYCXXFLAGS = \
@@ -117,7 +121,10 @@ MYLDADD = \
 	$(BOOST_LFLAGS) \
 	$(MY_ELF_DWARF) \
 	@BINUTILS_LIBS@ \
+	$(HPCLIB_gettext) \
 	$(LZMA_LDFLAGS_DYN) \
+	$(IGC_LDFLGS) \
+	$(MBEDTLS_LIBS) \
 	$(TBB_LFLAGS)
 
 DOT_LDADD = \
@@ -147,7 +154,7 @@ endif
 MYCLEAN = @HOST_LIBTREPOSITORY@
 
 GENHEADERS = \
-	cubins-analysis.h \
+	gpubin-analysis.h \
 	usage.h
 
 #----------------------------------------------------------------------

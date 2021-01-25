@@ -113,12 +113,9 @@ hpcrun_trace_isactive()
 void
 hpcrun_trace_init()
 {
-  if (getenv(HPCRUN_TRACE)) {
-      tracing = 1;
-      TMSG(TRACE, "Tracing is ON");
-  }
+  tracing = hpcrun_get_env_bool(HPCRUN_TRACE);
+  TMSG(TRACE, "Tracing is %s", (tracing ? "ON" : "OFF"));
 }
-
 
 void
 hpcrun_trace_open(core_profile_trace_data_t * cptd)
@@ -142,9 +139,9 @@ hpcrun_trace_open(core_profile_trace_data_t * cptd)
     fd = hpcrun_open_trace_file(cptd->id);
     hpcrun_trace_file_validate(fd >= 0, "open");
     cptd->trace_buffer = hpcrun_malloc(HPCRUN_TraceBufferSz);
+
     ret = hpcio_outbuf_attach(&cptd->trace_outbuf, fd, cptd->trace_buffer,
-			      HPCRUN_TraceBufferSz, HPCIO_OUTBUF_UNLOCKED,
-                              hpcrun_malloc);
+			      HPCRUN_TraceBufferSz, HPCIO_OUTBUF_UNLOCKED, hpcrun_malloc);
     hpcrun_trace_file_validate(ret == HPCFMT_OK, "open");
 
     hpctrace_hdr_flags_t flags = hpctrace_hdr_flags_NULL;
@@ -238,7 +235,8 @@ hpcrun_trace_close(core_profile_trace_data_t * cptd)
 // private operations
 //*********************************************************************
 
-static inline void hpcrun_trace_append_with_time_real(core_profile_trace_data_t *cptd, unsigned int call_path_id, uint metric_id, uint32_t dLCA, uint64_t nanotime)
+static inline void
+hpcrun_trace_append_with_time_real(core_profile_trace_data_t *cptd, unsigned int call_path_id, uint metric_id, uint32_t dLCA, uint64_t nanotime)
 {
     if (cptd->trace_min_time_us == 0) {
         cptd->trace_min_time_us = nanotime;
