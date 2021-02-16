@@ -618,6 +618,8 @@ ompt_region_release
  typed_stack_elem_ptr(region) r
 )
 {
+  // mark that region is resolved
+  ompt_region_debug_region_freed(r);
   assert(r->owner_free_region_channel == &region_freelist_channel);
   ompt_region_freelist_put(r);
 }
@@ -764,13 +766,13 @@ initialize_region
 #endif
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
+#if VI3_PARALLEL_DATA_DEBUG == 1
+    atomic_fetch_add(&new_reg->process, 1);
+#endif
     // region_data has been initialized by other thread
     // free new_reg
     // It is safe to push to private stack of the region free channel.
     ompt_region_release(new_reg);
-#if VI3_PARALLEL_DATA_DEBUG == 1
-    atomic_fetch_add(&new_reg->process, 1);
-#endif
   } else {
     old_reg = new_reg;
   }

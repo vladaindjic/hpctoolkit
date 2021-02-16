@@ -1385,7 +1385,9 @@ assert_parallel_data
   assert(parallel_data);
   typed_stack_elem(region) *reg = ATOMIC_LOAD_RD(parallel_data);
   if (reg) {
-    assert(reg->parallel_data == parallel_data);
+    // This is not true for the case of using serialized regions
+    // and lwtasks.
+    //assert(reg->parallel_data == parallel_data);
   }
 }
 #endif

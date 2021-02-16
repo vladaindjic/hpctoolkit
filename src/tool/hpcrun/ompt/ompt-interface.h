@@ -326,7 +326,7 @@ ompt_idle_end
  void
 );
 
-#define VI3_PARALLEL_DATA_DEBUG 0
+#define VI3_PARALLEL_DATA_DEBUG 1
 
 #if VI3_PARALLEL_DATA_DEBUG == 0
 

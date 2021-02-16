@@ -2549,8 +2549,14 @@ lazy_region_process
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
 
+#if VI3_PARALLEL_DATA_DEBUG == 1
+  new_reg->parallel_data = parallel_data;
+#endif
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
+#if VI3_PARALLEL_DATA_DEBUG == 1
+    atomic_fetch_add(&new_reg->process, 1);
+#endif
     // region_data has been initialized by other thread
     // free new_reg
     // It is safe to push to private stack of the region free channel.
