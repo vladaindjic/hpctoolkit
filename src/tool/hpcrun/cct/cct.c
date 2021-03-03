@@ -165,7 +165,6 @@ cct_node_create(cct_addr_t* addr, cct_node_t* parent)
     node = hpcrun_malloc_freeable(sz);
   }
   else {
-//    node = hpcrun_malloc(sz);
     node = hpcrun_cct_node_alloc();
   }
 
@@ -601,20 +600,14 @@ hpcrun_cct_insert_path_return_leaf(cct_node_t *root, cct_node_t *path)
 }
 
 // remove the sub-tree rooted at cct from it's parent
-//
-// TODO: actual freelist manipulation required
-//       for now, do nothing
-//
+// This is used to remove only one unresolved_cct node, after the resolving
+// process is finished successfully.
 void
 hpcrun_cct_delete_self(cct_node_t *cct)
 {
+  // detach node from parent
   hpcrun_cct_delete_addr(cct->parent, &cct->addr);
-  // FIXME vi3 >>> Need a better strategy for freeing cct nodes.
-  // Current implementation will free the whole subtree of cct node.
-  // The problem that can arise is that some of the descendants of
-  // root cct node is not resolved yet. In that case, someone else
-  // references that cct node. When reuse that cct node, it becomes
-  // inconsistent.
+  // add node to the freelist
   hpcrun_cct_node_free(cct);
 }
 
@@ -866,62 +859,12 @@ hpcrun_cct_find_addr(cct_node_t* cct, cct_addr_t* addr)
 //       cct_addr_data(CCT_A) == cct_addr_data(CCT_B)
 //
 
-// vi3: Added by vi3
-static cct_node_t*
-walkset_l_merge(cct_node_t* cct, cct_op_merge_t fn, cct_op_arg_t arg, size_t level)
-{
-#if 0
-  // if node is NULL, the return NULL
-  if (! cct) return NULL;
-  // if left should be disconnected
-  if (! walkset_l_merge(cct->left, fn, arg, level))
-    cct->left = NULL;
-  // if right should be disconnected
-  if(! walkset_l_merge(cct->right, fn, arg, level))
-    cct->right = NULL;
-  // fn is going to decide if cct should be disconnected from parent or not
-  return fn(cct, arg, level);
-#else
-  if (!cct) return NULL;
-//  cct_node_t *old_left = cct->left;
-//  cct_node_t *old_right = cct->right;
-//  cct->left = NULL;
-//  cct->right = NULL;
-//  cct_node_t *ret_val = fn(cct, arg, level);
-  walkset_l_merge(cct->left, fn, arg, level);
-  walkset_l_merge(cct->right, fn, arg, level);
-  cct->left = NULL;
-  cct->right = NULL;
-  // FIXME vi3 >>> Check if this is ok
-  return fn(cct, arg, level);;
-#endif
-}
-
-void
-hpcrun_cct_walkset_merge(cct_node_t* cct, cct_op_merge_t fn, cct_op_arg_t arg)
-{
-#if 0
-  if(! cct->children) return;
-  // should children be disconnected
-  if(! walkset_l_merge(cct->children, fn, arg, 0))
-    cct->children = NULL;
-#else
-  if (!cct) return;
-  // FIXME vi3 >>> Check if this is ok
-  if(!cct->children) return;
-  // should children be disconnected
-  walkset_l_merge(cct->children, fn, arg, 0);
-#endif
-}
-
-
-
 
 //
 // Helpers & datatypes for cct_merge operation
 //
 //static void merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l);
-static cct_node_t* merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l);
+static void merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l);
 
 static cct_node_t* cct_child_find_cache(cct_node_t* cct, cct_addr_t* addr);
 static void cct_disjoint_union_cached(cct_node_t* target, cct_node_t* src);
@@ -944,73 +887,44 @@ attach_to_a(cct_node_t* node, cct_op_arg_t arg, size_t l)
 // The merging operation main code
 //
 
-#include "../utilities/ip-normalized.h"
 
 void
 hpcrun_cct_merge(cct_node_t* cct_a, cct_node_t* cct_b,
-		 merge_op_t merge, merge_op_arg_t arg)
+                 merge_op_t merge, merge_op_arg_t arg)
 {
-  if (!cct_a->children && !cct_b->children) {
-    // nothing to clean, because cct_b is leaf
+  // FIXME vi3: Shouldn't cct_b be merged to cct_a even though cct_a
+  //  is not a leaf?
+  // if (hpcrun_cct_is_leaf (cct_a) && hpcrun_cct_is_leaf(cct_b)) {
+  if (hpcrun_cct_is_leaf(cct_b)) {
     merge(cct_a, cct_b, arg);
   }
   if (! cct_a->children){
-      // FIXME: vi3 bug because cct_b->children has the same addr as cct_a
     cct_a->children = cct_b->children;
-    // whole cct->children splay tree is used as kids of cct_a,
-    // enough to disconnect children from cct_b (that's why hpcrun_cct_walkset is called)
     hpcrun_cct_walkset(cct_b, attach_to_a, (cct_op_arg_t) cct_a);
-    //cct_b->children = NULL;
-    // FIXME vi3 >>> Should we also merge cct_b to cct_a (exclusive metrics)?
-    //  merge(cct_a, cct_b, arg);
   }
   else {
     mjarg_t local = (mjarg_t) {.targ = cct_a, .fn = merge, .arg = arg};
-    hpcrun_cct_walkset_merge(cct_b, merge_or_join, (cct_op_arg_t) &local);
+    hpcrun_cct_walkset(cct_b, merge_or_join, (cct_op_arg_t) &local);
   }
 }
 
 //
 // merge helper functions (forward declared above)
 //
-// if function cct_disjoint_union_cached is called, that means n should be removed from cct_b tree,
-// which is indicated by NULL as a return value
-// if hpcrun_cct_merge is called, that means that node n should stay in the cct_b tree
-// which is indicated by n as a return value (not NULL value)
-static cct_node_t*
+static void
 merge_or_join(cct_node_t* n, cct_op_arg_t a, size_t l)
 {
   mjarg_t* the_arg = (mjarg_t*) a;
   cct_node_t* targ = the_arg->targ;
   cct_node_t* tmp = NULL;
-  if ((tmp = cct_child_find_cache(targ, hpcrun_cct_addr(n)))){
-    // when merge, n should stay in the same tree, because the whole tree is going to to freelist
-    // that is the reason why return value is not NULL
+  if ((tmp = cct_child_find_cache(targ, hpcrun_cct_addr(n)))) {
     hpcrun_cct_merge(tmp, n, the_arg->fn, the_arg->arg);
-    // FIXME vi3 >>> Should we also merge n to targ (exclusive metrics)?
-    //  merge_op_t merge_fn = the_arg->fn;
-    //  merge_op_arg_t merge_arg = the_arg->arg;
-    //  merge_fn(targ, n, merge_arg);
-    // Since we merged the whole subtree of n, n can be freed.
+    // Since n is merged, it is safe to free it
     hpcrun_cct_node_free(n);
-    return n;
-  } else{
-    // disjoint has to happen, which means that node n is going to change tree
-    // if it has left and right siblings, they are going to bee added to freelist
-    // and the return value is NULL (indicates that n is goint to be disconnected from previous cct_b tree)
-
-    // FIXME vi3 >>> freeing policies should be revised
-#if 0
-    // add left to freelist, if needed
-    hpcrun_cct_node_free(n->left);
-    // add right to freelist, if needed
-    hpcrun_cct_node_free(n->right);
-#endif
+  } else
     cct_disjoint_union_cached(targ, n);
-    return NULL;
-  }
-
 }
+
 
 //
 // Differs from the main accessor by setting the splay cache as a side
@@ -1073,7 +987,6 @@ cct_remove_my_subtree(cct_node_t* cct){
 }
 
 
-// FIXME: is this proper place for handling memory leaks caused by cct_node_t
 // frelist manipulation
 
 __thread cct_node_t* cct_node_freelist_head = NULL;
@@ -1091,49 +1004,75 @@ add_node_to_freelist(cct_node_t* cct){
 // vi3: remove head of the freelist
 cct_node_t*
 remove_node_from_freelist(){
-  cct_node_t* first_root = cct_node_freelist_head;
-  if(!first_root){
+  cct_node_t* first = cct_node_freelist_head;
+  if(!first){
     return NULL;
   }
   // new head is free_root's next (parent pointer is used for now)
-  cct_node_freelist_head = first_root->parent;
-#if 0
-  // Old code which assume freetree
-  cct_node_t* children = first_root->children;
-  cct_node_t* left = first_root->left;
-  cct_node_t* right = first_root->right;
-
-  add_node_to_freelist(children);
-  add_node_to_freelist(left);
-  add_node_to_freelist(right);
-#endif
-  return first_root;
-
-  // FIXME: seg fault happened once and i cannot reproduce it anymore
+  cct_node_freelist_head = first->parent;
+  return first;
 }
 
+
+void
+invalidate_previous_metrics
+(
+  cct_node_t *cct_node
+)
+{
+  // FIXME vi3 >>> Can this be done simpler?
+  // Metrics map stores pairs "cct_node_t* : metrics".
+  // Check if there were some metrics attributed to this cct_node pointer.
+  metric_data_list_t *mset = hpcrun_get_metric_data_list(cct_node);
+  if (mset) {
+    // Invalidate previous metrics. Otherwise they'll remain attributed again
+    // to this reused cct_node pointer, which now represents new cct_node_t
+    // with different cct_addr.
+    int num_kind_metrics = hpcrun_get_num_kind_metrics();
+    for (int i = 0; i < num_kind_metrics; i++) {
+      cct_metric_data_t *mdata = hpcrun_metric_set_loc(mset, i);
+
+      // FIXME: this test depends upon dense metric sets. sparse metrics
+      //        should ensure that node a has the result
+      if (!mdata) continue;
+
+      metric_desc_t *mdesc = hpcrun_id2metric(i);
+      switch (mdesc->flags.fields.valFmt) {
+        case MetricFlags_ValFmt_Int:
+          mdata->i = 0;
+          break;
+        case MetricFlags_ValFmt_Real:
+          mdata->r = 0;
+          break;
+        default:
+          TMSG(DEFER_CTXT, "in merge_op: what's the metric type");
+      }
+    }
+  }
+}
 
 // allocating and free cct_node_t
 // FIXME vi3 >>> freeing policy should be revised
 cct_node_t*
 hpcrun_cct_node_alloc(){
-#if 0
   cct_node_t* cct_new = remove_node_from_freelist();
-  return cct_new ? cct_new : (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
-#else
+  if (cct_new) {
+    // cct_new is going to be reused, so invalidate previously attributed
+    // metrics to this pointer.
+    invalidate_previous_metrics(cct_new);
+    // reuse cct_new
+    return cct_new;
+  }
+  // allocate new cct_node_t
   return (cct_node_t*)hpcrun_malloc(sizeof(cct_node_t));
-#endif
 }
 
 
 void
 hpcrun_cct_node_free(cct_node_t *cct){
-#if 0
-  // Invalidating cntent of cct_node_t struct is done in
+  // Invalidating content of cct_node_t struct is done in
   // function cct_node_create
-  // memset(cct, 0, sizeof(cct_node_t));
   add_node_to_freelist(cct);
-#endif
 }
 
 
