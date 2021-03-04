@@ -1690,13 +1690,21 @@ ompt_cct_cursor_finalize
   assert(ret == 2);
 
   if (ompt_eager_context_p()) {
-    // load region creation context
-    cct_node_t *reg_ctx = (cct_node_t *) parallel_data->ptr;
-    // access to the CCT root
-    cct_node_t *root = hpcrun_get_thread_epoch()->csdata.tree_root;
-    // Insert region creationg context to thread's CCT and use inserted
-    // call path as sample prefix.
-    cct_node_t *prefix =  hpcrun_cct_insert_path_return_leaf(root, reg_ctx);
+    // check if prefix is memoized
+    cct_node_t *prefix = (cct_node_t *) task_data->ptr;
+    if (!prefix) {
+      // It is not.
+      // load region creation context
+      cct_node_t *reg_ctx = (cct_node_t *) parallel_data->ptr;
+      // access to the CCT root
+      cct_node_t *root = hpcrun_get_thread_epoch()->csdata.tree_root;
+      // Insert region creation context to thread's CCT and use inserted
+      // call path as sample prefix.
+      prefix = hpcrun_cct_insert_path_return_leaf(root, reg_ctx);
+      // Memoize prefix in order to avoid calling previous function each time
+      // sample is taken inside this region.
+      task_data->ptr = prefix;
+    }
     // TODO: Try to memoize this after insertion
     return check_and_return_non_null(prefix, cct_cursor, 2116);
   } else {
