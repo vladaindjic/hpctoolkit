@@ -143,6 +143,14 @@ ompt_parallel_begin_internal
  int flags
 )
 {
+  // region_id is used to log information about stack unwinding.
+  // One way is to generate it, other way is to pass 0 as a dummy value instead.
+  // uint64_t region_id = hpcrun_ompt_get_unique_id();
+  uint64_t region_id = 0;
+  // Collect and store region calling context.
+  parallel_data->ptr = ompt_parallel_begin_context(region_id,
+                              flags & ompt_parallel_invoker_program);
+#if 0
   typed_stack_elem_ptr(region) region_data =
     ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
 #if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
@@ -194,6 +202,7 @@ ompt_parallel_begin_internal
 #if VI3_DEBUG == 1
   printf("parallel_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
          &region_stack, region_data, region_data->region_id, 0);
+#endif
 #endif
 }
 

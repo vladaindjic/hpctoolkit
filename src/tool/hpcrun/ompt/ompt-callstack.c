@@ -1681,17 +1681,28 @@ ompt_cct_cursor_finalize
     return check_and_return_non_null(cct_cursor, cct_cursor, 2104);;
   }
 
-  typed_stack_elem(region) *region_data =
-      hpcrun_ompt_get_region_data_from_task_info(task_ancestor_level);
-  assert(region_data);
+  ompt_data_t *parallel_data, *task_data;
+  int ret = hpcrun_ompt_get_task_info(task_ancestor_level, NULL, &task_data,
+                                      NULL, &parallel_data, NULL);
+  // Since task_ancestor_level is determined by ompt_elide_runtime_frame only
+  // if the task frames of the task at this level are present on thread's stack,
+  // then the valid information about the task are guaranteed to exist.
+  assert(ret == 2);
 
   if (ompt_eager_context_p()) {
-    // Use region creation context and insert it to the thread's CCT.
-    cct_node_t *root = hpcrun_get_thread_epoch()->csdata.tree_root;;
-    return check_and_return_non_null(
-        hpcrun_cct_insert_path_return_leaf(root, region_data->call_path),
-        cct_cursor, 2116);
+    // load region creation context
+    cct_node_t *reg_ctx = (cct_node_t *) parallel_data->ptr;
+    // access to the CCT root
+    cct_node_t *root = hpcrun_get_thread_epoch()->csdata.tree_root;
+    // Insert region creationg context to thread's CCT and use inserted
+    // call path as sample prefix.
+    cct_node_t *prefix =  hpcrun_cct_insert_path_return_leaf(root, reg_ctx);
+    // TODO: Try to memoize this after insertion
+    return check_and_return_non_null(prefix, cct_cursor, 2116);
   } else {
+    // load region_data
+    typed_stack_elem(region) *region_data = ATOMIC_LOAD_RD(parallel_data);
+    assert(region_data);
     int region_depth = region_data->depth;
     // Use region depth and find corresponding unresolved_cct
     return check_and_return_non_null(typed_random_access_stack_get(region)(
