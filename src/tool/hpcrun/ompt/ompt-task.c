@@ -60,6 +60,7 @@
 #include <hpcrun/safe-sampling.h>
 #include <hpcrun/sample_event.h>
 #include <hpcrun/thread_data.h>
+#include <tool/hpcrun/trace.h>
 
 #include "omp-tools.h"
 
@@ -195,8 +196,11 @@ ompt_task_begin_internal
   zero_metric_incr_metricVal.i = 0;
   cct_node = hpcrun_sample_callpath(&uc, 0, zero_metric_incr_metricVal,
       1, 1, NULL).sample_node;
+  task_data->ptr = cct_node;
+#if 0
   // store cct_node in task_data
-  task_data_set_cct(task_data, cct_node);
+  //task_data_set_cct(task_data, cct_node);
+#endif
 #if 0
   else {
     ompt_data_t *parallel_info = NULL;
@@ -311,6 +315,9 @@ ompt_task_register_callbacks
 )
 {
   if (ompt_task_full_context_p()) {
+    // Full creation context of a task can be collect only if the region
+    // creation context is collected asynchronously.
+    assert(hpcrun_trace_isactive());
     // If there's need to determine task creation context,
     // then register the following callback.
     int retval;

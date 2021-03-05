@@ -1648,6 +1648,16 @@ handle_idle_sample
 #endif
 }
 
+static inline bool
+expl_task_full_ctx
+(
+  int flags
+)
+{
+  // Does thread need to provide full creation context of an explicit task?
+  return (flags & ompt_task_explicit) && ompt_task_full_context_p();
+}
+
 
 cct_node_t *
 ompt_cct_cursor_finalize
@@ -1682,7 +1692,8 @@ ompt_cct_cursor_finalize
   }
 
   ompt_data_t *parallel_data, *task_data;
-  int ret = hpcrun_ompt_get_task_info(task_ancestor_level, NULL, &task_data,
+  int flags;
+  int ret = hpcrun_ompt_get_task_info(task_ancestor_level, &flags, &task_data,
                                       NULL, &parallel_data, NULL);
   // Since task_ancestor_level is determined by ompt_elide_runtime_frame only
   // if the task frames of the task at this level are present on thread's stack,
@@ -1692,15 +1703,35 @@ ompt_cct_cursor_finalize
   if (ompt_eager_context_p()) {
     // check if prefix is memoized
     cct_node_t *prefix = (cct_node_t *) task_data->ptr;
-    if (!prefix) {
-      // It is not.
-      // load region creation context
-      cct_node_t *reg_ctx = (cct_node_t *) parallel_data->ptr;
+    if (!prefix || (flags & ompt_task_untied)
+        || expl_task_full_ctx(flags)) {
+      // Consider following cases.
+      // case 1: If the region creation context hasn't been memoized, insert it
+      // to thread's CCT now and memoize it.
+      // case 2: If task is untied, it is possible that it changes execution
+      // thread. In that case, memoized context may not belong to the thread's
+      // CCT.
+      // case 3: If the user is interested in full task creation context, then
+      // the thread that creates a tasks provides the creation context and
+      // stores it inside task_data. If other thread executes the task, then it
+      // needs to insert task creation context in its own cct (If the sample is
+      // taken inside an explicit task of course).
+
+      // Since there's no mechanism to detect whether cct_node_t is created by
+      // this thread and is placed inside thread's CCT, thread should always
+      // try to insert the region creation context, even though it may be
+      // already inserted. This should be somehow optimized.
+
+      // load context
+      // If the full task creation context is available, use it.
+      // Otherwise, use region creation context as task calling context.
+      cct_node_t *ctx = expl_task_full_ctx(flags)
+          ? prefix : (cct_node_t *) parallel_data->ptr;
       // access to the CCT root
       cct_node_t *root = hpcrun_get_thread_epoch()->csdata.tree_root;
-      // Insert region creation context to thread's CCT and use inserted
+      // Insert task context to thread's CCT and use inserted
       // call path as sample prefix.
-      prefix = hpcrun_cct_insert_path_return_leaf(root, reg_ctx);
+      prefix = hpcrun_cct_insert_path_return_leaf(root, ctx);
       // Memoize prefix in order to avoid calling previous function each time
       // sample is taken inside this region.
       task_data->ptr = prefix;
