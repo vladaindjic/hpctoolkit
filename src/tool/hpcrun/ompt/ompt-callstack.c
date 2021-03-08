@@ -1655,7 +1655,8 @@ expl_task_full_ctx
 )
 {
   // Does thread need to provide full creation context of an explicit task?
-  return (flags & ompt_task_explicit) && ompt_task_full_context_p();
+  return ompt_task_full_context_p() && (flags & ompt_task_explicit);
+  // This is also true for untied tasks too, since they're explicit task.
 }
 
 
