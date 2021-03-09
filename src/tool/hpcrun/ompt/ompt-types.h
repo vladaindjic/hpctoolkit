@@ -93,6 +93,9 @@
 // The code wrapped around with this pragma is used for debug purposes only.
 #define DEBUG_BARRIER_CNT 0
 
+#define VI3_DEBUG_INFO 0
+#define VI3_DEBUG_INFO_AND_LOG VI3_DEBUG_INFO && 0
+
 
 struct ompt_region_data_s;
 struct ompt_notification_s;
@@ -113,7 +116,7 @@ typedef struct ompt_region_data_s {
   cct_node_t *call_path;
   // depth of the region, starts from zero
   int depth;
-#if 1
+#if VI3_DEBUG_INFO
   // fields used for debug purposes only
   // vi3: I think that this is used for debug purpose
   struct ompt_region_data_s *next_region;
@@ -145,7 +148,7 @@ typedef struct ompt_notification_s {
   // that region_data may be recycled when thead tries to resolve region.
   cct_node_t *region_prefix;
   struct mpsc_channel_notification_s *notification_channel;
-#if 1
+#if VI3_DEBUG_INFO
   uint64_t region_id;
 #endif
 } typed_stack_elem(notification);
@@ -217,9 +220,6 @@ typedef struct region_stack_el_s {
   bool took_sample;
   // should be safe to remove this
   bool team_master;
-#if 0
-  old_region_t *old_region_list;
-#endif
 } typed_random_access_stack_elem(region);
 // declare pointer to previous struct
 typed_random_access_stack_declare_type(region);
@@ -231,8 +231,6 @@ typedef struct {
 // declare api functions of random access stack of regions
 typed_random_access_stack_declare(region);
 
-
-// FIXME vi3: ompt_data_t freelist manipulation
 
 typedef struct ompt_atomic_data_s {
   _Atomic(typed_stack_elem(region) *) ptr;
@@ -249,9 +247,6 @@ typedef struct ompt_atomic_data_s {
   atomic_compare_exchange_strong(&((ompt_atomic_data_t *)parallel_data)->ptr, \
     &old_reg, new_reg)
 
-
-#define VI3_DEBUG_INFO 1
-#define VI3_DEBUG_INFO_AND_LOG VI3_DEBUG_INFO && 1
 
 #endif
 

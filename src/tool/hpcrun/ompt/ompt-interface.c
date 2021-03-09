@@ -1235,18 +1235,7 @@ ompt_set_callback_internal
 }
 
 
-static ompt_state_t
-check_state
-(
-  void
-)
-{
-  uint64_t wait_id;
-  return hpcrun_ompt_get_state(&wait_id);
-}
-
-
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
 void
 assert_parallel_data
 (

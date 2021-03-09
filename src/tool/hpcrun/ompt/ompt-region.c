@@ -116,7 +116,7 @@ ompt_region_data_new
   typed_stack_next_set(region, cstack)(e, 0);
   e->owner_free_region_channel = &region_freelist_channel;
   e->depth = 0;
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
   atomic_store(&e->process, 0);
   atomic_store(&e->registered, 0);
   atomic_store(&e->resolved, 0);
@@ -165,7 +165,7 @@ ompt_parallel_end_internal
     (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
 
   if (region_data){
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
     region_data->master_channel = &region_freelist_channel;
     atomic_fetch_add(&region_data->process, 1);
     // It is possible that region_data is not initialized, if none thread took
@@ -537,7 +537,7 @@ initialize_region
   typed_stack_elem(region) *old_reg = ATOMIC_LOAD_RD(parallel_data);
   if (old_reg) {
     //printf("initialize_one_region >>> region_data initialized\n");
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
     assert(old_reg->parallel_data == parallel_data);
 #endif
     return old_reg->depth;
@@ -552,12 +552,12 @@ initialize_region
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
 
-  #if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
   new_reg->parallel_data = parallel_data;
 #endif
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
     atomic_fetch_add(&new_reg->process, 1);
 #endif
     // region_data has been initialized by other thread
@@ -567,7 +567,7 @@ initialize_region
   } else {
     old_reg = new_reg;
   }
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
   assert(old_reg->parallel_data == parallel_data);
 #endif
   return old_reg->depth;

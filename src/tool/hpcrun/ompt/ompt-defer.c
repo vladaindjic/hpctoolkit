@@ -148,7 +148,6 @@ msg_deferred_resolution_breakpoint
 
 
 // added by vi3
-#define VI3_LAST_PROBLEMS 0
 
 
 typed_stack_elem_ptr(notification)
@@ -163,14 +162,14 @@ help_notification_alloc
   notification->unresolved_cct = unresolved_cct;
   notification->region_prefix = NULL;
   notification->notification_channel = &thread_notification_channel;
-#if VI3_LAST_PROBLEMS == 1
+#if VI3_DEBUG_INFO == 1
   notification->region_id = region_data->region_id;
 #endif
   return notification;
 }
 
 
-#if VI3_LAST_PROBLEMS
+#if VI3_DEBUG_INFO_AND_LOG
 static ompt_state_t
 check_state
 (
@@ -189,7 +188,7 @@ register_to_region
   cct_node_t *unresolved_cct
 )
 {
-#if VI3_LAST_PROBLEMS == 1
+#if VI3_DEBUG_INFO == 1
   if (region_data->call_path) {
     assert(0);
   }
@@ -219,7 +218,7 @@ register_to_region
   typed_stack_push(notification, cstack)(&region_data->notification_stack,
                                          notification);
 
-#if VI3_LAST_PROBLEMS == 1
+#if VI3_DEBUG_INFO_AND_LOG == 1
   printf("Register>>> thr: %p, reg: %p, reg_id: %lx, next: %p, state: %x\n",
          &thread_notification_channel, region_data, region_data->region_id,
          typed_stack_next_get(notification, cstack)(notification), check_state());
@@ -233,9 +232,11 @@ register_to_region
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
 #endif
-#if VI3_LAST_PROBLEMS == 1
+
+#if VI3_DEBUG_INFO == 1
   atomic_fetch_add(&region_data->registered, 1);
 #endif
+
   // increment the number of unresolved regions
   unresolved_cnt++;
 }
@@ -568,20 +569,24 @@ try_resolve_one_region_context
 
   if (!old_head) return 0;
 
-#if VI3_LAST_PROBLEMS == 1
+#if VI3_DEBUG_INFO_AND_LOG == 1
   printf("Resolving>>> thr: %p, reg: %p, reg_id: %lx\n",
          &thread_notification_channel, old_head->region_data, old_head->region_data->region_id);
 #endif
+
   unresolved_cnt--;
-#if VI3_LAST_PROBLEMS == 1
+
+#if VI3_DEBUG_INFO == 1
   ompt_region_debug_notify_received(old_head);
   atomic_fetch_add(&old_head->region_data->resolved, 1);
   if (old_head->region_data->master_channel == &region_freelist_channel) {
     printf("Master should not finish here\n");
+    assert(false);
   }
   assert(old_head->region_data->master_channel != &region_freelist_channel);
   // check if the notification needs to be forwarded
 #endif
+
   typed_stack_elem_ptr(notification) next =
     typed_stack_pop(notification, cstack)(&old_head->region_data->notification_stack);
   if (next) {
@@ -589,7 +594,6 @@ try_resolve_one_region_context
     next->region_prefix = old_head->region_prefix;
     typed_channel_shared_push(notification)(next->notification_channel, next);
   } else {
-    //old_head->region_data->notification_stack = (typed_stack_elem(notification) *)(0xdeadbeef);
     // notify creator of region that region_data can be put in region's freelist
     hpcrun_ompt_region_free(old_head->region_data);
     // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
@@ -664,19 +668,6 @@ ompt_resolve_region_contexts
   size_t i = 0;
   timer_start(&start_time);
 
-
-#if VI3_DEBUG == 1
-  int thread_num = hpcrun_ompt_get_thread_num(0);
-
-  typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
-  if (top) {
-    typed_stack_elem_ptr(region) top_reg = top->notification->region_data;
-    printf("thread_finalize >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
-        &region_stack, top_reg, top_reg->region_id, thread_num);
-  } else {
-    printf("thread_finalize >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil,THREAD_NUM: %d\n", &region_stack, thread_num);
-  }
-#endif
 
   // attempt to resolve all remaining regions
   for(;;i++) {
@@ -878,12 +869,12 @@ lazy_region_process
       ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
   new_reg->depth = parent_depth + 1;
 
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
   new_reg->parallel_data = parallel_data;
 #endif
 
   if (!ATOMIC_CMP_SWP_RD(parallel_data, old_reg, new_reg)) {
-#if VI3_PARALLEL_DATA_DEBUG == 1
+#if VI3_DEBUG_INFO == 1
     atomic_fetch_add(&new_reg->process, 1);
 #endif
     // region_data has been initialized by other thread

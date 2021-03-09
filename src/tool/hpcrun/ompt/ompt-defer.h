@@ -210,7 +210,4 @@ lazy_active_region_processing
 );
 
 
-#define VI3_DEBUG 0
-
-
 #endif

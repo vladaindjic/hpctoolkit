@@ -312,9 +312,8 @@ ompt_idle_end
  void
 );
 
-#define VI3_PARALLEL_DATA_DEBUG 1
 
-#if VI3_PARALLEL_DATA_DEBUG == 0
+#if VI3_DEBUG_INFO == 0
 
 #define assert_parallel_data(parallel_data)
 
