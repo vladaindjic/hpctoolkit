@@ -478,38 +478,6 @@ ompt_idle
   //printf("Thread id = %d, \tIdle %s\n", omp_get_thread_num(), endpoint==1?"begin":"end");
 }
 
-#if 0
-static void
-ompt_sync
-(
- ompt_sync_region_t kind,
- ompt_scope_endpoint_t endpoint,
- ompt_data_t *parallel_data,
- ompt_data_t *task_data,
- const void *codeptr_ra
-)
-{
-#if 0
-  printf("Thread id = %d, \tBarrier %s\n", omp_get_thread_num(), 
-	 endpoint==1 ? "begin" : "end"
-	);
-#endif
-  switch(kind) {
-    case ompt_sync_region_barrier:
-    case ompt_sync_region_barrier_implicit:
-    case ompt_sync_region_barrier_explicit:
-    case ompt_sync_region_barrier_implementation:
-    case ompt_sync_region_taskwait:
-    case ompt_sync_region_taskgroup:
-      if (endpoint == ompt_scope_begin) ompt_idle_begin();
-      else if (endpoint == ompt_scope_end) ompt_idle_end();
-      else assert(0);
-  default:
-    break;
-  }
-}
-#endif
-
 
 //-------------------------------------------------
 // accept any blame accumulated for mutex while 
@@ -851,7 +819,6 @@ hpcrun_ompt_get_task_frame
       return NULL;
     }
     assert_parallel_data(parallel_data);
-    //printf("Task frame pointer = %p\n", task_frame);
     return task_frame;
   }
   return NULL;
@@ -1002,8 +969,6 @@ hpcrun_ompt_get_parallel_info_id
   hpcrun_ompt_get_parallel_info(ancestor_level, &parallel_info, &team_size);
   if (parallel_info == NULL) return 0;
   return parallel_info->value;
-//  typed_queue_elem(region)* region_data = (typed_queue_elem(region)*)parallel_info->ptr;
-//  return region_data->region_id;
 }
 
 
@@ -1356,20 +1321,6 @@ try_to_detect_the_case
   if (flags & ompt_task_initial) {
     return -6;
   }
-
-#if 0
-  else if (current_state == ompt_state_overhead) {
-    if (thread_num != 0) {
-      // FIXME VI3: I guesS it is more safe to omit registration process
-      //  in this case?
-      printf("Stop here\n");
-      return -5;
-    }
-  }
-#endif
-
-
-
 
   return ancestor_level;
 

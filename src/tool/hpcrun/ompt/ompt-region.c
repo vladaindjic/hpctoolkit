@@ -96,9 +96,6 @@ ompt_region_acquire
 // private operations
 //*****************************************************************************
 
-#if 0
-#define MAX_THREAD_IN_TEAM -101
-#endif
 
 typed_stack_elem_ptr(region)
 ompt_region_data_new
@@ -150,60 +147,6 @@ ompt_parallel_begin_internal
   // Collect and store region calling context.
   parallel_data->ptr = ompt_parallel_begin_context(region_id,
                               flags & ompt_parallel_invoker_program);
-#if 0
-  typed_stack_elem_ptr(region) region_data =
-    ompt_region_data_new(hpcrun_ompt_get_unique_id(), NULL);
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  parallel_data->ptr = region_data;
-
-#else
-#if VI3_PARALLEL_DATA_DEBUG == 1
-  region_data->parallel_data = parallel_data;
-#endif
-  ATOMIC_STORE_RD(parallel_data, region_data);
-#endif
-  uint64_t region_id = region_data->region_id;
-  thread_data_t *td = hpcrun_get_thread_data();
-
-  // FIXME vi3: check if this is right
-  // the region has not been changed yet
-  // that's why we say that the parent region is
-  // hpcrun_ompt_get_current_region_data
-  typed_stack_elem_ptr(region) parent_region =
-    hpcrun_ompt_get_current_region_data();
-  if (!parent_region) {
-    // mark the master thread in the outermost region
-    // (the one that unwinds to FENCE_MAIN)
-    td->master = 1;
-    region_data->depth = 0;
-  } else {
-    region_data->depth = parent_region->depth + 1;
-  }
-
-#if KEEP_PARENT_REGION_RELATIONSHIP
-  // don't need for concurrency
-  // memoized parent_region
-  typed_stack_next_set(region, sstack)(region_data, parent_region);
-#endif
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  // FIXME vi3 >>> Any good reason why I implemented push operation like this?
-  // Push new region in which thread is master.
-  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
-      typed_random_access_stack_push(runtime_region)(runtime_master_region_stack);
-  runtime_top_el->region_data = region_data;
-#endif
-
-  if (ompt_eager_context_p()) {
-     region_data->call_path =
-       ompt_parallel_begin_context(region_id, 
-				   flags & ompt_parallel_invoker_program);
-  }
-#if VI3_DEBUG == 1
-  printf("parallel_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
-         &region_stack, region_data, region_data->region_id, 0);
-#endif
-#endif
 }
 
 
@@ -342,21 +285,6 @@ ompt_parallel_end_internal
     ending_region = NULL;
   }
 
-#if 0
-  // FIXME: vi3: what is this?
-  // FIXME: not using team_master but use another routine to
-  // resolve team_master's tbd. Only with tasking, a team_master
-  // need to resolve itself
-  if (ompt_task_full_context_p()) {
-    TD_GET(team_master) = 1;
-    thread_data_t* td = hpcrun_get_thread_data();
-    resolve_cntxt_fini(td);
-    TD_GET(team_master) = 0;
-  }
-
-  // FIXME: vi3 do we really need to keep this line
-  hpcrun_get_thread_data()->region_id = 0;
-#endif
 }
 
 
@@ -409,7 +337,7 @@ ompt_parallel_end
   hpcrun_safe_exit();
 }
 
-
+#if USE_IMPLICIT_TASK_CALLBACKS == 1
 static void
 ompt_implicit_task_internal_begin
 (
@@ -445,11 +373,6 @@ ompt_implicit_task_internal_begin
   }
 
   if (!ompt_eager_context_p()) {
-#if 0
-    add_region_and_ancestors_to_stack(region_data, index==0);
-    task_data_set_depth(task_data,
-        typed_random_access_stack_top_index_get(region)(region_stack));
-#endif
     // connect task_data with region_data
     task_data_set_depth(task_data, region_data->depth);
 #if DETECT_IDLENESS_LAST_BARRIER
@@ -494,23 +417,6 @@ ompt_implicit_task_internal_end
     }
 #endif
 
-#if 0
-    if (index != 0) {
-      // Need to check if current thread took a sample in the innermost region.
-      if (!top) {
-        // Do nothing
-        return;
-      }
-      // resolve region call path
-      if (top->took_sample) {
-        //resolve_one_region_context_vi3(top->notification);
-      }
-      // =========================================== A bit newer version
-      // Pop region from the stack, if thread is not the master of this region.
-      // Master thread will pop in ompt_parallel_end callback
-      typed_random_access_stack_pop(region)(region_stack);
-    }
-#endif
   }
   // ompt_task_release(task_data);
 }
@@ -544,7 +450,7 @@ ompt_implicit_task
 
   hpcrun_safe_exit();
 }
-
+#endif
 
 static typed_stack_elem_ptr(region)
 ompt_region_alloc
