@@ -378,14 +378,7 @@ lca_el_fn
   el->region_data = reg;
   // store region_id as persistent field
   el->region_id = reg->region_id;
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  // check if thread is the master (owner) of the reg
-  el->team_master = hpcrun_ompt_is_thread_region_owner(reg);
-  //check_thread_num(el, level);
-  assert(hpcrun_ompt_is_thread_region_owner(reg) == is_thread_owner_of_the_region(el, level));
-#else
   el->team_master = is_thread_owner_of_the_region(el, level);
-#endif
   // invalidate previous values
   el->unresolved_cct = NULL;
   el->took_sample = false;
@@ -394,9 +387,6 @@ lca_el_fn
   // In order to prevent NULL values get from hpcrun_ompt_get_region_data,
   // use parent as next region to process.
   args->region_data = typed_stack_next_get(region, sstack)(reg);
-#else
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  args->region_data = hpcrun_ompt_get_region_data(args->level);
 #else
 
   // Since we're implicitly using ompt_get_task_info and is possible to face
@@ -435,7 +425,6 @@ lca_el_fn
   args->level = level;
 
 #endif
-#endif
   // indicator to continue processing stack element
   return 0;
 }
@@ -457,12 +446,8 @@ least_common_ancestor
   int ancestor_level
 )
 {
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  typed_stack_elem(region) *innermost_reg = hpcrun_ompt_get_region_data(ancestor_level);
-#else
   typed_stack_elem(region) *innermost_reg =
       hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
-#endif
   assert(innermost_reg);
 
   // update top of the stack

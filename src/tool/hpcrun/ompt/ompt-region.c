@@ -67,6 +67,7 @@
 
 #include <hpcrun/safe-sampling.h>
 #include <hpcrun/thread_data.h>
+#include <tool/hpcrun/trace.h>
 
 #include "ompt-callback.h"
 #include "ompt-callstack.h"
@@ -157,13 +158,8 @@ ompt_parallel_end_internal
  int flags
 )
 {
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  typed_stack_elem_ptr(region) region_data =
-    (typed_stack_elem_ptr(region))parallel_data->ptr;
-#else
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
-#endif
 
 #if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
   // Pop the innermost region in which thread is the master.
@@ -176,18 +172,15 @@ ompt_parallel_end_internal
     region_data = runtime_master_region;
   }
 #endif
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  if (!ompt_eager_context_p()){
-#else
-  // if (!ompt_eager_context_p() && region_data){
+
   if (region_data){
 #if VI3_PARALLEL_DATA_DEBUG == 1
     region_data->master_channel = &region_freelist_channel;
     atomic_fetch_add(&region_data->process, 1);
-#endif
     // It is possible that region_data is not initialized, if none thread took
     // sample while region was active.
 #endif
+
 #if DEBUG_BARRIER_CNT
     // Debug only
     // Mark that this region is finished
@@ -215,6 +208,7 @@ ompt_parallel_end_internal
       }
     }
 #endif
+
     // check if there is any thread registered that should be notified
     // that region call path is available
     typed_stack_elem_ptr(notification) to_notify =
@@ -259,15 +253,11 @@ ompt_parallel_end_internal
 
     // If master took a sample in this region, it needs to resolve its call path.
     if (stack_el) {
-#if 1
       // CASE: thread took sample in an explicit task,
       // so we need to resolve everything under pseudo node
       resolve_one_region_context(region_prefix, stack_el->unresolved_cct);
       // mark that master resolved this region
       unresolved_cnt--;
-#else
-      //ompt_resolve_region_contexts_poll();
-#endif
       // Since we never do real push and pop operations, it is possible that
       // this region_data will be reused by new region at the same depth.
       // In that case, thread could think that it already register for
@@ -276,11 +266,10 @@ ompt_parallel_end_internal
       stack_el->region_data = NULL;
     }
 
-#if 1
     // Instead of popping in ompt_implicit_task_end, master of the region
     // will pop region here.
     typed_random_access_stack_pop(region)(region_stack);
-#endif
+
     // mark that no region is ending
     ending_region = NULL;
   }
@@ -498,9 +487,6 @@ ompt_regions_init
   ompt_region_debug_init();
 }
 
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
-#include <tool/hpcrun/trace.h>
-#endif
 
 void 
 ompt_parallel_region_register_callbacks
@@ -509,18 +495,14 @@ ompt_parallel_region_register_callbacks
 )
 {
   int retval;
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   // FIXME ompt_eager_context is initialized inside ompt_callstack_init_deferred
   //   which is called after this function.
   //if (ompt_eager_context_p()) {
   if (hpcrun_trace_isactive()) {
-#endif
     retval = ompt_set_callback_fn(ompt_callback_parallel_begin,
                                   (ompt_callback_t) ompt_parallel_begin);
     assert(ompt_event_may_occur(retval));
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 0
   }
-#endif
 
   if (!hpcrun_trace_isactive()) {
     // Only lazy approach needs parallel end callback.

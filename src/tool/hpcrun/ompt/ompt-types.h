@@ -280,7 +280,6 @@ typedef struct ompt_atomic_data_s {
   atomic_compare_exchange_strong(&((ompt_atomic_data_t *)parallel_data)->ptr, \
     &old_reg, new_reg)
 
-#define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
 
 #define VI3_DEBUG_INFO 1
 #define VI3_DEBUG_INFO_AND_LOG VI3_DEBUG_INFO && 1

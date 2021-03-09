@@ -1137,12 +1137,9 @@ hpcrun_ompt_get_region_data
   // FIXME: potential problem if parallel info is unavailable and runtime returns 1
   if (ret_val < 2)
     return NULL;
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  return parallel_data ? (typed_stack_elem_ptr(region))parallel_data->ptr : NULL;
-#else
+
   assert_parallel_data(parallel_data);
   return parallel_data ? ATOMIC_LOAD_RD(parallel_data) : NULL;
-#endif
 }
 
 
