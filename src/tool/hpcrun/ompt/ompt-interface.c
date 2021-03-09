@@ -406,7 +406,7 @@ ompt_thread_begin
   notification_freelist_head = NULL;
   typed_channel_init(notification)(&thread_notification_channel);
   typed_channel_init(region)(&region_freelist_channel);
-  // FIXME vi3: get the max active levels of nesting from omp
+  // fixme vi3: get the max active levels of nesting from omp
   // initialize random access stack of active parallel regions
   region_stack = typed_random_access_stack_init(region)(MAX_NESTING_LEVELS);
   unresolved_cnt = 0;
@@ -1126,7 +1126,6 @@ hpcrun_ompt_get_region_data
   ompt_data_t* parallel_data = NULL;
   int team_size;
   int ret_val = hpcrun_ompt_get_parallel_info(ancestor_level, &parallel_data, &team_size);
-  // FIXME: potential problem if parallel info is unavailable and runtime returns 1
   if (ret_val < 2)
     return NULL;
 
@@ -1155,31 +1154,6 @@ hpcrun_ompt_get_parent_region_data
 }
 
 
-typed_stack_elem_ptr(region)
-hpcrun_ompt_get_top_region_on_stack
-(
-  void
-)
-{
-  typed_random_access_stack_elem(region) *top =
-      typed_random_access_stack_top(region)(region_stack);
-  return top ? top->region_data : NULL;
-}
-
-
-cct_node_t *
-hpcrun_ompt_get_top_unresolved_cct_on_stack
-(
-  void
-)
-{
-  // TODO FIXME vi3 >> put this boiler plate code in separate function
-  typed_random_access_stack_elem(region) *top =
-      typed_random_access_stack_top(region)(region_stack);
-  return top ? top->unresolved_cct : NULL;
-}
-
-
 typed_random_access_stack_elem(region) *
 get_corresponding_stack_element_if_any
 (
@@ -1200,8 +1174,6 @@ get_corresponding_stack_element_if_any
 }
 
 
-// FIXME vi3 >>> It seems that thread_num cam be 0 even though
-//   thread wasn't part of the team (outer regions).
 int
 hpcrun_ompt_get_thread_num(int level)
 {

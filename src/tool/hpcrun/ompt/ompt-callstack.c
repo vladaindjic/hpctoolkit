@@ -850,11 +850,10 @@ ompt_backtrace_finalize
     lazy_active_region_processing();
   }
 
-  // FIXME vi3 >>> I think it is ok that thread tries to register itself
-  //  for regions' call paths.
+
   //  Note: see  register_to_all_regions and ompt_cct_cursor_finalize functions
-  //    for more information.
-  // FIXME vi3: check synchronous samples
+  //    for more information about how the registration process works.
+  // fixme vi3: check synchronous samples
 
   if (ompt_idle_blame_shift_enabled()) {
     // check whether thread change the group state

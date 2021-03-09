@@ -79,7 +79,7 @@ extern __thread typed_channel_elem(region) region_freelist_channel;
 extern __thread typed_random_access_stack_struct(region) *region_stack;
 
 
-// FIXME vi3: just a temp solution
+// fixme vi3: just a temp solution
 extern __thread typed_stack_elem_ptr(region) ending_region;
 
 // number of unresolved regions

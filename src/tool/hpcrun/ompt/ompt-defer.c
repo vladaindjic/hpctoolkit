@@ -208,7 +208,6 @@ register_to_region
   // debug information
   int old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
-    // FIXME seems it may happened
     printf("register_to_region >>> To late to try registering. Old value: %d\n", old_value);
   }
 #endif
@@ -228,7 +227,6 @@ register_to_region
   // debug information
   old_value = atomic_fetch_add(&region_data->barrier_cnt, 0);
   if (old_value < 0) {
-    // FIXME seems it may happened
     printf("register_to_region >>> To late, but registered. Old value: %d\n", old_value);
   }
 #endif
@@ -278,7 +276,7 @@ thread_take_sample
   // pseudo cct node which corresponds to the parent region
   cct_node_t *parent_cct = *parent_cct_ptr;
 
-  // FIXME vi3 >>> If we use this approach, then field took_sample is not needed
+  // fixme vi3 >>> If we use this approach, then field took_sample is not needed
   // thread took a sample in this region before
   if (el->took_sample) {
     // skip this region, and go to the inner one
@@ -310,7 +308,7 @@ thread_take_sample
   return_label: {
     // If region is marked as the last to register (see function register_to_all_regions),
     // then stop further processing.
-    // FIXME vi3 >>> this should be removed.
+    // fixme vi3 >>> this should be removed.
     if (el->region_data->depth >= vi3_last_to_register) {
       // Indication that processing of active regions should stop.
       return 1;
@@ -475,9 +473,6 @@ register_to_all_regions
     return;
   }
 
-  // FIXME vi3: check whether region at ancestor_level
-  //   really has region_depth.
-
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
@@ -544,7 +539,6 @@ resolve_one_region_context
 
     if (prefix != unresolved_cct) {
       // prefix node should change the unresolved_cct
-      // FIXME vi3: Some cct nodes lost theirs parents.
       hpcrun_cct_merge(prefix, unresolved_cct, merge_metrics, NULL);
       // delete unresolved_cct from parent
       hpcrun_cct_delete_self(unresolved_cct);
@@ -596,7 +590,6 @@ try_resolve_one_region_context
   } else {
     // notify creator of region that region_data can be put in region's freelist
     hpcrun_ompt_region_free(old_head->region_data);
-    // FIXME vi3 >>> Need to review freeing policies for all data types (structs)
   }
 
   resolve_one_region_context(old_head->region_prefix, old_head->unresolved_cct);

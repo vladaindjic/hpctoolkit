@@ -270,20 +270,6 @@ hpcrun_ompt_get_parent_region_data
 );
 
 
-typed_stack_elem_ptr(region)
-hpcrun_ompt_get_top_region_on_stack
-(
-  void
-);
-
-
-cct_node_t *
-hpcrun_ompt_get_top_unresolved_cct_on_stack
-(
-  void
-);
-
-
 typed_random_access_stack_elem(region) *
 get_corresponding_stack_element_if_any
 (

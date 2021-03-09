@@ -126,7 +126,6 @@ ompt_region_data_new
   ompt_region_debug_region_create(e);
 
 #if DEBUG_BARRIER_CNT
-  // FIXME vi3 >>> Check if this is right.
   atomic_exchange(&e->barrier_cnt, 0);
   int old_value = atomic_fetch_add(&e->barrier_cnt, 0);
   if (old_value != 0) {
@@ -189,7 +188,7 @@ ompt_parallel_end_internal
             "ompt_parallel_end_internal: barrier_cnt value is under the minimum value of "
             "the barrier in the middle of sping waitingbefore spin waiting was negative");
       }
-      // FIXME vi3 >>> the condition should be old_value == MAX_THREAD_IN_TEAM
+
       if (old_value <= MAX_THREAD_IN_TEAM) {
         if (old_value == MAX_THREAD_IN_TEAM) {
           break;
@@ -208,7 +207,7 @@ ompt_parallel_end_internal
     // mark that current region is ending
     ending_region = region_data;
 
-    // FIXME vi3: need better way to decide whether you took sample or not
+    // fixme vi3: need better way to decide whether you took sample or not
     //  compare region_id e.g
     typed_random_access_stack_elem(region) *stack_el =
         get_corresponding_stack_element_if_any(region_data);
@@ -482,7 +481,7 @@ ompt_parallel_region_register_callbacks
 )
 {
   int retval;
-  // FIXME ompt_eager_context is initialized inside ompt_callstack_init_deferred
+  // fixme vi3 ompt_eager_context is initialized inside ompt_callstack_init_deferred
   //   which is called after this function.
   //if (ompt_eager_context_p()) {
   if (hpcrun_trace_isactive()) {
@@ -573,5 +572,5 @@ initialize_region
   return old_reg->depth;
 }
 
-// FIXME VI3: check whether all pointers stored in region_data exists
+// fixme vi3: check whether all pointers stored in region_data exists
 //   even after its creator has been destroyed
