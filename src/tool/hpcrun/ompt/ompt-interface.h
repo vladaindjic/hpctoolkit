@@ -270,12 +270,6 @@ hpcrun_ompt_get_parent_region_data
 );
 
 
-bool
-hpcrun_ompt_is_thread_region_owner
-(
-  typed_stack_elem(region) *region_data
-);
-
 typed_stack_elem_ptr(region)
 hpcrun_ompt_get_top_region_on_stack
 (

@@ -79,6 +79,9 @@
 #include "ompt-thread.h"
 #include "ompt-task.h"
 
+#if DEBUG_BARRIER_CNT == 1
+#define MAX_THREAD_IN_TEAM -101
+#endif
 
 //*****************************************************************************
 // forward declarations
@@ -160,18 +163,6 @@ ompt_parallel_end_internal
 {
   typed_stack_elem_ptr(region) region_data =
     (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-  // Pop the innermost region in which thread is the master.
-  typed_random_access_stack_elem(runtime_region) *runtime_top_el =
-      typed_random_access_stack_pop(runtime_region)(runtime_master_region_stack);
-  typed_stack_elem(region) *runtime_master_region = runtime_top_el->region_data;
-  if (runtime_master_region != region_data) {
-    // FIXME vi3 >>> runtime tries to end region_data another time
-    //  Use the value we provided for now.
-    region_data = runtime_master_region;
-  }
-#endif
 
   if (region_data){
 #if VI3_PARALLEL_DATA_DEBUG == 1
@@ -424,11 +415,7 @@ ompt_region_freelist_put
 #endif
   atomic_fetch_sub(&r->owner_free_region_channel->region_used, 1);
 #endif
-#if KEEP_PARENT_REGION_RELATIONSHIP
-  // disconnect from parent, otherwise the whole parent-child chain
-  // will be added to freelist
-  typed_stack_next_set(region, sstack)(r, 0);
-#endif
+
   r->region_id = 0xdeadbeef;
   typed_channel_private_push(region)(&region_freelist_channel, r);
 }

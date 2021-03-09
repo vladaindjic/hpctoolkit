@@ -383,12 +383,6 @@ lca_el_fn
   el->unresolved_cct = NULL;
   el->took_sample = false;
 
-#if KEEP_PARENT_REGION_RELATIONSHIP
-  // In order to prevent NULL values get from hpcrun_ompt_get_region_data,
-  // use parent as next region to process.
-  args->region_data = typed_stack_next_get(region, sstack)(reg);
-#else
-
   // Since we're implicitly using ompt_get_task_info and is possible to face
   // with nested tasks, we may need to omit some of them that belongs to this
   // region.
@@ -424,7 +418,6 @@ lca_el_fn
   args->region_data = new_region;
   args->level = level;
 
-#endif
   // indicator to continue processing stack element
   return 0;
 }

@@ -109,9 +109,6 @@ extern __thread long notification_used;
 #endif
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-extern __thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack;
-#endif
 //******************************************************************************
 // interface operations 
 //******************************************************************************

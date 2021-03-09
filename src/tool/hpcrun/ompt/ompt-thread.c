@@ -98,9 +98,6 @@ __thread uint64_t idle_region_id = 0;
 __thread long notification_used = 0;
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX == 1
-__thread typed_random_access_stack_struct(runtime_region) *runtime_master_region_stack = NULL;
-#endif
 //******************************************************************************
 // private variables 
 //******************************************************************************

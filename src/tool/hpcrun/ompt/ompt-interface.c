@@ -414,10 +414,6 @@ ompt_thread_begin
   atomic_exchange(&region_freelist_channel.region_used, 0);
 #endif
 
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-  runtime_master_region_stack =
-      typed_random_access_stack_init(runtime_region)(MAX_NESTING_LEVELS);
-#endif
 }
 
 
@@ -1112,11 +1108,7 @@ hpcrun_ompt_region_free
 #endif
   atomic_fetch_sub(&region_data->owner_free_region_channel->region_used, 1);
 #endif
-#if KEEP_PARENT_REGION_RELATIONSHIP
-  // disconnect from parent, otherwise the whole parent-child chain
-  // will be added to freelist
-  typed_stack_next_set(region, sstack)(region_data, 0);
-#endif
+
   region_data->region_id = 0xdeadbead;
   typed_channel_shared_push(region)(region_data->owner_free_region_channel,
                                     region_data);
@@ -1160,15 +1152,6 @@ hpcrun_ompt_get_parent_region_data
 )
 {
   return hpcrun_ompt_get_region_data(1);
-}
-
-bool
-hpcrun_ompt_is_thread_region_owner
-(
-  typed_stack_elem(region) *region_data
-)
-{
-  return region_data->owner_free_region_channel == &region_freelist_channel;
 }
 
 
@@ -1295,7 +1278,3 @@ typed_stack_impl(notification, cstack);
 typed_channel_impl(notification);
 // implement region stack
 typed_random_access_stack_impl(region);
-
-#if ENDING_REGION_MULTIPLE_TIMES_BUG_FIX
-typed_random_access_stack_impl(runtime_region);
-#endif
