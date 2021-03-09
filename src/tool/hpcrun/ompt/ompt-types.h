@@ -282,7 +282,6 @@ typedef struct ompt_atomic_data_s {
     &old_reg, new_reg)
 
 #define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
-#define INTEGRATE_REG_INIT_AND_REGISTER 1
 
 #define VI3_DEBUG_INFO 1
 #define VI3_DEBUG_INFO_AND_LOG VI3_DEBUG_INFO && 1

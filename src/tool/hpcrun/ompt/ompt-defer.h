@@ -202,12 +202,6 @@ msg_deferred_resolution_breakpoint
   char *msg
 );
 
-void
-initialize_regions_if_needed
-(
-  void
-);
-
 
 void
 lazy_active_region_processing

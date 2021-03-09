@@ -305,14 +305,6 @@ ompt_set_callback_internal
 );
 
 
-// FIXME vi3: this doesn't belong to the OMPT interface
-int
-try_to_detect_the_case
-(
-  void
-);
-
-
 void
 ompt_idle_begin
 (

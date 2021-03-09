@@ -790,23 +790,10 @@ ompt_resolve_region_contexts_poll
 }
 
 
-void
-initialize_regions_if_needed
-(
-  void
-)
-{
-  //task_ancestor_level = try_to_detect_the_case();
-  if (task_ancestor_level < 0) {
-    // Cannot initialize anything
-    return;
-  }
-  //assert(task_ancestor_level == 0);
-  initialize_region(task_ancestor_level);
-}
+#define INTEGRATE_REG_INIT_AND_REGISTER 1
+
 
 #if INTEGRATE_REG_INIT_AND_REGISTER == 1
-
 
 static inline bool
 region_init_in_outer_task
@@ -938,6 +925,23 @@ lazy_region_process
 
   return old_reg->depth;
 }
+
+#else
+
+void
+initialize_regions_if_needed
+(
+  void
+)
+{
+  if (task_ancestor_level < 0) {
+    // Cannot initialize anything
+    return;
+  }
+  //assert(task_ancestor_level == 0);
+  initialize_region(task_ancestor_level);
+}
+
 #endif
 
 void

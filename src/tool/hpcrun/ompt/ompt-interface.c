@@ -1266,66 +1266,6 @@ check_state
 }
 
 
-// FIXME vi3: this doesn't belong to the OMPT interface
-int
-try_to_detect_the_case
-(
-  void
-)
-{
-  int ancestor_level = 0;
-  int flags;
-  ompt_frame_t *frame;
-  ompt_data_t *task_data = NULL;
-  ompt_data_t *parallel_data = NULL;
-  int thread_num = -1;
-  int ret = hpcrun_ompt_get_task_info(ancestor_level, &flags, &task_data, &frame,
-                                      &parallel_data, &thread_num);
-
-  if (ret != 2 || !parallel_data) {
-    // Check one level above
-    ancestor_level++;
-    ret = hpcrun_ompt_get_task_info(ancestor_level, &flags, &task_data, &frame,
-                                    &parallel_data, &thread_num);
-    if (ret != 2 || !parallel_data) {
-      // FIXME vi3: Check if this assumption is valid.
-      //   It is possible that information about the innermost task
-      //   is not set properly. If at the same time the information
-      //   about outer task is not available too, then don't try
-      //   to handle this case.
-      //   Consult the elider.
-      return -1;
-    }
-  }
-
-  if (!parallel_data) {
-    printf("No region at this level? Out of bounds\n");
-    return -2;
-  }
-  ompt_state_t current_state = check_state();
-  if (current_state == ompt_state_wait_barrier_implicit_parallel) {
-    // Waiting on the last implicit barrier.
-    return -3;
-  } else if (current_state == ompt_state_idle) {
-    return -4;
-  } else if (current_state == ompt_state_overhead) {
-    //return -1;
-  } else if (current_state == ompt_state_work_parallel) {
-    //printf("How frequent is this\n");
-  } else if (current_state == ompt_state_work_serial) {
-    return -5;
-  } else {
-    printf("Unexpected: %x\n", current_state);
-  }
-
-  if (flags & ompt_task_initial) {
-    return -6;
-  }
-
-  return ancestor_level;
-
-}
-
 #if VI3_PARALLEL_DATA_DEBUG == 1
 void
 assert_parallel_data
