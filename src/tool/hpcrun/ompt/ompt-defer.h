@@ -215,19 +215,6 @@ lazy_active_region_processing
   void
 );
 
-#if DETECT_IDLENESS_LAST_BARRIER
-void
-attr_idleness2outermost_ctx
-(
-  void
-);
-
-void
-attr_idleness2region_at
-(
-  int depth
-);
-#endif
 
 #define VI3_DEBUG 0
 

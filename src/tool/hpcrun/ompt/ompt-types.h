@@ -100,11 +100,6 @@
 // The code wrapped around with this pragma is used for debug purposes only.
 #define DEBUG_BARRIER_CNT 0
 
-// Try to detect idle samples taken while thread is waiting on the last implicit
-// barirer. After that, decide whether the idle samples sould be attributed to
-// parallel region or to the outermost context.
-#define DETECT_IDLENESS_LAST_BARRIER 0
-
 #define USE_IMPLICIT_TASK_CALLBACKS 0
 
 struct ompt_region_data_s;
@@ -288,6 +283,9 @@ typedef struct ompt_atomic_data_s {
 
 #define USE_OMPT_CALLBACK_PARALLEL_BEGIN 0
 #define INTEGRATE_REG_INIT_AND_REGISTER 1
+
+#define VI3_DEBUG_INFO 1
+#define VI3_DEBUG_INFO_AND_LOG VI3_DEBUG_INFO && 1
 
 #endif
 

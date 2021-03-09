@@ -496,21 +496,6 @@ register_to_all_regions
     return;
   }
 
-#if DETECT_IDLENESS_LAST_BARRIER
-  if (waiting_on_last_implicit_barrier) {
-    // check if thread_data is available and contains any useful information
-    if (info_type == 2) {
-      // Thread is waiting on the last implicit barrier.
-      // OMPT frames are not set properly (see ompt_elide_runtime_frame).
-      // Thread cannot guarantee that it is still part of any parallel team.
-      // Safe thing to do is to skip registration process
-      // and attribute the sample to the thread local (idle) placeholder.
-      return;
-    }
-  }
-#else
-#endif
-
   // FIXME vi3: check whether region at ancestor_level
   //   really has region_depth.
 
@@ -639,75 +624,6 @@ try_resolve_one_region_context
   return 1;
 }
 
-#if DETECT_IDLENESS_LAST_BARRIER
-bool
-any_idle_samples_remained
-(
-  void
-)
-{
-  // check if there is some non-attributed (unresolved) idle sample
-  return local_idle_placeholder != NULL;
-}
-
-
-void
-attr_idleness2_cct_node
-(
-  cct_node_t *cct_node
-)
-{
-#if 1
-  if (!cct_node) {
-    printf("<<<ompt-defer.c:1027>>> Missing cct_node\n");
-    return;
-  }
-
-  // merge children of local_idle_placeholder to cct_node
-  hpcrun_cct_merge(cct_node, local_idle_placeholder, merge_metrics, NULL);
-  // Remove and invalidate local_idle_placeholder as indication that idle samples
-  // have been attributed to the proper position.
-  hpcrun_cct_delete_self(local_idle_placeholder);
-  local_idle_placeholder = NULL;
-#endif
-}
-
-
-void
-attr_idleness2outermost_ctx
-(
-  void
-)
-{
-  // This if may be put inside attr_idleness2_cct_node.
-  // The problem that may occur is that thread asks for thread_root
-  // and then finds that there is no idle samples under idle placeholder.
-  // In that case, thread just lost cycles getting information about
-  // thread_root that won't use.
-  if (any_idle_samples_remained()) {
-    attr_idleness2_cct_node(hpcrun_get_thread_epoch()->csdata.thread_root);
-  }
-}
-
-
-void
-attr_idleness2region_at
-(
-  int depth
-)
-{
-  // This if may be put inside attr_idleness2_cct_node.
-  // The problem that may occur is that thread asks for unresolved_cct
-  // which corresponds to the region present on the top of the stack
-  // and then finds that there is no idle samples under idle placeholder.
-  // In that case, thread just lost cycles getting information about
-  // unresolved_cct that won't use.
-  if (any_idle_samples_remained()) {
-    // NOTE vi3: Happened in nestedtasks.c.
-    attr_idleness2_cct_node(hpcrun_ompt_get_top_unresolved_cct_on_stack());
-  }
-}
-#endif
 
 void
 update_unresolved_node
@@ -764,11 +680,6 @@ ompt_resolve_region_contexts
  int is_process
 )
 {
-#if DETECT_IDLENESS_LAST_BARRIER
-  // If any idle samples remained from the previous parallel region,
-  // attribute them to the outermost context
-  attr_idleness2outermost_ctx();
-#endif
 
   struct timespec start_time;
 

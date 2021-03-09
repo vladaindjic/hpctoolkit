@@ -375,14 +375,6 @@ ompt_implicit_task_internal_begin
   if (!ompt_eager_context_p()) {
     // connect task_data with region_data
     task_data_set_depth(task_data, region_data->depth);
-#if DETECT_IDLENESS_LAST_BARRIER
-    // mark that thread has finished waiting on the last implicit barrier
-    // of the previous region
-    waiting_on_last_implicit_barrier = false;
-    // If any idle samples remained from the previous parallel region,
-    // attribute them to the outermost context
-    attr_idleness2outermost_ctx();
-#endif
   }
 
 #if VI3_DEBUG == 1
@@ -540,37 +532,6 @@ ompt_region_release
 }
 
 
-#if DETECT_IDLENESS_LAST_BARRIER
-static void
-ompt_sync
-(
-  ompt_sync_region_t kind,
-  ompt_scope_endpoint_t endpoint,
-  ompt_data_t *parallel_data,
-  ompt_data_t *task_data,
-  const void *codeptr_ra
-)
-{
-#if VI3_DEBUG == 1
-  if (kind == ompt_sync_region_barrier_implicit_last) {
-    printf("ompt_sync_region_barrier_implicit_last: region_stack: %p, reg_id: %lx, Thread id = %d, \tBarrier %s\n",
-        &region_stack, parallel_data ? ((typed_stack_elem_ptr(region))parallel_data->ptr)->region_id : 0,
-        hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
-  } else if (kind == ompt_sync_region_barrier_implicit){
-    printf("ompt_sync_region_barrier_implicit: parallel_data: %p, Thread id = %d, \tBarrier %s\n",
-           parallel_data, hpcrun_ompt_get_thread_num(0), endpoint==1?"begin":"end");
-  }
-#endif
-
-  // mark that thread is (not) waiting om last implicit barrier
-  // at the end of the innermost parallel region
-  if (kind == ompt_sync_region_barrier_implicit_last) {
-    // thread starts waiting on the last implicit barrier
-    if (endpoint == ompt_scope_begin) waiting_on_last_implicit_barrier = true;
-  }
-}
-#endif
-
 //*****************************************************************************
 // interface operations
 //*****************************************************************************
@@ -620,11 +581,6 @@ ompt_parallel_region_register_callbacks
 #if USE_IMPLICIT_TASK_CALLBACKS == 1
   retval = ompt_set_callback_fn(ompt_callback_implicit_task,
                                 (ompt_callback_t)ompt_implicit_task);
-  assert(ompt_event_may_occur(retval));
-#endif
-#if DETECT_IDLENESS_LAST_BARRIER
-  retval = ompt_set_callback_fn(ompt_callback_sync_region_wait,
-                                (ompt_callback_t)ompt_sync);
   assert(ompt_event_may_occur(retval));
 #endif
 }

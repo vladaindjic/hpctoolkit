@@ -88,12 +88,6 @@ extern __thread int unresolved_cnt;
 extern __thread int depth_last_sample_taken;
 extern __thread uint64_t region_id_last_sample_taken;
 
-#if DETECT_IDLENESS_LAST_BARRIER
-// thread is waiting on last implicit barrier
-// at the very end of the innermost region
-extern __thread bool waiting_on_last_implicit_barrier;
-#endif
-
 extern __thread bool innermost_parallel_data_avail;
 // tmp vi3 solution (see ompt-defer.c)
 extern __thread bool vi3_forced_null;
