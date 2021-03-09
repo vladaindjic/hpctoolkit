@@ -100,7 +100,6 @@
 // The code wrapped around with this pragma is used for debug purposes only.
 #define DEBUG_BARRIER_CNT 0
 
-#define USE_IMPLICIT_TASK_CALLBACKS 0
 
 struct ompt_region_data_s;
 struct ompt_notification_s;

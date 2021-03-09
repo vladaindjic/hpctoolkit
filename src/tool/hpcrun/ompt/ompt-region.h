@@ -48,6 +48,10 @@
 #define __OMPT_REGION_H__
 
 
+// Should hpcrun use ompt_callback_implicict_task for debug purposes only.
+#define USE_IMPLICIT_TASK_CALLBACKS 0
+
+
 //*****************************************************************************
 // local includes
 //*****************************************************************************

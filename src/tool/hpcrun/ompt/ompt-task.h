@@ -60,73 +60,10 @@ typedef struct ompt_task_data_t ompt_task_data_t;
 // interface operations
 //*****************************************************************************
 
-ompt_task_data_t*
-ompt_task_acquire
-(
- cct_node_t *callpath,
- ompt_task_flag_t task_type
-);
-
-
-void
-ompt_task_release
-(
- ompt_data_t *t
-);
-
-
-cct_node_t *
-ompt_task_callpath
-(
- ompt_data_t *task_data
-);
-
-
 void 
 ompt_task_register_callbacks
 (
  ompt_set_callback_t ompt_set_callback_fn
-);
-
-char
-task_data_get_info(
-  ompt_data_t *task_data,
-  cct_node_t **cct,
-  int *region_depth
-);
-
-
-void
-task_data_set_cct
-(
-  ompt_data_t *task_data,
-  cct_node_t *cct
-);
-
-
-void
-task_data_set_depth
-(
-  ompt_data_t *task_data,
-  int region_depth
-);
-
-
-void
-task_data_set_info
-(
-  ompt_data_t *task_data,
-  cct_node_t *cct,
-  int region_depth
-);
-
-
-char
-task_data_value_get_info
-(
-  void *task_data_content,
-  cct_node_t **cct,
-  int *region_depth
 );
 
 #endif

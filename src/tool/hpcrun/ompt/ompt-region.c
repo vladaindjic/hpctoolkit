@@ -347,40 +347,7 @@ ompt_implicit_task_internal_begin
  unsigned int index
 )
 {
-  task_data->ptr = NULL;
-
-#if USE_OMPT_CALLBACK_PARALLEL_BEGIN == 1
-  typed_stack_elem_ptr(region) region_data =
-    (typed_stack_elem_ptr(region))parallel_data->ptr;
-
-#else
-  typed_stack_elem_ptr(region) region_data =
-    (typed_stack_elem_ptr(region)) ATOMIC_LOAD_RD(parallel_data);
-#endif
-  if (region_data == NULL) {
-    // there are no parallel region callbacks for the initial task.
-    // region_data == NULL indicates that this is an initial task. 
-    // do nothing for initial tasks.
-    return;
-  }
-
-  cct_node_t *prefix = region_data->call_path;
-
-  // Only full call path can be memoized.
-  if (ompt_eager_context_p()) {
-    // region_depth is not important in this situation
-    task_data_set_cct(task_data, prefix);
-  }
-
-  if (!ompt_eager_context_p()) {
-    // connect task_data with region_data
-    task_data_set_depth(task_data, region_data->depth);
-  }
-
-#if VI3_DEBUG == 1
-  printf("implicit_task_begin >>> REGION_STACK: %p, REG: %p, REG_ID: %lx, THREAD_NUM: %d\n",
-         &region_stack, region_data, region_data->region_id, hpcrun_ompt_get_thread_num(0));
-#endif
+  // Used eventually for debug purposes.
 }
 
 
@@ -393,24 +360,7 @@ ompt_implicit_task_internal_end
  unsigned int index
 )
 {
-
-  if (!ompt_eager_context_p()) {
-    // try to resolve some regions, if any
-    //ompt_resolve_region_contexts_poll();
-#if VI3_DEBUG == 1
-    typed_random_access_stack_elem(region) *top = typed_random_access_stack_top(region)(region_stack);
-    if (top) {
-      typed_stack_elem(region) *top_reg = top->notification->region_data;
-      printf("implicit_task_end >>> REGION_STACK: %p, TOP_REG: %p, TOP_REG_ID: %lx, THREAD_NUM: %d\n",
-             &region_stack, top_reg, top_reg->region_id, index);
-    } else {
-      printf("initial implicit_task_end >>> REGION_STACK: %p, TOP_REG: nil, TOP_REG_ID: nil, THREAD_NUM: %d\n",
-             &region_stack, 0);
-    }
-#endif
-
-  }
-  // ompt_task_release(task_data);
+  // Used eventually for debug purposes.
 }
 
 
@@ -438,6 +388,7 @@ ompt_implicit_task
     ompt_implicit_task_internal_end(parallel_data, task_data, team_size, index);
   } else {
     // should never occur. should we add a message to the log?
+    assert(false);
   }
 
   hpcrun_safe_exit();
