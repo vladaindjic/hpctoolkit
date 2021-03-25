@@ -388,10 +388,16 @@ ompt_elide_runtime_frame(
     int found = 0;
     for (it = *bt_inner; it <= *bt_outer; it++) {
       if ((uint64_t)(it->cursor.sp) >= (uint64_t)fp_enter(frame0)) {
+        // If the enter_frame points to the application frame of the
+        // currently active task, go one frame below.
+        int offset = ff_is_appl(FF(frame0, exit)) ? 1 : 0;
+        it -= offset;
+
         if (isSync) {
           // for synchronous samples, elide runtime frames at top of stack
           *bt_inner = it;
         } else if (on_explicit_barrier) {
+          // FIXME vi3: This needs to be reviewed.
           // bt_inner points to __kmp_api_GOMP_barrier_10_alias
           *bt_inner = it - 1;
           // replace the last frame with explicit barrier placeholder
@@ -468,6 +474,7 @@ ompt_elide_runtime_frame(
     //  application from the inner task's perspective) the two points
     //  are equal. there is nothing to elide at this step.
     //-------------------------------------------------------------------------
+    // FIXME vi3 - review this condition
     if ((fp_enter(frame1) == fp_exit(frame0)) &&
 	(ff_is_appl(FF(frame0, exit)) &&
 	 ff_is_rt(FF(frame1, enter))))
