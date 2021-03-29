@@ -390,7 +390,7 @@ ompt_elide_runtime_frame(
       if ((uint64_t)(it->cursor.sp) >= (uint64_t)fp_enter(frame0)) {
         // If the enter_frame points to the application frame of the
         // currently active task, go one frame below.
-        int offset = ff_is_appl(FF(frame0, exit)) ? 1 : 0;
+        int offset = ff_is_appl(FF(frame0, enter)) ? 1 : 0;
         it -= offset;
 
         if (isSync) {
