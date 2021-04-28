@@ -446,7 +446,6 @@ least_common_ancestor
       hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
   assert(innermost_reg);
 
-  // TODO VI3: check whether this happens before adding new region on stack.
   // update top of the stack
   typed_random_access_stack_top_index_set(region)(innermost_reg->depth, region_stack);
   // update the last region that should be checked during registration process
@@ -759,7 +758,7 @@ ompt_resolve_region_contexts_poll
 }
 
 
-#define INTEGRATE_REG_INIT_AND_REGISTER 0
+#define INTEGRATE_REG_INIT_AND_REGISTER 1
 
 
 #if INTEGRATE_REG_INIT_AND_REGISTER == 1
@@ -832,7 +831,8 @@ add_new_region_on_stack
 int
 lazy_region_process
 (
-  int ancestor_level
+  int ancestor_level,
+  bool team_member
 )
 {
   int flags;
@@ -840,8 +840,11 @@ lazy_region_process
   ompt_data_t *task_data = NULL;
   ompt_data_t *parallel_data = NULL;
   int thread_num = -1;
+  // If thread is not the team member, thread_num is irrelevant,
+  // so keep -1.
+  int *check_thread_num = team_member ? &thread_num : NULL;
   int ret_val = hpcrun_ompt_get_task_info(ancestor_level, &flags, &task_data, &frame,
-                                          &parallel_data, &thread_num);
+                                          &parallel_data, check_thread_num);
   assert(ret_val == 2);
   assert(parallel_data != NULL);
 
@@ -854,14 +857,17 @@ lazy_region_process
   if (old_reg) {
     // Update stack of active regions for regions that are below the old_reg,
     // including the old_reg too.
-    register_to_all_regions(ancestor_level);
+    register_to_all_regions(ancestor_level, team_member);
     assert(typed_random_access_stack_top_index_get(region)(region_stack)
         == old_reg->depth);
     return old_reg->depth;
   }
 
   // initialize parent region if needed
-  int parent_depth = lazy_region_process(ancestor_level + 1);
+  // Thread can be the member of outer team only if it is the
+  // owner of the team at this level.
+  bool outer_team_member = team_member && thread_num == 0;
+  int parent_depth = lazy_region_process(ancestor_level + 1, outer_team_member);
   // If there's no parent region, parent_depth will be -1.
 
   // try to initilize region_data
@@ -887,7 +893,10 @@ lazy_region_process
 
   if (!region_init_in_outer_task(old_reg)) {
     // update top of the region active stack by adding old_reg
-    add_new_region_on_stack(old_reg, thread_num == 0);
+    // Thread is the team_master if it is the team_member and
+    // if thread_num is 0.
+    bool team_master = team_member && thread_num == 0;
+    add_new_region_on_stack(old_reg, team_master);
     assert(typed_random_access_stack_top_index_get(region)(region_stack)
            == old_reg->depth);
   }
@@ -927,7 +936,8 @@ lazy_active_region_processing
   // so use true as second argument.
   register_to_all_regions(task_ancestor_level, true);
 #else
-  lazy_region_process(task_ancestor_level);
+  // Assume that thread is the member of the innermost parallel region.
+  lazy_region_process(task_ancestor_level, true);
 #endif
 }
 
