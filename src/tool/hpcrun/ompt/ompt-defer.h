@@ -138,11 +138,21 @@ register_thread_to_all_regions
  void
 );
 
-
+// Idea behind team_member field.
+// When thread takes a sample, it starts inquiring the runtime
+// about task information at ancestor levels 0, 1, ... , n respectively.
+// The idea is to find ancestor level k for which stands:
+// m < k  -> ompt_get_task_info(m) returns thread_num == 0
+//           (thread is the owner of region at level m).
+// m == k -> ompt_get_task_info(m) returns thread_num > 0
+//           (thread is worker inside region at level m).
+// m > k  -> thread is not the member of the team at specified level m.
+//           This is indicated by team_member == true.
 void 
 register_to_all_regions
 (
- int ancestor_level
+ int ancestor_level,
+ bool team_member
 );
 
 

@@ -325,24 +325,20 @@ thread_take_sample
 typedef struct lca_args_s {
   int level;
   typed_stack_elem(region) *region_data;
+  bool team_member;
 } lca_args_t;
 
 
-
-bool
+static inline bool
 is_thread_owner_of_the_region
 (
   typed_random_access_stack_elem(region) *el,
   int level
 )
 {
-  int flags0;
-  ompt_frame_t *frame0;
-  ompt_data_t *task_data = NULL;
-  ompt_data_t *parallel_data = NULL;
   int thread_num = -1;
-  int retVal = hpcrun_ompt_get_task_info(level, &flags0, &task_data, &frame0,
-                                         &parallel_data, &thread_num);
+  int retVal = hpcrun_ompt_get_task_info(level, NULL, NULL, NULL,
+                                         NULL, &thread_num);
   if (retVal != 2) {
     // Task either doesn't exist or the information about it isn't available.
     // I guess the false is the right value to return.
@@ -363,6 +359,8 @@ lca_el_fn
   lca_args_t *args = (lca_args_t *)arg;
   int level = args->level;
   typed_stack_elem(region) *reg = args->region_data;
+  // is thread really a team member.
+  bool team_member = args->team_member;
   // The sample was previously taken in this region
   if (el->region_data) {
     // If the region has not been change since the last sample was taken,
@@ -377,7 +375,11 @@ lca_el_fn
   el->region_data = reg;
   // store region_id as persistent field
   el->region_id = reg->region_id;
-  el->team_master = is_thread_owner_of_the_region(el, level);
+  // If thread is the team member, then check whether it owns the region.
+  el->team_master =
+      team_member ? is_thread_owner_of_the_region(el, level) : false;
+  // Thread can be the member of the outer team only if it owns this region.
+  bool outer_team_member = el->team_master;
   // invalidate previous values
   el->unresolved_cct = NULL;
   el->took_sample = false;
@@ -416,6 +418,7 @@ lca_el_fn
 
   args->region_data = new_region;
   args->level = level;
+  args->team_member = outer_team_member;
 
   // indicator to continue processing stack element
   return 0;
@@ -435,13 +438,15 @@ bool
 least_common_ancestor
 (
   typed_random_access_stack_elem(region) **lca,
-  int ancestor_level
+  int ancestor_level,
+  bool team_member
 )
 {
   typed_stack_elem(region) *innermost_reg =
       hpcrun_ompt_get_region_data_from_task_info(ancestor_level);
   assert(innermost_reg);
 
+  // TODO VI3: check whether this happens before adding new region on stack.
   // update top of the stack
   typed_random_access_stack_top_index_set(region)(innermost_reg->depth, region_stack);
   // update the last region that should be checked during registration process
@@ -453,6 +458,7 @@ least_common_ancestor
   // Assume that thread is not worker
   args.level = ancestor_level;
   args.region_data = innermost_reg;
+  args.team_member = team_member;
   *lca = typed_random_access_stack_forall(region)(region_stack,
                                                   lca_el_fn,
                                                   &args);
@@ -465,7 +471,8 @@ least_common_ancestor
 void
 register_to_all_regions
 (
-  int ancestor_level
+  int ancestor_level,
+  bool team_member
 )
 {
   if (ancestor_level < 0) {
@@ -476,7 +483,7 @@ register_to_all_regions
   // Try to find active region in which thread took previous sample
   // (in further text lca->region_data)
   typed_random_access_stack_elem(region) *lca;
-  assert(least_common_ancestor(&lca, ancestor_level));
+  assert(least_common_ancestor(&lca, ancestor_level, team_member));
 
   int start_from = 0;
   cct_node_t *parent_cct = NULL;
@@ -752,7 +759,7 @@ ompt_resolve_region_contexts_poll
 }
 
 
-#define INTEGRATE_REG_INIT_AND_REGISTER 1
+#define INTEGRATE_REG_INIT_AND_REGISTER 0
 
 
 #if INTEGRATE_REG_INIT_AND_REGISTER == 1
@@ -916,7 +923,9 @@ lazy_active_region_processing
   // initialize region_data if needed
   initialize_regions_if_needed();
   // register to active regions if needed
-  register_to_all_regions(task_ancestor_level);
+  // Thread should be the member of the innermost parallel region,
+  // so use true as second argument.
+  register_to_all_regions(task_ancestor_level, true);
 #else
   lazy_region_process(task_ancestor_level);
 #endif
