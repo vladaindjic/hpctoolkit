@@ -881,7 +881,7 @@ hpcrun_ompt_get_task_info
     *parallel_data = NULL;
     *thread_num = -1;  // invalid thread num
   } else {
-    assert_parallel_data(*parallel_data);
+    if (parallel_data) assert_parallel_data(*parallel_data);
   }
 
 
