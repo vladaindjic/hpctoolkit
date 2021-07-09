@@ -338,7 +338,14 @@ ompt_elide_runtime_frame(
   int i = 0;
   frame_t *it = NULL;
 
-  ompt_frame_t *frame0 = hpcrun_ompt_get_task_frame(i);
+  ompt_frame_t *frame0 = NULL;
+  int ret = hpcrun_ompt_get_task_info(i, NULL, NULL, &frame0, NULL, NULL);
+  if (ret == 1) {
+    // The information about the innermost task is not available
+    // Try to inquire the information about the parent task.
+    i++;
+    frame0 = hpcrun_ompt_get_task_frame(i);
+  }
 
   elide_debug_dump("ORIGINAL", *bt_inner, *bt_outer, region_id); 
   elide_frame_dump();

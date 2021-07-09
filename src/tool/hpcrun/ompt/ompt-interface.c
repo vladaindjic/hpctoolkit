@@ -875,11 +875,11 @@ hpcrun_ompt_get_task_info
     //  reference to the entry point are undefined"
     // I guess it is ok to invalidate them in order to detect some
     // of the edge cases.
-    *flags = 0;  // invalid flag
-    *task_data = NULL;
-    *task_frame = NULL;
-    *parallel_data = NULL;
-    *thread_num = -1;  // invalid thread num
+    if (flags) *flags = 0;  // invalid flag
+    if (task_data) *task_data = NULL;
+    if (task_frame) *task_frame = NULL;
+    if (parallel_data) *parallel_data = NULL;
+    if (thread_num) *thread_num = -1;  // invalid thread num
   } else {
     if (parallel_data) assert_parallel_data(*parallel_data);
   }
